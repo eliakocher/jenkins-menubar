@@ -37,6 +37,7 @@ work_items_error_file="$cache_dir/work-items-error"
 work_item_labels_file="$cache_dir/work-item-labels.json"
 related_dir="$cache_dir/related-merge-requests"
 merged_file="$cache_dir/merged-merge-requests"
+poll_lock="$cache_dir/poll.lock"
 gitlab_icon_file="$tool_dir/icons/gitlab.png"
 mkdir -p "$cache_dir" "${settings_file%/*}"
 touch "$state_file" "$hidden_file" "$rows_file"
@@ -185,10 +186,33 @@ exported() {
 	[[ $value == *'$'* || $value == *'`'* ]] || printf '%s' "$value"
 }
 
-# The token goes to curl through a file descriptor, so it does not show up in ps. Exits 22 when Jenkins answered with an
-# HTTP error, with another code when it was not reached.
+# api <path> [seconds to answer]: prints Jenkins' answer. Without one, prints the HTTP status instead (000 when Jenkins
+# was not reached) and exits 22 for an HTTP error, with curl's code otherwise. The token goes to curl through a file
+# descriptor, so it does not show up in ps.
 api() {
-	curl -fsS --connect-timeout 5 --max-time 20 -H @<(printf 'Authorization: Basic %s\n' "$JENKINS_MCP_BASIC_AUTH") "$JOB_ROOT$1" 2>/dev/null
+	local response code
+	response=$(curl -sS --connect-timeout 5 --max-time "${2:-20}" -w '\n%{http_code}' \
+		-H @<(printf 'Authorization: Basic %s\n' "$JENKINS_MCP_BASIC_AUTH") "$JOB_ROOT$1" 2>/dev/null)
+	code=$?
+	if ((code != 0)); then
+		echo 000
+		return "$code"
+	fi
+	if [[ ${response##*$'\n'} != 2?? ]]; then
+		printf '%s' "${response##*$'\n'}"
+		return 22
+	fi
+	printf '%s' "${response%$'\n'*}"
+}
+
+# jenkins_problem <HTTP status printed by api>: what went wrong, for the menu and the settings window.
+jenkins_problem() {
+	case $1 in
+		401 | 403) echo 'Jenkins rejected the token' ;;
+		404) echo 'Jenkins does not know the job: check the job URL in Team' ;;
+		000) echo 'Jenkins unreachable (VPN?)' ;;
+		*) echo "Jenkins answered with HTTP $1" ;;
+	esac
 }
 
 previous_state() {
@@ -216,26 +240,32 @@ poll() {
 		return
 	fi
 	# MR jobs name the GitLab author as contributor; the Jenkins login stands in for the GitLab username until GitLab answered.
-	local me offline=0
+	local me offline=0 problem='' code
 	me=$(jq -r '.data.currentUser.username // empty' "$gitlab_file" 2>/dev/null)
 	[[ -n $me ]] || me=$(printf '%s' "$JENKINS_MCP_BASIC_AUTH" | base64 --decode 2>/dev/null | cut -d : -f 1)
 
-	# Listing all MR jobs takes seconds, so the set of my jobs is refreshed less often than the builds.
+	# Listing all MR jobs takes seconds (more on a big Jenkins), so the set of my jobs is refreshed less often than the
+	# builds, and Jenkins gets more time to answer.
 	if [[ ! -f $jobs_file || -z $(find "$jobs_file" -mmin "-$DISCOVERY_MINUTES" 2>/dev/null) || $(cat "$jobs_user_file" 2>/dev/null) != "$me" ]]; then
 		local discovered
-		if discovered=$(api '/api/json?tree=jobs%5Bname,actions%5Bcontributor%5D%5D'); then
+		if discovered=$(api '/api/json?tree=jobs%5Bname,actions%5Bcontributor%5D%5D' 60); then
 			jq -r --arg me "$me" '.jobs[] | select(any(.actions[]?; .contributor == $me)) | .name' <<<"$discovered" >"$jobs_file.tmp" &&
 				mv "$jobs_file.tmp" "$jobs_file" && printf '%s\n' "$me" >"$jobs_user_file"
 		else
-			(($? == 22)) || offline=1
+			code=$?
+			problem=$(jenkins_problem "$discovered")
+			# A list too slow to arrive says nothing about the far smaller answers for the builds, so those are still asked for.
+			((code == 22 || code == 28)) || offline=1
 			if [[ ! -f $jobs_file ]]; then
-				echo 'Jenkins unreachable (VPN?)' >"$error_file"
+				echo "$problem" >"$error_file"
 				return
 			fi
+			# The list is only asked for again after the usual pause, so a slow Jenkins does not hold up every poll.
+			((code == 28)) && touch "$jobs_file"
 		fi
 	fi
 
-	local new_state="$cache_dir/state.new" new_rows="$cache_dir/rows.new" reached=0 flags stage_alerts code
+	local new_state="$cache_dir/state.new" new_rows="$cache_dir/rows.new" reached=0 flags stage_alerts
 	local job json title mr_url number building result started_ms estimate_ms duration_ms stages failed_stages stages_json
 	local previous previous_row previous_number previous_building previous_failed finished_failed build_url
 	flags=$(watch_flags)
@@ -252,6 +282,9 @@ poll() {
 			json=$(api "/job/$job/api/json?tree=actions%5BobjectDisplayName,objectUrl%5D,lastBuild%5Bnumber,building,result,timestamp,estimatedDuration,duration%5D")
 			code=$?
 			((code == 0 || code == 22)) || offline=1
+			# Jenkins drops the job of a merged or closed MR: there is nothing left to show for it.
+			((code == 22)) && [[ $json == 404 ]] && continue
+			((code == 0)) || problem=$(jenkins_problem "$json")
 		fi
 		if ((code != 0)); then
 			# The build stays as it was, in the menu and hidden or not, until Jenkins answers for it again.
@@ -309,9 +342,9 @@ poll() {
 	done <"$jobs_file"
 	mv "$new_state" "$state_file"
 
-	if ((!reached)) && [[ -s $jobs_file ]]; then
+	if ((!reached)) && [[ -n $problem ]]; then
 		rm -f "$new_rows"
-		echo 'Jenkins unreachable (VPN?)' >"$error_file"
+		echo "$problem" >"$error_file"
 		return
 	fi
 	sort -t $'\t' -k 7,7nr "$new_rows" >"$rows_file"
@@ -357,7 +390,8 @@ def ago: (now - .) as $seconds
 def updated: try ("updated " + (sub("\\.[0-9]+"; "") | fromdateiso8601 | ago)) catch "";
 def shorten($max): if length > $max then .[0:$max - 1] + "…" else . end;
 def count($noun): "\(.) \($noun)\(if . == 1 then "" else "s" end)";
-def clean: gsub("\\|"; "¦");
+# A "|" would start SwiftBar parameters (like bash=) and a line break a new menu item.
+def clean: gsub("\\|"; "¦") | gsub("[\r\n]+"; " ");
 def ref: capture("^(?<path>.*)!(?<iid>[0-9]+)$") as $reference
 	| if $reference.path == $project then "!\($reference.iid)" else "\($reference.path | split("/") | last)!\($reference.iid)" end;
 def reviewState($me): [.reviewers.nodes[]? | select(.username == $me) | .mergeRequestInteraction.reviewState][0] // "UNREVIEWED";
@@ -437,7 +471,8 @@ GRAPHQL
 # Turns the work items answer (or null) into the "GitLab work items" submenu, including the filter and sort controls.
 read -r -d '' WORK_ITEMS_MENU <<'JQ'
 def shorten($max): if length > $max then .[0:$max - 1] + "…" else . end;
-def clean: gsub("\\|"; "¦");
+# A "|" would start SwiftBar parameters (like bash=) and a line break a new menu item.
+def clean: gsub("\\|"; "¦") | gsub("[\r\n]+"; " ");
 def shortRef: capture("^(?<path>.*?)(?<sign>[#&])(?<iid>[0-9]+)$") as $reference
 	| if $reference.path == $project then "\($reference.sign)\($reference.iid)"
 	else "\($reference.path | split("/") | last)\($reference.sign)\($reference.iid)" end;
@@ -458,7 +493,7 @@ def entry:
 	# Automatic MRs (like cascades between release branches) only mention the work item, they are not work on it.
 	[$related[.reference].mergeRequests[]? | select((.state == "opened" or .state == "merged")
 		and ($ignoredPrefix == "" or (.title | startswith($ignoredPrefix) | not)))] as $mergeRequests
-	| ([slot // empty, mergeRequestMark($mergeRequests)] | join(" ")) as $prefix
+	| ([slot // empty, mergeRequestMark($mergeRequests)] | join(" ") | clean) as $prefix
 	| "--\(.reference | shortRef)  \(if $prefix != "" then "\($prefix) · " else "" end)\(.title | clean | shorten(if $prefix != "" then 52 else 60 end)) | href=\(.webUrl)";
 def section($title):
 	if . != null and (.nodes | length) > 0
@@ -876,26 +911,18 @@ delete_token() {
 
 # Asks Jenkins and GitLab with the tokens the menu uses: JSON with ok and a message for each.
 check_accounts() {
-	local jenkins_ok=false jenkins_message gitlab_ok=false gitlab_message status username answer="$cache_dir/check-accounts.json"
+	local jenkins_ok=false jenkins_message jenkins_answer gitlab_ok=false gitlab_message status username answer="$cache_dir/check-accounts.json"
 	JENKINS_MCP_BASIC_AUTH=$(token JENKINS_MCP_BASIC_AUTH)
 	GITLAB_TOKEN=$(token GITLAB_TOKEN)
 	if [[ -z $JOB_ROOT ]]; then
 		jenkins_message='Set the Jenkins job in Team first'
 	elif [[ -z $JENKINS_MCP_BASIC_AUTH ]]; then
 		jenkins_message='No token yet'
+	elif jenkins_answer=$(api '/api/json?tree=name'); then
+		jenkins_ok=true
+		jenkins_message="Signed in as $(printf '%s' "$JENKINS_MCP_BASIC_AUTH" | base64 --decode 2>/dev/null | cut -d : -f 1)"
 	else
-		status=$(curl -sS --connect-timeout 5 --max-time 20 -o /dev/null -w '%{http_code}' \
-			-H @<(printf 'Authorization: Basic %s\n' "$JENKINS_MCP_BASIC_AUTH") "$JOB_ROOT/api/json?tree=name" 2>/dev/null)
-		case $status in
-			200)
-				jenkins_ok=true
-				jenkins_message="Signed in as $(printf '%s' "$JENKINS_MCP_BASIC_AUTH" | base64 --decode 2>/dev/null | cut -d : -f 1)"
-				;;
-			401 | 403) jenkins_message='Jenkins rejected the token' ;;
-			404) jenkins_message='Jenkins does not know the job: check the job URL in Team' ;;
-			000) jenkins_message='Jenkins unreachable (VPN?)' ;;
-			*) jenkins_message="Jenkins answered with HTTP $status" ;;
-		esac
+		jenkins_message=$(jenkins_problem "$jenkins_answer")
 	fi
 	if [[ -z $GITLAB_URL ]]; then
 		gitlab_message='Set the GitLab URL in Team first'
@@ -957,7 +984,23 @@ due() {
 	[[ ! $last =~ ^[0-9]+$ ]] || (($(date +%s) - last >= $2 - 5))
 }
 
-due "$last_poll_file" "$(number_setting refresh_seconds 60)" && poll
-# A changed setting may be a work item filter, so GitLab is asked again right away.
-[[ $settings_file -nt $last_gitlab_poll_file ]] || due "$last_gitlab_poll_file" "$(number_setting gitlab_refresh_seconds 120)" && poll_gitlab
+# SwiftBar can start the plugin while a run still polls (Check now, a refresh from the settings window). Two polls would
+# write the same files and alert twice, so one polls at a time; a lock whose run is gone (killed, say) does not count.
+take_poll_lock() {
+	if ! (set -o noclobber; echo $$ >"$poll_lock") 2>/dev/null; then
+		kill -0 "$(cat "$poll_lock" 2>/dev/null)" 2>/dev/null && return 1
+		rm -f "$poll_lock"
+		(set -o noclobber; echo $$ >"$poll_lock") 2>/dev/null || return 1
+	fi
+	trap 'rm -f "$poll_lock"' EXIT
+}
+
+# Without the lock, the menu comes from the cache that the other run is refreshing.
+if take_poll_lock; then
+	due "$last_poll_file" "$(number_setting refresh_seconds 60)" && poll
+	# A changed setting may be a work item filter, so GitLab is asked again right away.
+	[[ $settings_file -nt $last_gitlab_poll_file ]] || due "$last_gitlab_poll_file" "$(number_setting gitlab_refresh_seconds 120)" && poll_gitlab
+	rm -f "$poll_lock"
+	trap - EXIT
+fi
 render

@@ -217,6 +217,79 @@ test_plugin_does_not_ask_for_the_builds_when_the_job_list_is_unreachable() {
 	assert_contains "$menu" '✅ First'
 }
 
+test_plugin_tells_when_jenkins_rejects_the_token() {
+	route 'tree=jobs' 401
+	plugin_run
+	assert_contains "$menu" $'---\nJenkins rejected the token | color=red'
+	assert_not_contains "$menu" 'unreachable'
+}
+
+test_plugin_tells_when_jenkins_rejects_the_token_for_the_builds() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	plugin_run
+	route jenkins.test 401
+	plugin_run
+	assert_contains "$menu" 'Jenkins rejected the token | color=red'
+	assert_contains "$menu" '✅ Fix the login'
+}
+
+test_plugin_tells_when_jenkins_does_not_know_the_job() {
+	route 'tree=jobs' 404
+	plugin_run
+	assert_contains "$menu" 'Jenkins does not know the job: check the job URL in Team | color=red'
+}
+
+test_plugin_drops_the_build_of_a_job_jenkins_no_longer_has() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	plugin_run
+	route /job/MR-1/ 404
+	plugin_run
+	assert_not_contains "$menu" 'Fix the login'
+	assert_not_contains "$menu" 'color=red'
+	assert_contains "$menu" 'No builds to show'
+}
+
+test_plugin_asks_for_the_builds_when_the_job_list_is_too_slow() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 true null 'Fix the login'
+	jenkins_stages MR-1 7
+	plugin_run
+	plugin_action --check-now
+	route 'tree=jobs' exit:28
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	plugin_run
+	assert_contains "$(cat "$FAKE_CURL/argv")" '--max-time 60' 'the curl command lines'
+	assert_contains "$menu" '✅ Fix the login'
+	assert_not_contains "$menu" 'unreachable'
+	plugin_run
+	assert_equals "$(request_count tree=jobs)" 0 'job list requests right after one was too slow'
+}
+
+test_plugin_only_renders_while_another_run_polls() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	plugin_run
+	echo $$ >"$cache/poll.lock"
+	plugin_run
+	assert_equals "$(request_count jenkins.test)" 0 'requests to Jenkins while another run polls'
+	assert_contains "$menu" '✅ Fix the login'
+	assert_equals "$(cat "$cache/poll.lock")" $$ 'the lock of the other run'
+}
+
+test_plugin_polls_when_the_run_that_held_the_lock_is_gone() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	mkdir -p "$cache"
+	(exit 0) &
+	wait $!
+	echo $! >"$cache/poll.lock"
+	plugin_run
+	assert_contains "$menu" '✅ Fix the login'
+	[[ ! -e $cache/poll.lock ]] || fail 'expected the run to release the lock'
+}
+
 test_plugin_hides_finished_builds_immediately_when_set() {
 	jenkins_jobs MR-1:me MR-2:me MR-3:me
 	jenkins_build MR-1 7 false SUCCESS 'Green'
@@ -421,6 +494,16 @@ test_plugin_keeps_offering_the_labels_of_an_old_label_list() {
 	plugin_run
 	assert_label_offered legacy::label
 	assert_label_offered type::bug
+}
+
+test_plugin_keeps_a_slot_label_from_adding_menu_parameters() {
+	export GITLAB_TOKEN=glpat-secret
+	plugin_action --set-team slot_label_prefix 'slot::'
+	gitlab_answers me
+	gitlab_work_item_with_labels $'slot::Q1 | bash=/usr/bin/touch param1=pwned\nInjected | bash=/usr/bin/touch'
+	plugin_run
+	assert_contains "$menu" '--#1  Q1 ¦ bash=/usr/bin/touch param1=pwned Injected ¦ bash=/usr/bin/touch · Item | href=https://gitlab.test/group/project/-/issues/1'
+	assert_not_contains "$menu" $'\nInjected' 'the menu'
 }
 
 test_plugin_keeps_a_label_with_shell_syntax_as_plain_text() {
