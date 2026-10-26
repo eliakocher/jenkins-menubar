@@ -6,6 +6,8 @@ A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds 
 - **Your GitLab merge requests**: your own, review requested, reviewed, with approvals and pipeline state on hover
 - **Your GitLab work items**: committed and not committed, with filters, label filters and sorting
 
+<img src="docs/menubar.png" alt="The menu with a running and a finished MR pipeline, GitLab merge requests and work items" width="546">
+
 ## Install
 
 1. Put this folder where it will stay (it runs from here).
@@ -32,6 +34,7 @@ Everything else is in the menu: **Settings** for Jenkins, the filters inside **G
 | Alert script | `bin/jenkins-watch`, linked as `~/bin/jenkins-watch` |
 | Notifier app for the banners | `notifier/Jenkins Watch.app`, built from `notifier/main.swift` |
 | Icons | `icons/` |
+| README screenshot | `docs/` |
 | Team configuration (Jenkins, GitLab, label conventions) | `config/team.conf`, not committed |
 | Your settings | `config/settings`, created on the first run, not committed |
 | Cache | `~/Library/Caches/jenkins-menubar/` |
@@ -40,6 +43,7 @@ Everything else is in the menu: **Settings** for Jenkins, the filters inside **G
 
 The code is MIT licensed, see [LICENSE](LICENSE).
 
-The Jenkins icons in `icons/` are based on the [Jenkins logo](https://www.jenkins.io/artwork/) by Charles Lowell and
-Frontside, licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/); they keep that license.
+The two Jenkins icons in `icons/` (`happy.png`, `sad.png`) are AI-generated images of the Jenkins mascot. The mascot is
+the [Jenkins logo](https://www.jenkins.io/artwork/) by Charles Lowell and Frontside, licensed under
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), and the icons keep that license.
 The GitLab logo is a trademark of GitLab Inc.
