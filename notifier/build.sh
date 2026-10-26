@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds "Jenkins Watch.app", the notifier that posts the build banners with the Jenkins face as its icon.
+# Builds "Jenkins Watch.app": the notifier that posts the build banners with the Jenkins face as its icon, and the
+# settings window.
 set -euo pipefail
 
 source_dir=$(cd "$(dirname "$0")" && pwd)
@@ -9,7 +10,7 @@ trap 'rm -rf "$work"' EXIT
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-swiftc -O -swift-version 5 -o "$app/Contents/MacOS/jenkins-notifier" "$source_dir/main.swift"
+swiftc -O -swift-version 5 -o "$app/Contents/MacOS/jenkins-notifier" "$source_dir"/*.swift
 mkdir "$work/Jenkins.iconset"
 for size in 16 32 128 256 512; do
 	sips -z $size $size "$source_dir/../icons/happy.png" --out "$work/Jenkins.iconset/icon_${size}x${size}.png" >/dev/null

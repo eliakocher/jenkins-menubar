@@ -39,7 +39,7 @@ Options:
   -n, --next          ignore the current build and watch the next one
   -i, --interval SEC  poll interval in seconds (default: $interval)
   --voice             also announce the result out loud
-  --banner            show a banner only, no dialog
+  --banner            show a banner instead of the dialog
   -t, --test          show a sample success alert and exit
   --test-failure      show a sample failure alert and exit
   -h, --help          show this help
@@ -105,8 +105,11 @@ announce() {
 	[[ -n $title ]] && body="$title"$'\n'"$facts"
 	[[ $result == SUCCESS ]] && icon="$ICON_DIR/happy.png"
 	[[ $result == SUCCESS && -n $mr_url ]] && default_link=mr
-	banner "$headline" "$body" "$url" "$mr_url" "$default_link"
-	((dialog)) || return 0
+	# The dialog or the banner, never both: the dialog stays on screen until it is dismissed anyway.
+	if ((!dialog)); then
+		banner "$headline" "$body" "$url" "$mr_url" "$default_link"
+		return 0
+	fi
 
 	local alert_script answer default_button='Open build'
 	[[ $default_link == mr ]] && default_button='Open MR'

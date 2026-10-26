@@ -16,6 +16,8 @@ plugin_file=$0
 [[ -L $plugin_file ]] && plugin_file=$(readlink "$plugin_file")
 tool_dir=$(cd "$(dirname "$plugin_file")/.." && pwd)
 watch="$tool_dir/bin/jenkins-watch"
+# The notifier app also has the settings window.
+settings_app="$tool_dir/notifier/Jenkins Watch.app"
 config_dir="$tool_dir/config"
 team_file="$config_dir/team.conf"
 settings_file="$config_dir/settings"
@@ -38,6 +40,7 @@ merged_file="$cache_dir/merged-merge-requests"
 gitlab_icon_file="$tool_dir/icons/gitlab.png"
 mkdir -p "$cache_dir" "${settings_file%/*}"
 touch "$state_file" "$hidden_file" "$rows_file"
+[[ -f $team_file ]] || cp "$config_dir/team.example.conf" "$team_file"
 
 # Where Jenkins and GitLab live and the team's label conventions: config/team.conf, see config/team.example.conf.
 team_value() {
@@ -61,12 +64,12 @@ if [[ ! -f $settings_file ]]; then
 # ── Jenkins builds ──
 # Check Jenkins every N seconds.
 refresh_seconds=60
-# Hide finished builds after N hours, 0 = never.
+# Hide finished builds after N hours, 0 = never, immediately = as soon as they finish.
 hide_successful_after_hours=24
 hide_failed_after_hours=168
 # Hide the builds of merged MRs: on | off
 hide_merged=on
-# When a build finishes: dialog (big alert) | banner
+# When a build finishes: dialog (a big alert) | banner, one or the other
 alert=dialog
 # Say the result out loud: on | off
 voice=off
@@ -109,12 +112,25 @@ number_setting() {
 	printf '%s' "$value"
 }
 
-set_setting() {
-	awk -v key="$1" -v value="$2" '
+# The hours after which finished builds hide: a number, 0 for never or "immediately".
+hide_setting() {
+	local value
+	value=$(setting "$1" "$2")
+	[[ $value =~ ^[0-9]+$ || $value == immediately ]] || value=$2
+	printf '%s' "$value"
+}
+
+# set_value <file> <key> <value>: replaces the key's line, or adds one.
+set_value() {
+	awk -v key="$2" -v value="$3" '
 		index($0, key "=") == 1 { print key "=" value; found = 1; next }
 		{ print }
 		END { if (!found) print key "=" value }
-	' "$settings_file" >"$settings_file.tmp" && mv "$settings_file.tmp" "$settings_file"
+	' "$1" >"$1.tmp" && mv "$1.tmp" "$1"
+}
+
+set_setting() {
+	set_value "$settings_file" "$1" "$2"
 }
 
 watch_flags() {
@@ -131,34 +147,16 @@ label_list() {
 	list_setting "$1" | jq -R . | jq -sc .
 }
 
-# Adds the label to the "with" or "without" list, or removes it when it is already there; a label is never in both.
-toggle_label() {
-	local key="work_items_$1_labels" other=work_items_with_labels
-	[[ $1 == with ]] && other=work_items_without_labels
-	if list_setting "$key" | grep -qxF -- "$2"; then
-		set_setting "$key" "$(list_setting "$key" | grep -vxF -- "$2" | paste -sd , -)"
-	else
-		set_setting "$key" "$( (list_setting "$key"; echo "$2") | paste -sd , -)"
-		set_setting "$other" "$(list_setting "$other" | grep -vxF -- "$2" | paste -sd , -)"
-	fi
+# set_label_filter <label> <with | without | any>: puts the label in the "with" or the "without" list, or in neither; a
+# label is never in both.
+set_label_filter() {
+	[[ $2 == with || $2 == without || $2 == any ]] || return 2
+	local key
+	for key in work_items_with_labels work_items_without_labels; do
+		set_setting "$key" "$(list_setting "$key" | grep -vxF -- "$1" | paste -sd , -)"
+	done
+	[[ $2 == any ]] || set_setting "work_items_$2_labels" "$( (list_setting "work_items_$2_labels"; echo "$1") | paste -sd , -)"
 }
-
-case ${1:-} in
-	--set) set_setting "$2" "$3"; exit 0 ;;
-	# The menu passes the label base64-encoded: label names come from GitLab and must not reach a shell as they are.
-	--label) toggle_label "$2" "$(printf '%s' "$3" | base64 --decode)"; exit 0 ;;
-	--clear-labels)
-		set_setting work_items_with_labels ''
-		set_setting work_items_without_labels ''
-		exit 0
-		;;
-	--hide) printf '%s\t%s\n' "$2" "$3" >>"$hidden_file"; exit 0 ;;
-	--hide-finished) awk -F '\t' '$5 == "false" { print $1 "\t" $4 }' "$rows_file" >>"$hidden_file"; exit 0 ;;
-	--unhide-all) : >"$hidden_file"; exit 0 ;;
-	--check-now) rm -f "$last_poll_file" "$last_gitlab_poll_file"; [[ -f $jobs_file ]] && touch -t 200001010000 "$jobs_file"; exit 0 ;;
-	--preview-success) "$watch" --test $(watch_flags); exit 0 ;;
-	--preview-failure) "$watch" --test-failure $(watch_flags); exit 0 ;;
-esac
 
 # SwiftBar does not source ~/.zshrc, so a token comes from the environment, the login keychain (service jenkins-menubar,
 # account the variable name) or a plain export in ~/.zshrc.
@@ -214,7 +212,7 @@ poll() {
 	JENKINS_MCP_BASIC_AUTH=$(token JENKINS_MCP_BASIC_AUTH)
 	export JENKINS_MCP_BASIC_AUTH
 	if [[ -z $JENKINS_MCP_BASIC_AUTH ]]; then
-		echo 'No Jenkins token: export JENKINS_MCP_BASIC_AUTH in ~/.zshrc, or put it in the keychain (README)' >"$error_file"
+		echo 'No Jenkins token: add it in Settings… → Accounts, or export JENKINS_MCP_BASIC_AUTH in ~/.zshrc' >"$error_file"
 		return
 	fi
 	# MR jobs name the GitLab author as contributor; the Jenkins login stands in for the GitLab username until GitLab answered.
@@ -447,19 +445,15 @@ def countText: if .count > (.nodes | length) then "\(.nodes | length) of \(.coun
 def slot: if $slotPrefix == "" then null else [.labels.nodes[].title | select(startswith($slotPrefix)) | ltrimstr($slotPrefix)][0] end;
 def mergeRequestMark($mergeRequests):
 	if any($mergeRequests[]; .state == "opened") then "🔀" elif any($mergeRequests[]; .state == "merged") then "🏁" else empty end;
-def scopeOf: if test("::") then split("::")[0] elif test(":") then split(":")[0] else "Other" end;
 def valueOf: if test("::") then split("::")[1:] | join("::") elif test(":") then split(":")[1:] | join(":") else . end;
-def action($key; $value): "bash=\"\($self)\" param1=--set param2=\($key) param3=\"\($value)\" terminal=false refresh=true";
-def option($depth; $key; $value; $text; $current):
-	"\($depth)\($text | clean) | \(action($key; $value))\(if $value == $current then " checked=true" else "" end)";
-def choice($title; $key; $current; $options):
-	"--\($title): \([$options[] | select(.[0] == $current) | .[1]][0] // $current)",
-	($options[] | option("----"; $key; .[0]; .[1]; $current));
-def labelToggle($depth; $mode; $list; $text; $value):
-	"\($depth)\($text | clean) | bash=\"\($self)\" param1=--label param2=\($mode) param3=\($value | @base64) terminal=false refresh=true\(if $value | IN($list[]) then " checked=true" else "" end)";
-def labelTree($mode; $list):
-	($labels + $with + $without) | unique | group_by(scopeOf)[]
-	| "------\(.[0] | scopeOf | clean)", (.[] | labelToggle("--------"; $mode; $list; valueOf; .));
+def named($options; $value): [$options[] | select(.[0] == $value) | .[1]][0] // $value;
+# The filters in one line; the settings window changes them.
+def filters:
+	[named([["assigned", "Assigned to me"], ["authored", "Created by me"]]; $scope),
+		(if $type == "all" then empty else named([["ISSUE", "Issues"], ["TASK", "Tasks"], ["EPIC", "Epics"], ["INCIDENT", "Incidents"]]; $type) end),
+		named([["opened", "Open"], ["closed", "Closed"], ["all", "Open and closed"]]; $state),
+		($with[] | "+" + valueOf), ($without[] | "−" + valueOf)]
+	| join(" · ") | clean;
 def entry:
 	# Automatic MRs (like cascades between release branches) only mention the work item, they are not work on it.
 	[$related[.reference].mergeRequests[]? | select((.state == "opened" or .state == "merged")
@@ -481,19 +475,8 @@ def section($title):
 	(if $data != null and ([$committedItems, $otherItems] | map(.nodes // [] | length) | add) == 0
 		then "--No work items match the filter | color=#8E8E93", "-----" else empty end),
 	(if $data == null then "-----" else empty end),
-	"--Filter and sort | size=12 color=#8E8E93",
-	choice("Show"; "work_items_scope"; $scope; [["assigned", "Assigned to me"], ["authored", "Created by me"]]),
-	choice("Type"; "work_items_type"; $type; [["all", "All"], ["ISSUE", "Issues"], ["TASK", "Tasks"], ["EPIC", "Epics"], ["INCIDENT", "Incidents"]]),
-	choice("State"; "work_items_state"; $state; [["opened", "Open"], ["closed", "Closed"], ["all", "All"]]),
-	"--Labels: \(if ($with + $without | length) == 0 then "Any" else [($with[] | "+" + valueOf), ($without[] | "−" + valueOf)] | join(" ") | clean end)",
-	"----With labels",
-	labelTree("with"; $with),
-	"----Without labels",
-	labelTree("without"; $without),
-	(if ($with + $without | length) > 0 then "-------", "----Clear label filters | bash=\"\($self)\" param1=--clear-labels terminal=false refresh=true" else empty end),
-	choice("Sort by"; "work_items_sort"; $sort; [["UPDATED_DESC", "Recently updated"], ["CREATED_DESC", "Recently created"], ["CREATED_ASC", "Oldest first"], ["DUE_DATE_ASC", "Due date"], ["TITLE_ASC", "Title"], ["WEIGHT_DESC", "Weight"]]),
-	choice("Show at most"; "work_items_limit"; $limit; [["10", "10"], ["20", "20"], ["30", "30"], ["50", "50"]]),
-	"--Edit in the settings file | bash=/usr/bin/open param1=-t param2=\"\($settings)\" terminal=false",
+	"--\(filters) | size=12 color=#8E8E93",
+	"--Filters… | \($filtersAction)",
 	"-----",
 	"--All work items in GitLab | href=\($base)/dashboard/issues?\(if $scope == "authored" then "author_username" else "assignee_username" end)=\($me)&state=\($state)",
 	(if $checked != "" then "--Last checked \($checked) | size=12 color=#8E8E93" else empty end)
@@ -645,18 +628,16 @@ render_work_items() {
 		echo '--Needs the GitLab token, see GitLab merge requests | color=#8E8E93'
 		return
 	fi
-	local result=null labels='[]' checked=''
+	local result=null checked=''
 	[[ -s $work_items_file ]] && result=$(cat "$work_items_file")
-	[[ -s $work_item_labels_file ]] && labels=$(jq -c 'if type == "array" then . else keys end' "$work_item_labels_file" 2>/dev/null || echo '[]')
 	[[ -s $last_gitlab_poll_file ]] && checked=$(date -r "$(cat "$last_gitlab_poll_file")" +%H:%M)
-	jq -nr --argjson result "$result" --arg problem "$(cat "$work_items_error_file" 2>/dev/null)" --arg self "$self" \
+	jq -nr --argjson result "$result" --arg problem "$(cat "$work_items_error_file" 2>/dev/null)" \
 		--arg project "$GITLAB_PROJECT" --arg base "$GITLAB_URL" --arg me "$(jq -r '.data.currentUser.username // empty' "$gitlab_file" 2>/dev/null)" \
 		--arg scope "$(setting work_items_scope assigned)" --arg type "$(setting work_items_type all)" \
 		--arg state "$(setting work_items_state opened)" --argjson with "$(label_list work_items_with_labels)" \
 		--argjson without "$(label_list work_items_without_labels)" \
 		--argjson related "$(cat "$related_dir"/*.json 2>/dev/null | jq -sc 'map({key: .reference, value: .}) | from_entries')" \
-		--arg sort "$(setting work_items_sort UPDATED_DESC)" --arg limit "$(number_setting work_items_limit 20)" \
-		--argjson labels "$labels" --arg checked "$checked" --arg settings "$settings_file" --arg icon "$(gitlab_icon)" \
+		--arg checked "$checked" --arg icon "$(gitlab_icon)" --arg filtersAction "$(settings_action gitlab)" \
 		--arg slotPrefix "$SLOT_LABEL_PREFIX" --arg ignoredPrefix "$IGNORED_MR_PREFIX" --arg committedLabel "$COMMITTED_LABEL" "$WORK_ITEMS_MENU"
 }
 
@@ -673,7 +654,11 @@ render_gitlab() {
 		echo "GitLab merge requests$(gitlab_icon)"
 		echo '--Needs a GitLab token with the read_api scope | color=#8E8E93'
 		echo "--1. Create the token in GitLab | href=$GITLAB_URL/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api"
-		echo '--2. Add  export GITLAB_TOKEN=<the token>  to ~/.zshrc, or put it in the keychain (README) | color=#8E8E93'
+		if has_settings_app; then
+			echo "--2. Paste it in Settings… → Accounts | $(settings_action accounts)"
+		else
+			echo '--2. Add  export GITLAB_TOKEN=<the token>  to ~/.zshrc, or put it in the keychain (README) | color=#8E8E93'
+		fi
 		echo "--3. Check now | bash=\"$self\" param1=--check-now terminal=false refresh=true"
 	fi
 }
@@ -692,19 +677,27 @@ ago() {
 	fi
 }
 
-option() {
-	local current=$1 key=$2 value=$3 label=$4 checked=''
-	[[ $current == "$value" ]] && checked=' checked=true'
-	echo "----$label | bash=\"$self\" param1=--set param2=$key param3=$value terminal=false refresh=true$checked"
+has_settings_app() {
+	[[ -x $settings_app/Contents/MacOS/jenkins-notifier ]]
+}
+
+# settings_action <pane>: the SwiftBar parameters of a menu item that opens the settings window at the pane (jenkins,
+# gitlab, accounts or team); without the app, which install.sh builds, the settings file in a text editor.
+settings_action() {
+	if has_settings_app; then
+		printf 'bash=/usr/bin/open param1=-n param2="%s" param3=--args param4=--settings param5=%s terminal=false' "$settings_app" "$1"
+	else
+		printf 'bash=/usr/bin/open param1=-t param2="%s" terminal=false' "$settings_file"
+	fi
 }
 
 render() {
-	local now hide_successful hide_failed hide_after hide_merged running=0 failed=0 unstable=0 green=0 finished_visible=0 hidden_count=0 menu='' summary=''
+	local now hide_successful hide_failed hide_after hide_merged running=0 failed=0 unstable=0 green=0 hidden_count=0 menu='' summary=''
 	local job title mr_url number building result started_ms estimate_ms duration_ms stages failed_stages
 	local mr build_url icon label detail elapsed left finished_age last_poll
 	now=$(date +%s)
-	hide_successful=$(number_setting hide_successful_after_hours 24)
-	hide_failed=$(number_setting hide_failed_after_hours 168)
+	hide_successful=$(hide_setting hide_successful_after_hours 24)
+	hide_failed=$(hide_setting hide_failed_after_hours 168)
 	hide_merged=$(setting hide_merged on)
 
 	while IFS=$'\t' read -r job title mr_url number building result started_ms estimate_ms duration_ms stages failed_stages; do
@@ -714,6 +707,7 @@ render() {
 			finished_age=$((now - (started_ms + duration_ms) / 1000))
 			hide_after=$hide_failed
 			[[ $result == SUCCESS ]] && hide_after=$hide_successful
+			[[ $hide_after == immediately ]] && continue
 			((hide_after > 0 && finished_age > hide_after * 3600)) && continue
 		fi
 		if grep -qxF "$job"$'\t'"$number" "$hidden_file"; then
@@ -737,7 +731,6 @@ render() {
 			fi
 			[[ -n $stages ]] && detail="▶ $stages · $detail"
 		else
-			finished_visible=$((finished_visible + 1))
 			case $result in
 				SUCCESS) icon='✅'; green=$((green + 1)) ;;
 				UNSTABLE) icon='⚠️'; unstable=$((unstable + 1)) ;;
@@ -799,68 +792,160 @@ render() {
 	last_poll=$(cat "$last_poll_file" 2>/dev/null)
 	echo "Check now${last_poll:+ (last checked $(date -r "$last_poll" +%H:%M))} | bash=\"$self\" param1=--check-now terminal=false refresh=true"
 	echo "All builds in Jenkins | href=$JOB_ROOT"
-
-	echo 'Settings'
-	echo '--Check Jenkins every'
-	local current
-	current=$(number_setting refresh_seconds 60)
-	option "$current" refresh_seconds 30 '30 seconds'
-	option "$current" refresh_seconds 60 '1 minute'
-	option "$current" refresh_seconds 120 '2 minutes'
-	option "$current" refresh_seconds 300 '5 minutes'
-	option "$current" refresh_seconds 600 '10 minutes'
-	echo '--Check GitLab every'
-	current=$(number_setting gitlab_refresh_seconds 120)
-	option "$current" gitlab_refresh_seconds 60 '1 minute'
-	option "$current" gitlab_refresh_seconds 120 '2 minutes'
-	option "$current" gitlab_refresh_seconds 300 '5 minutes'
-	option "$current" gitlab_refresh_seconds 600 '10 minutes'
-	option "$current" gitlab_refresh_seconds 1800 '30 minutes'
-	echo '--Hide successful builds after'
-	option "$hide_successful" hide_successful_after_hours 1 '1 hour'
-	option "$hide_successful" hide_successful_after_hours 8 '8 hours'
-	option "$hide_successful" hide_successful_after_hours 24 '1 day'
-	option "$hide_successful" hide_successful_after_hours 72 '3 days'
-	option "$hide_successful" hide_successful_after_hours 168 '1 week'
-	option "$hide_successful" hide_successful_after_hours 0 'Never'
-	echo '--Hide failed builds after'
-	option "$hide_failed" hide_failed_after_hours 24 '1 day'
-	option "$hide_failed" hide_failed_after_hours 72 '3 days'
-	option "$hide_failed" hide_failed_after_hours 168 '1 week'
-	option "$hide_failed" hide_failed_after_hours 336 '2 weeks'
-	option "$hide_failed" hide_failed_after_hours 0 'Never'
-	echo '--Hide builds of merged MRs'
-	option "$hide_merged" hide_merged on 'On'
-	option "$hide_merged" hide_merged off 'Off'
-	((finished_visible)) && echo "--Hide all finished builds | bash=\"$self\" param1=--hide-finished terminal=false refresh=true"
-	echo '--When a build finishes'
-	current=$(setting alert dialog)
-	option "$current" alert dialog 'Show a big alert'
-	option "$current" alert banner 'Show a banner only'
-	echo '--Say the result out loud'
-	current=$(setting voice off)
-	option "$current" voice on 'On'
-	option "$current" voice off 'Off'
-	echo '--Banner when a stage fails'
-	current=$(setting stage_alerts on)
-	option "$current" stage_alerts on 'On'
-	option "$current" stage_alerts off 'Off'
-	echo '--Menubar icons'
-	current=$(setting menubar_icons monochrome)
-	option "$current" menubar_icons monochrome 'Black and white'
-	option "$current" menubar_icons emoji 'Colored emoji'
-	echo '-----'
-	echo '--Preview the alert'
-	echo "----Success | bash=\"$self\" param1=--preview-success terminal=false"
-	echo "----Failure | bash=\"$self\" param1=--preview-failure terminal=false"
-	echo "--Open settings file | bash=/usr/bin/open param1=-t param2=\"$settings_file\" terminal=false"
+	echo "Settings… | $(settings_action jenkins)"
 }
 
-[[ -f $team_file ]] || cp "$config_dir/team.example.conf" "$team_file"
+# ── For the settings window (notifier/SettingsModel.swift), which keeps no logic of its own ──
+
+# Where token() finds the token: environment, keychain, zshrc, zshrc-computed (an export the menu cannot run) or none.
+token_source() {
+	if [[ -n ${!1:-} ]]; then
+		echo environment
+	elif security find-generic-password -s jenkins-menubar -a "$1" >/dev/null 2>&1; then
+		echo keychain
+	elif [[ -n $(exported "$1") ]]; then
+		echo zshrc
+	elif grep -qE "^[[:space:]]*export $1=" "$HOME/.zshrc" 2>/dev/null; then
+		echo zshrc-computed
+	else
+		echo none
+	fi
+}
+
+# Everything the settings window shows, as JSON: the settings with their defaults applied, the team configuration, the
+# labels the label filters offer, where the tokens come from, the files and the pages to get tokens from.
+settings_json() {
+	local pair key value known='[]'
+	[[ -s $work_item_labels_file ]] && known=$(jq -c 'if type == "array" then . else keys end' "$work_item_labels_file" 2>/dev/null || echo '[]')
+	jq -n --argjson settings "$(
+		for pair in refresh_seconds=60 hide_successful_after_hours=24 hide_failed_after_hours=168 hide_merged=on alert=dialog \
+			voice=off stage_alerts=on menubar_icons=monochrome gitlab_refresh_seconds=120 work_items_scope=assigned \
+			work_items_type=all work_items_state=opened work_items_with_labels= work_items_without_labels= \
+			work_items_sort=UPDATED_DESC work_items_limit=20; do
+			key=${pair%%=*}
+			if [[ $key == hide_*_after_hours ]]; then
+				value=$(hide_setting "$key" "${pair#*=}")
+			elif [[ ${pair#*=} =~ ^[0-9]+$ ]]; then
+				value=$(number_setting "$key" "${pair#*=}")
+			else
+				value=$(setting "$key" "${pair#*=}")
+			fi
+			printf '%s\t%s\n' "$key" "$value"
+		done | jq -Rn '[inputs | split("\t") | {key: .[0], value: (.[1] // "")}] | from_entries'
+	)" --argjson team "$(
+		for key in jenkins_job_url gitlab_url gitlab_project committed_label slot_label_prefix ignored_merge_request_prefix; do
+			printf '%s\t%s\n' "$key" "$(team_value "$key")"
+		done | jq -Rn '[inputs | split("\t") | {key: .[0], value: (.[1] // "")}] | from_entries'
+	)" --argjson known "$known" --argjson with "$(label_list work_items_with_labels)" \
+		--argjson without "$(label_list work_items_without_labels)" \
+		--arg jenkinsSource "$(token_source JENKINS_MCP_BASIC_AUTH)" \
+		--arg jenkinsUser "$(token JENKINS_MCP_BASIC_AUTH | base64 --decode 2>/dev/null | cut -d : -f 1)" \
+		--arg gitlabSource "$(token_source GITLAB_TOKEN)" --arg settingsFile "$settings_file" --arg teamFile "$team_file" \
+		--arg jenkinsRoot "${JOB_ROOT%%/job/*}" --arg gitlabUrl "$GITLAB_URL" '{
+		settings: $settings,
+		team: $team,
+		labels: ($known + $with + $without | unique),
+		tokens: {jenkins: {source: $jenkinsSource, user: $jenkinsUser}, gitlab: {source: $gitlabSource, user: ""}},
+		files: {settings: $settingsFile, team: $teamFile},
+		links: {
+			jenkinsToken: (if $jenkinsRoot == "" then null else "\($jenkinsRoot)/me/" end),
+			gitlabToken: (if $gitlabUrl == "" then null
+				else "\($gitlabUrl)/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api" end)
+		}
+	}'
+}
+
+# store_token <JENKINS_MCP_BASIC_AUTH | GITLAB_TOKEN>: puts the token read from stdin in the keychain. security reads its
+# command from stdin too, so the token never shows up in ps.
+store_token() {
+	local value token_pattern='^[A-Za-z0-9+/=._~-]+$'
+	value=$(cat)
+	[[ $1 == JENKINS_MCP_BASIC_AUTH || $1 == GITLAB_TOKEN ]] || { echo "unknown token $1" >&2; return 2; }
+	[[ $value =~ $token_pattern ]] || { echo 'That does not look like a token: it has spaces or quotes' >&2; return 2; }
+	printf 'add-generic-password -U -s jenkins-menubar -a %s -w "%s"\n' "$1" "$value" | security -i >/dev/null 2>&1
+	security find-generic-password -s jenkins-menubar -a "$1" >/dev/null 2>&1 || { echo 'The keychain did not take the token' >&2; return 1; }
+	# Jenkins and GitLab are asked again with the new token right away.
+	rm -f "$last_poll_file" "$last_gitlab_poll_file"
+}
+
+delete_token() {
+	[[ $1 == JENKINS_MCP_BASIC_AUTH || $1 == GITLAB_TOKEN ]] || { echo "unknown token $1" >&2; return 2; }
+	security delete-generic-password -s jenkins-menubar -a "$1" >/dev/null 2>&1
+	rm -f "$last_poll_file" "$last_gitlab_poll_file"
+}
+
+# Asks Jenkins and GitLab with the tokens the menu uses: JSON with ok and a message for each.
+check_accounts() {
+	local jenkins_ok=false jenkins_message gitlab_ok=false gitlab_message status username answer="$cache_dir/check-accounts.json"
+	JENKINS_MCP_BASIC_AUTH=$(token JENKINS_MCP_BASIC_AUTH)
+	GITLAB_TOKEN=$(token GITLAB_TOKEN)
+	if [[ -z $JOB_ROOT ]]; then
+		jenkins_message='Set the Jenkins job in Team first'
+	elif [[ -z $JENKINS_MCP_BASIC_AUTH ]]; then
+		jenkins_message='No token yet'
+	else
+		status=$(curl -sS --connect-timeout 5 --max-time 20 -o /dev/null -w '%{http_code}' \
+			-H @<(printf 'Authorization: Basic %s\n' "$JENKINS_MCP_BASIC_AUTH") "$JOB_ROOT/api/json?tree=name" 2>/dev/null)
+		case $status in
+			200)
+				jenkins_ok=true
+				jenkins_message="Signed in as $(printf '%s' "$JENKINS_MCP_BASIC_AUTH" | base64 --decode 2>/dev/null | cut -d : -f 1)"
+				;;
+			401 | 403) jenkins_message='Jenkins rejected the token' ;;
+			404) jenkins_message='Jenkins does not know the job: check the job URL in Team' ;;
+			000) jenkins_message='Jenkins unreachable (VPN?)' ;;
+			*) jenkins_message="Jenkins answered with HTTP $status" ;;
+		esac
+	fi
+	if [[ -z $GITLAB_URL ]]; then
+		gitlab_message='Set the GitLab URL in Team first'
+	elif [[ -z $GITLAB_TOKEN ]]; then
+		gitlab_message='No token yet'
+	else
+		status=$(gitlab_request 'query { currentUser { username } }' '{}' "$answer")
+		username=$(jq -r '.data.currentUser.username // empty' "$answer" 2>/dev/null)
+		rm -f "$answer"
+		if [[ $status == 200 && -n $username ]]; then
+			gitlab_ok=true
+			gitlab_message="Signed in as $username"
+		elif [[ $status == 401 || $status == 403 || $status == 200 ]]; then
+			gitlab_message='GitLab rejected the token (expired, or without the read_api scope?)'
+		elif [[ $status == 000 ]]; then
+			gitlab_message='GitLab unreachable'
+		else
+			gitlab_message="GitLab answered with HTTP $status"
+		fi
+	fi
+	jq -n --argjson jenkinsOk "$jenkins_ok" --arg jenkinsMessage "$jenkins_message" \
+		--argjson gitlabOk "$gitlab_ok" --arg gitlabMessage "$gitlab_message" \
+		'{jenkins: {ok: $jenkinsOk, message: $jenkinsMessage}, gitlab: {ok: $gitlabOk, message: $gitlabMessage}}'
+}
+
+case ${1:-} in
+	--set) set_setting "$2" "$3"; exit 0 ;;
+	--set-team) set_value "$team_file" "$2" "$3"; exit 0 ;;
+	--label-filter) set_label_filter "$2" "$3"; exit ;;
+	--clear-labels)
+		set_setting work_items_with_labels ''
+		set_setting work_items_without_labels ''
+		exit 0
+		;;
+	--hide) printf '%s\t%s\n' "$2" "$3" >>"$hidden_file"; exit 0 ;;
+	--unhide-all) : >"$hidden_file"; exit 0 ;;
+	--check-now) rm -f "$last_poll_file" "$last_gitlab_poll_file"; [[ -f $jobs_file ]] && touch -t 200001010000 "$jobs_file"; exit 0 ;;
+	--preview-success) "$watch" --test $(watch_flags); exit 0 ;;
+	--preview-failure) "$watch" --test-failure $(watch_flags); exit 0 ;;
+	--settings-json) settings_json; exit ;;
+	--set-token) store_token "$2"; exit ;;
+	--delete-token) delete_token "$2"; exit ;;
+	--check-accounts) check_accounts; exit ;;
+esac
+
 if [[ -z $JOB_ROOT || -z $GITLAB_URL || -z $GITLAB_PROJECT ]]; then
 	echo 'CI ⚠️'
 	echo '---'
-	echo 'Fill in config/team.conf: your Jenkins job and GitLab project | color=red'
+	echo 'Fill in the team settings: your Jenkins job and GitLab project | color=red'
+	has_settings_app && echo "Open the team settings… | $(settings_action team)"
 	echo "Open config/team.conf | bash=/usr/bin/open param1=-t param2=\"$team_file\" terminal=false"
 	exit 0
 fi

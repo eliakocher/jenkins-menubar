@@ -7,7 +7,8 @@ JOB_ROOT=https://jenkins.test/job/project
 GITLAB=https://gitlab.test
 
 setup_sandbox() {
-	sandbox=$(mktemp -d "${TMPDIR:-/tmp}/jenkins-menubar-test.XXXXXX")
+	# Without the trailing slash of $TMPDIR, so paths look like the ones the plugin builds.
+	sandbox=$(mktemp -d "${TMPDIR%/}/jenkins-menubar-test.XXXXXX")
 	tool=$sandbox/tool
 	mkdir -p "$tool/config" "$sandbox/home" "$sandbox/fakes" "$sandbox/curl" "$sandbox/keychain"
 	cp -R "$repo_dir/plugins" "$repo_dir/bin" "$repo_dir/icons" "$tool/"
@@ -165,6 +166,17 @@ plugin_render() {
 # plugin_action <arguments>: a menu item's action, like --hide MR-1 7.
 plugin_action() {
 	"$tool/plugins/jenkins.30s.sh" "$@" >/dev/null 2>>"$sandbox/stderr"
+}
+
+# opens_settings <pane>: the SwiftBar parameters of a menu item that opens the settings window at the pane.
+opens_settings() {
+	printf 'bash=/usr/bin/open param1=-n param2="%s" param3=--args param4=--settings param5=%s terminal=false' \
+		"$tool/notifier/Jenkins Watch.app" "$1"
+}
+
+# What the settings window reads: plugin_json [jq filter].
+plugin_json() {
+	"$tool/plugins/jenkins.30s.sh" --settings-json 2>>"$sandbox/stderr" | jq -r "${1:-.}"
 }
 
 # The first line, what the menubar shows.

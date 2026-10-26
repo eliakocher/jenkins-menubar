@@ -6,7 +6,8 @@ test_plugin_asks_for_the_team_config() {
 	: >"$tool/config/team.conf"
 	plugin_run
 	assert_equals "$(menubar)" 'CI ⚠️'
-	assert_contains "$menu" 'Fill in config/team.conf'
+	assert_contains "$menu" 'Fill in the team settings'
+	assert_contains "$menu" "Open the team settings… | $(opens_settings team)"
 }
 
 test_plugin_reads_a_quoted_token_with_a_comment_from_zshrc() {
@@ -216,14 +217,146 @@ test_plugin_does_not_ask_for_the_builds_when_the_job_list_is_unreachable() {
 	assert_contains "$menu" '✅ First'
 }
 
-# ── Settings ──
+test_plugin_hides_finished_builds_immediately_when_set() {
+	jenkins_jobs MR-1:me MR-2:me MR-3:me
+	jenkins_build MR-1 7 false SUCCESS 'Green'
+	jenkins_build MR-2 3 false FAILURE 'Red'
+	jenkins_build MR-3 5 true null 'Running'
+	jenkins_stages MR-3 5
+	plugin_action --set hide_successful_after_hours immediately
+	plugin_run
+	assert_not_contains "$menu" '✅ Green'
+	assert_contains "$menu" '❌ Red'
+	assert_contains "$menu" '⏳ Running'
+	assert_equals "$(plugin_json .settings.hide_successful_after_hours)" immediately 'hide_successful_after_hours'
 
-test_plugin_settings_menu_writes_the_settings_file() {
-	plugin_action --set refresh_seconds 300
-	assert_contains "$(cat "$tool/config/settings")" $'\nrefresh_seconds=300\n' 'the settings file'
+	plugin_action --set hide_failed_after_hours immediately
 	plugin_render
-	assert_contains "$menu" '----5 minutes | bash='
-	assert_contains "$menu" 'param2=refresh_seconds param3=300 terminal=false refresh=true checked=true'
+	assert_not_contains "$menu" '❌ Red'
+	assert_contains "$menu" '⏳ Running'
+	assert_not_contains "$menu" 'Hide all finished builds'
+}
+
+# ── Settings and the settings window ──
+
+test_plugin_settings_item_opens_the_settings_window() {
+	plugin_run
+	assert_contains "$menu" $'\n'"Settings… | $(opens_settings jenkins)"
+}
+
+test_plugin_settings_item_opens_the_settings_file_without_the_app() {
+	rm "$tool/notifier/Jenkins Watch.app/Contents/MacOS/jenkins-notifier"
+	plugin_run
+	assert_contains "$menu" "Settings… | bash=/usr/bin/open param1=-t param2=\"$tool/config/settings\" terminal=false"
+}
+
+test_plugin_previews_the_alert_the_settings_choose() {
+	plugin_action --preview-success
+	assert_equals "$(calls jenkins-watch)" "jenkins-watch"$'\t'"--test" 'the preview with the big alert'
+	: >"$CALLS"
+	plugin_action --set alert banner
+	plugin_action --set voice on
+	plugin_action --preview-failure
+	assert_equals "$(calls jenkins-watch)" "jenkins-watch"$'\t'"--test-failure"$'\t'"--voice"$'\t'"--banner" 'the preview with the banner'
+}
+
+test_plugin_settings_json_has_the_defaults_and_the_set_values() {
+	plugin_action --set refresh_seconds 300
+	plugin_action --set hide_successful_after_hours soon
+	assert_contains "$(cat "$tool/config/settings")" $'\nrefresh_seconds=300\n' 'the settings file'
+	assert_equals "$(plugin_json .settings.refresh_seconds)" 300 'refresh_seconds'
+	assert_equals "$(plugin_json .settings.hide_successful_after_hours)" 24 'hide_successful_after_hours, not a number'
+	assert_equals "$(plugin_json .settings.alert)" dialog 'alert'
+	assert_equals "$(plugin_json .team.gitlab_project)" group/project 'gitlab_project'
+	assert_equals "$(plugin_json .files.settings)" "$tool/config/settings" 'the settings file'
+	assert_equals "$(plugin_json .links.jenkinsToken)" https://jenkins.test/me/ 'the Jenkins token page'
+}
+
+test_plugin_set_team_writes_the_team_config() {
+	plugin_action --set-team committed_label 'workflow::committed'
+	assert_contains "$(cat "$tool/config/team.conf")" $'\ncommitted_label=workflow::committed' 'team.conf'
+	assert_equals "$(plugin_json .team.committed_label)" 'workflow::committed' 'committed_label'
+}
+
+test_plugin_work_items_menu_sums_up_the_filters() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me
+	plugin_action --set work_items_scope authored
+	plugin_action --set work_items_state all
+	plugin_action --label-filter 'type::bug' with
+	plugin_action --label-filter 'workflow::done' without
+	plugin_run
+	assert_contains "$menu" '--Created by me · Open and closed · +bug · −done | size=12 color=#8E8E93'
+	assert_contains "$menu" "--Filters… | $(opens_settings gitlab)"
+}
+
+test_plugin_label_filter_puts_a_label_in_one_list() {
+	plugin_action --label-filter 'type::bug' with
+	plugin_action --label-filter 'workflow::done' without
+	assert_equals "$(plugin_json .settings.work_items_with_labels)" 'type::bug' 'with'
+	assert_equals "$(plugin_json .settings.work_items_without_labels)" 'workflow::done' 'without'
+	plugin_action --label-filter 'type::bug' without
+	assert_equals "$(plugin_json .settings.work_items_with_labels)" '' 'with'
+	assert_equals "$(plugin_json .settings.work_items_without_labels)" 'workflow::done,type::bug' 'without'
+	plugin_action --label-filter 'workflow::done' any
+	assert_equals "$(plugin_json .settings.work_items_without_labels)" 'type::bug' 'without'
+	assert_equals "$(plugin_json '.labels | join(",")')" 'type::bug' 'offered labels'
+}
+
+# ── Tokens and accounts in the settings window ──
+
+test_plugin_settings_json_tells_where_the_tokens_come_from() {
+	assert_equals "$(plugin_json .tokens.jenkins.source)" environment 'Jenkins token'
+	assert_equals "$(plugin_json .tokens.jenkins.user)" me 'Jenkins user'
+	assert_equals "$(plugin_json .tokens.gitlab.source)" none 'GitLab token'
+	unset JENKINS_MCP_BASIC_AUTH
+	echo 'export GITLAB_TOKEN=$(security find-generic-password -s gitlab -w)' >"$HOME/.zshrc"
+	assert_equals "$(plugin_json .tokens.jenkins.source)" none 'Jenkins token'
+	assert_equals "$(plugin_json .tokens.gitlab.source)" zshrc-computed 'GitLab token'
+	echo 'export GITLAB_TOKEN=glpat-plain' >"$HOME/.zshrc"
+	assert_equals "$(plugin_json .tokens.gitlab.source)" zshrc 'GitLab token'
+	printf 'glpat-stored' >"$FAKE_KEYCHAIN/jenkins-menubar.GITLAB_TOKEN"
+	assert_equals "$(plugin_json .tokens.gitlab.source)" keychain 'GitLab token'
+}
+
+test_plugin_stores_a_token_in_the_keychain_without_a_command_line_showing_it() {
+	printf 'glpat-New_token-123' | plugin_action --set-token GITLAB_TOKEN
+	assert_equals "$(cat "$FAKE_KEYCHAIN/jenkins-menubar.GITLAB_TOKEN")" glpat-New_token-123 'the token in the keychain'
+	assert_not_contains "$(cat "$FAKE_KEYCHAIN/argv")" glpat-New_token-123 'the security command lines'
+	assert_equals "$(plugin_json .tokens.gitlab.source)" keychain 'GitLab token'
+	plugin_action --delete-token GITLAB_TOKEN
+	assert_equals "$(plugin_json .tokens.gitlab.source)" none 'GitLab token after deleting it'
+}
+
+test_plugin_refuses_a_token_with_spaces() {
+	local status
+	printf 'not a token' | plugin_action --set-token GITLAB_TOKEN
+	status=$?
+	assert_equals "$status" 2 'exit status'
+	assert_equals "$(plugin_json .tokens.gitlab.source)" none 'GitLab token'
+}
+
+test_plugin_checks_the_accounts() {
+	export GITLAB_TOKEN=glpat-secret
+	route 'tree=name' 200 '{"name": "project"}'
+	gitlab_answers john.doe
+	local result
+	result=$("$tool/plugins/jenkins.30s.sh" --check-accounts 2>>"$sandbox/stderr")
+	assert_equals "$(jq -r '"\(.jenkins.ok) \(.jenkins.message)"' <<<"$result")" 'true Signed in as me' 'Jenkins'
+	assert_equals "$(jq -r '"\(.gitlab.ok) \(.gitlab.message)"' <<<"$result")" 'true Signed in as john.doe' 'GitLab'
+}
+
+test_plugin_account_check_tells_what_is_wrong() {
+	export GITLAB_TOKEN=glpat-expired
+	route 'tree=name' 401
+	route currentUser exit:7
+	local result
+	result=$("$tool/plugins/jenkins.30s.sh" --check-accounts 2>>"$sandbox/stderr")
+	assert_equals "$(jq -r '"\(.jenkins.ok) \(.jenkins.message)"' <<<"$result")" 'false Jenkins rejected the token' 'Jenkins'
+	assert_equals "$(jq -r '"\(.gitlab.ok) \(.gitlab.message)"' <<<"$result")" 'false GitLab unreachable' 'GitLab'
+	unset GITLAB_TOKEN
+	result=$("$tool/plugins/jenkins.30s.sh" --check-accounts 2>>"$sandbox/stderr")
+	assert_equals "$(jq -r '"\(.gitlab.ok) \(.gitlab.message)"' <<<"$result")" 'false No token yet' 'GitLab'
 }
 
 # ── GitLab ──
@@ -231,6 +364,7 @@ test_plugin_settings_menu_writes_the_settings_file() {
 test_plugin_explains_the_gitlab_token_when_there_is_none() {
 	plugin_run
 	assert_contains "$menu" '--Needs a GitLab token with the read_api scope'
+	assert_contains "$menu" "--2. Paste it in Settings… → Accounts | $(opens_settings accounts)"
 }
 
 test_plugin_reports_a_rejected_gitlab_token() {
@@ -257,15 +391,13 @@ test_plugin_lists_my_merge_requests_and_the_reviews_asked_of_me() {
 	assert_contains "$menu" '--Their change | href=https://gitlab.test/group/project/-/merge_requests/2 tooltip="!2 · Review requested · Ready to merge · by someone'
 }
 
-# assert_label_offered <label>: the "With labels" submenu has an item for the label.
+# assert_label_offered <label>: the label filters of the settings window offer the label.
 assert_label_offered() {
-	printf '%s\n' "$menu" | grep -F 'param2=with ' | grep -qF "param3=$(printf '%s' "$1" | base64) " ||
-		fail "expected the label filters to offer $1" "--- menu:" "$menu"
+	plugin_json '.labels[]' | grep -qxF -- "$1" || fail "expected the label filters to offer $1" "--- offered:" "$(plugin_json '.labels[]')"
 }
 
 assert_label_not_offered() {
-	! printf '%s\n' "$menu" | grep -F 'param2=with ' | grep -qF "param3=$(printf '%s' "$1" | base64) " ||
-		fail "expected the label filters not to offer $1" "--- menu:" "$menu"
+	! plugin_json '.labels[]' | grep -qxF -- "$1" || fail "expected the label filters not to offer $1" "--- offered:" "$(plugin_json '.labels[]')"
 }
 
 test_plugin_drops_the_labels_no_work_item_had_for_30_days() {
@@ -291,20 +423,14 @@ test_plugin_keeps_offering_the_labels_of_an_old_label_list() {
 	assert_label_offered type::bug
 }
 
-test_plugin_label_filter_items_carry_no_shell_syntax() {
+test_plugin_keeps_a_label_with_shell_syntax_as_plain_text() {
 	export GITLAB_TOKEN=glpat-secret
 	gitlab_answers me
 	gitlab_work_item_with_labels 'evil::$(touch pwned)' type::bug
 	plugin_run
-	local params bug
-	params=$(printf '%s\n' "$menu" | grep -F 'param1=--label' | grep -o 'param3=[^ ]*')
-	assert_contains "$params" 'param3=' 'the label items'
-	assert_equals "$(printf '%s\n' "$params" | grep -cvE '^param3=[A-Za-z0-9+/=]+$')" 0 'label parameters with other characters'
-
-	bug=$(printf '%s\n' "$menu" | grep -F -- '--------bug |' | grep -F 'param2=with ' | grep -o 'param3=[^ ]*' | cut -d = -f 2-)
-	plugin_action --label with "$bug"
-	assert_contains "$(cat "$tool/config/settings")" $'\nwork_items_with_labels=type::bug\n' 'the settings file'
-	plugin_action --label without "$bug"
-	assert_contains "$(cat "$tool/config/settings")" $'\nwork_items_with_labels=\n' 'the settings file'
-	assert_contains "$(cat "$tool/config/settings")" $'\nwork_items_without_labels=type::bug\n' 'the settings file'
+	assert_label_offered 'evil::$(touch pwned)'
+	assert_not_contains "$menu" 'pwned' 'the menu'
+	(cd "$sandbox" && plugin_action --label-filter 'evil::$(touch pwned)' with && plugin_run)
+	assert_equals "$(plugin_json .settings.work_items_with_labels)" 'evil::$(touch pwned)' 'with'
+	[[ ! -e $sandbox/pwned && ! -e $tool/pwned ]] || fail 'a label ran as a command'
 }

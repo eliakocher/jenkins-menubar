@@ -16,20 +16,24 @@ A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds 
 3. In Terminal: `./install.sh`
    It installs jq and SwiftBar through Homebrew if missing, needs the Xcode Command Line Tools
    (`xcode-select --install`) and makes SwiftBar start at login.
-4. Add the two tokens if the script says they are missing, either to `~/.zshrc` as plain values:
+4. Add the two tokens if the script says they are missing: in the menu, **Settings… → Accounts** stores them in the
+   login keychain and checks that Jenkins and GitLab take them. Plain exports in `~/.zshrc` work too:
    - `export JENKINS_MCP_BASIC_AUTH=<base64 of jenkins-user:api-token>`
    - `export GITLAB_TOKEN=<GitLab token with the read_api scope>`
 
-   or to the login keychain, which also suits a `~/.zshrc` that computes them (like `$(security …)`), something the
-   menu cannot run. Each command asks for the value:
+   A `~/.zshrc` that computes them (like `$(security …)`) does not, since the menu cannot run it: use Accounts instead,
+   or put them in the keychain yourself (each command asks for the value):
    ```
    security add-generic-password -U -s jenkins-menubar -a JENKINS_MCP_BASIC_AUTH -w
    security add-generic-password -U -s jenkins-menubar -a GITLAB_TOKEN -w
    ```
 5. Click **Allow** when macOS asks whether "Jenkins" may send notifications.
 
-Everything else is in the menu: **Settings** for Jenkins, the filters inside **GitLab work items**. Both write to
-`config/settings`, which you can also edit by hand.
+**Settings…** in the menu opens the settings window: **Jenkins** (checking, hiding, alerts), **GitLab** (checking, the
+work item filters and labels; the work items submenu's **Filters…** opens it too), **Accounts** (the tokens) and
+**Team** (`config/team.conf`). It writes `config/settings` and `config/team.conf`, which you can also edit by hand.
+
+<img src="docs/settings.png" alt="The settings window at its Jenkins pane: check interval, when to hide finished builds, the alert and the menubar icons" width="600">
 
 `jenkins-watch <MR number | build URL>` watches someone else's build from the terminal; `jenkins-watch --help` for more.
 
@@ -39,10 +43,10 @@ Everything else is in the menu: **Settings** for Jenkins, the filters inside **G
 | --- | --- |
 | SwiftBar plugin | `plugins/jenkins.30s.sh`, SwiftBar's plugin folder (or linked into yours) |
 | Alert script | `bin/jenkins-watch`, linked as `~/bin/jenkins-watch` |
-| Notifier app for the banners | `notifier/Jenkins Watch.app`, built from `notifier/main.swift` |
+| App for the banners and the settings window | `notifier/Jenkins Watch.app`, built from `notifier/*.swift` |
 | Tests | `tests/`, run with `tests/run.sh` |
 | Icons | `icons/` |
-| README screenshot | `docs/` |
+| README screenshots | `docs/` |
 | Team configuration (Jenkins, GitLab, label conventions) | `config/team.conf`, not committed |
 | Your settings | `config/settings`, created on the first run, not committed |
 | Cache | `~/Library/Caches/jenkins-menubar/` |
@@ -52,6 +56,10 @@ Everything else is in the menu: **Settings** for Jenkins, the filters inside **G
 `tests/run.sh` runs the tests of the plugin and of `jenkins-watch`; `tests/run.sh stage` only those with "stage" in
 their name. They need nothing but jq: each test runs a copy of the tool in a temporary folder, with a fake curl that
 answers like Jenkins and GitLab, and fakes for the sounds, dialogs, banners and the keychain.
+
+The settings window has no tests of its own: it keeps no logic, the plugin answers it (`--settings-json`,
+`--check-accounts`) and makes every change (`--set`, `--set-team`, `--label-filter`, `--set-token`, …), and the tests
+cover those. After changing `notifier/*.swift`, rebuild the app with `notifier/build.sh`.
 
 ## License and credits
 

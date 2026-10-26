@@ -2,10 +2,14 @@ import AppKit
 import UserNotifications
 
 // Usage: notifier --title T [--subtitle S] [--body B] [--build URL] [--mr URL] [--default build|mr]
+//        notifier --settings [jenkins|gitlab|accounts|team]    the settings window, at that pane
 final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
 	let options: [String: String]
+	let settingsPane: String?
+	private var settingsWindow: SettingsWindow?
 
 	init(arguments: [String]) {
+		settingsPane = arguments.first == "--settings" ? (arguments.dropFirst().first ?? "jenkins") : nil
 		var options: [String: String] = [:]
 		var index = 0
 		while index + 1 < arguments.count {
@@ -21,6 +25,13 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 	}
 
 	func applicationDidFinishLaunching(_ notification: Notification) {
+		if let settingsPane {
+			settingsWindow = MainActor.assumeIsolated { SettingsWindow.show(pane: settingsPane) }
+			if settingsWindow == nil {
+				quit(after: 0)
+			}
+			return
+		}
 		guard let title = options["title"] else {
 			quit(after: 10)
 			return
@@ -63,7 +74,10 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 			NSWorkspace.shared.open(url)
 		}
 		completionHandler()
-		quit(after: 0.5)
+		// macOS may hand a click to the instance with the settings window, which stays open.
+		if settingsPane == nil {
+			quit(after: 0.5)
+		}
 	}
 
 	func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {

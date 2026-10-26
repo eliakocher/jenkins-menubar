@@ -52,10 +52,11 @@ test_watch_exits_1_and_lists_the_failed_stages_of_a_failed_build() {
 	assert_contains "$(calls say)" 'Jenkins build failed'
 }
 
-test_watch_shows_a_dialog_unless_asked_for_a_banner() {
+test_watch_shows_a_dialog_and_no_banner_unless_asked_for_a_banner() {
 	jenkins_build MR-1 7 false SUCCESS
 	run_watch "$JOB_ROOT/job/MR-1/7/"
 	assert_contains "$(calls osascript)" $'osascript\t-l\tJavaScript\t-\t✅ MR-1 #7 SUCCESS'
+	assert_equals "$(call_count jenkins-notifier)" 0 'banners'
 }
 
 test_watch_follows_the_newer_build_when_its_build_was_aborted() {

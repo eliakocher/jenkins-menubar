@@ -67,8 +67,9 @@ has_token() {
 missing=0
 if ! has_token JENKINS_MCP_BASIC_AUTH; then
 	missing=1
-	echo '✗ JENKINS_MCP_BASIC_AUTH is missing. Add:  export JENKINS_MCP_BASIC_AUTH=<base64 of jenkins-user:api-token>'
-	echo '  to ~/.zshrc, or put it in the keychain (README). The API token is in Jenkins → your user → Security.'
+	echo '✗ JENKINS_MCP_BASIC_AUTH is missing. Add it in the menu: Settings… → Accounts, or add'
+	echo '  export JENKINS_MCP_BASIC_AUTH=<base64 of jenkins-user:api-token>  to ~/.zshrc.'
+	echo '  The API token is in Jenkins → your user → Security.'
 else
 	echo '✓ JENKINS_MCP_BASIC_AUTH'
 fi
@@ -76,7 +77,7 @@ if ! has_token GITLAB_TOKEN; then
 	missing=1
 	echo '✗ GITLAB_TOKEN is missing. Create a token with the read_api scope:'
 	echo "  ${gitlab_url%/}/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api"
-	echo '  and add:  export GITLAB_TOKEN=<the token>  to ~/.zshrc, or put it in the keychain (README)'
+	echo '  and paste it in the menu: Settings… → Accounts, or add  export GITLAB_TOKEN=<the token>  to ~/.zshrc'
 else
 	echo '✓ GITLAB_TOKEN'
 fi
