@@ -1,0 +1,52 @@
+#!/bin/bash
+# Fake curl: answers from the routes a test set up (see route in tests/lib.sh) and logs every request in $FAKE_CURL:
+#   argv      the command line, to check that no token is on it
+#   requests  the URL and the posted data, one request per line
+#   headers   the headers sent, also those read from a file with -H @file
+printf '%s\n' "$*" >>"$FAKE_CURL/argv"
+
+output='' format='' data='' fail=0 url=''
+while (($#)); do
+	case $1 in
+		-o) output=$2; shift ;;
+		-w) format=$2; shift ;;
+		-d | --data) data=$2; shift ;;
+		-H)
+			if [[ $2 == @* ]]; then cat "${2#@}" >>"$FAKE_CURL/headers"; else printf '%s\n' "$2" >>"$FAKE_CURL/headers"; fi
+			shift
+			;;
+		--max-time | --connect-timeout) shift ;;
+		--*) ;;
+		-*) [[ $1 == *f* ]] && fail=1 ;;
+		*) url=$1 ;;
+	esac
+	shift
+done
+printf '%s\t%s\n' "$url" "${data//$'\n'/ }" >>"$FAKE_CURL/requests"
+
+# The last route whose text is part of the URL or the posted data answers; without one, Jenkins and GitLab say 404.
+status=404 body=''
+while IFS=$'\t' read -r match route_status route_body; do
+	[[ "$url $data" == *"$match"* ]] && status=$route_status body=$route_body
+done <"$FAKE_CURL/routes"
+
+write_out() {
+	[[ -z $format ]] || printf '%b' "$(printf '%s' "$format" | sed "s/%{http_code}/$1/")"
+}
+
+# exit:<code> stands for a request that never got an answer, like exit:7 (no connection) or exit:28 (timeout).
+if [[ $status == exit:* ]]; then
+	echo "curl: (${status#exit:}) fake failure" >&2
+	write_out 000
+	exit "${status#exit:}"
+fi
+if ((fail && status >= 400)); then
+	echo "curl: (22) The requested URL returned error: $status" >&2
+	exit 22
+fi
+if [[ -n $output ]]; then
+	cat "$body" >"$output" 2>/dev/null || : >"$output"
+elif [[ -n $body ]]; then
+	cat "$body"
+fi
+write_out "$status"

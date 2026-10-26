@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Watches a Jenkins build and raises a loud alert (dialog, sound, voice, banner) when it finishes.
 set -uo pipefail
 
@@ -44,7 +44,8 @@ Options:
   --test-failure      show a sample failure alert and exit
   -h, --help          show this help
 
-Credentials: \$JENKINS_MCP_BASIC_AUTH (base64 of user:token), or \$JENKINS_USER plus \$JENKINS_TOKEN.
+Credentials: \$JENKINS_MCP_BASIC_AUTH (base64 of user:token), or \$JENKINS_USER plus \$JENKINS_TOKEN, or
+JENKINS_MCP_BASIC_AUTH in the keychain (service jenkins-menubar, see the README).
 Exit status: 0 when the build succeeded, 1 otherwise.
 EOF
 }
@@ -243,14 +244,15 @@ if [[ -n ${JENKINS_MCP_BASIC_AUTH:-} ]]; then
 	auth=$JENKINS_MCP_BASIC_AUTH
 elif [[ -n ${JENKINS_USER:-} && -n ${JENKINS_TOKEN:-} ]]; then
 	auth=$(printf '%s:%s' "$JENKINS_USER" "$JENKINS_TOKEN" | base64)
-else
-	die 'no Jenkins credentials: set JENKINS_MCP_BASIC_AUTH, or JENKINS_USER and JENKINS_TOKEN'
+elif ! auth=$(security find-generic-password -s jenkins-menubar -a JENKINS_MCP_BASIC_AUTH -w 2>/dev/null); then
+	die 'no Jenkins credentials: set JENKINS_MCP_BASIC_AUTH, or JENKINS_USER and JENKINS_TOKEN, or use the keychain (see --help)'
 fi
 
 # Sets $body. Returns 0 on success, 1 on a transient failure, 2 when retrying cannot help.
+# The token goes to curl through a file descriptor, so it does not show up in ps.
 api() {
 	local response status
-	response=$(curl -sS --max-time 30 -w '\n%{http_code}' -H "Authorization: Basic $auth" "$1" 2>/dev/null) || return 1
+	response=$(curl -sS --max-time 30 -w '\n%{http_code}' -H @<(printf 'Authorization: Basic %s\n' "$auth") "$1" 2>/dev/null) || return 1
 	status=${response##*$'\n'}
 	body=${response%$'\n'*}
 	case $status in

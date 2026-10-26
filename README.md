@@ -16,9 +16,16 @@ A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds 
 3. In Terminal: `./install.sh`
    It installs jq and SwiftBar through Homebrew if missing, needs the Xcode Command Line Tools
    (`xcode-select --install`) and makes SwiftBar start at login.
-4. Add the two tokens to `~/.zshrc` if the script says they are missing:
+4. Add the two tokens if the script says they are missing, either to `~/.zshrc` as plain values:
    - `export JENKINS_MCP_BASIC_AUTH=<base64 of jenkins-user:api-token>`
    - `export GITLAB_TOKEN=<GitLab token with the read_api scope>`
+
+   or to the login keychain, which also suits a `~/.zshrc` that computes them (like `$(security …)`), something the
+   menu cannot run. Each command asks for the value:
+   ```
+   security add-generic-password -U -s jenkins-menubar -a JENKINS_MCP_BASIC_AUTH -w
+   security add-generic-password -U -s jenkins-menubar -a GITLAB_TOKEN -w
+   ```
 5. Click **Allow** when macOS asks whether "Jenkins" may send notifications.
 
 Everything else is in the menu: **Settings** for Jenkins, the filters inside **GitLab work items**. Both write to
@@ -33,11 +40,18 @@ Everything else is in the menu: **Settings** for Jenkins, the filters inside **G
 | SwiftBar plugin | `plugins/jenkins.30s.sh`, SwiftBar's plugin folder (or linked into yours) |
 | Alert script | `bin/jenkins-watch`, linked as `~/bin/jenkins-watch` |
 | Notifier app for the banners | `notifier/Jenkins Watch.app`, built from `notifier/main.swift` |
+| Tests | `tests/`, run with `tests/run.sh` |
 | Icons | `icons/` |
 | README screenshot | `docs/` |
 | Team configuration (Jenkins, GitLab, label conventions) | `config/team.conf`, not committed |
 | Your settings | `config/settings`, created on the first run, not committed |
 | Cache | `~/Library/Caches/jenkins-menubar/` |
+
+## Tests
+
+`tests/run.sh` runs the tests of the plugin and of `jenkins-watch`; `tests/run.sh stage` only those with "stage" in
+their name. They need nothing but jq: each test runs a copy of the tool in a temporary folder, with a fake curl that
+answers like Jenkins and GitLab, and fakes for the sounds, dialogs, banners and the keychain.
 
 ## License and credits
 

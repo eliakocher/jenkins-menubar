@@ -58,20 +58,25 @@ else
 	echo '✗ could not add it; do it in System Settings → General → Login Items → + → SwiftBar'
 fi
 
-step 'Tokens in ~/.zshrc'
+step 'Tokens'
+# A token counts when the keychain holds it or ~/.zshrc exports it (see the README).
+has_token() {
+	security find-generic-password -s jenkins-menubar -a "$1" >/dev/null 2>&1 ||
+		grep -qE "^[[:space:]]*export $1=" "$HOME/.zshrc" 2>/dev/null
+}
 missing=0
-if ! grep -qE '^[[:space:]]*export JENKINS_MCP_BASIC_AUTH=' "$HOME/.zshrc" 2>/dev/null; then
+if ! has_token JENKINS_MCP_BASIC_AUTH; then
 	missing=1
 	echo '✗ JENKINS_MCP_BASIC_AUTH is missing. Add:  export JENKINS_MCP_BASIC_AUTH=<base64 of jenkins-user:api-token>'
-	echo '  (the API token is in Jenkins → your user → Security)'
+	echo '  to ~/.zshrc, or put it in the keychain (README). The API token is in Jenkins → your user → Security.'
 else
 	echo '✓ JENKINS_MCP_BASIC_AUTH'
 fi
-if ! grep -qE '^[[:space:]]*export GITLAB_TOKEN=' "$HOME/.zshrc" 2>/dev/null; then
+if ! has_token GITLAB_TOKEN; then
 	missing=1
 	echo '✗ GITLAB_TOKEN is missing. Create a token with the read_api scope:'
 	echo "  ${gitlab_url%/}/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api"
-	echo '  and add:  export GITLAB_TOKEN=<the token>'
+	echo '  and add:  export GITLAB_TOKEN=<the token>  to ~/.zshrc, or put it in the keychain (README)'
 else
 	echo '✓ GITLAB_TOKEN'
 fi
@@ -80,5 +85,5 @@ step 'Start'
 open -a SwiftBar
 echo 'A sample banner follows: click "Allow" when macOS asks whether "Jenkins" may send notifications.'
 "$here/bin/jenkins-watch" --test --banner >/dev/null 2>&1 || true
-((missing)) && printf '\nAdd the missing token(s) to ~/.zshrc; the menu picks them up within 30 seconds.\n'
+((missing)) && printf '\nAdd the missing token(s); the menu picks them up within 30 seconds.\n'
 echo 'Done.'

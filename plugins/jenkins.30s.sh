@@ -21,6 +21,7 @@ team_file="$config_dir/team.conf"
 settings_file="$config_dir/settings"
 cache_dir="$HOME/Library/Caches/jenkins-menubar"
 jobs_file="$cache_dir/my-jobs"
+jobs_user_file="$cache_dir/my-jobs-user"
 rows_file="$cache_dir/rows"
 state_file="$cache_dir/state"
 hidden_file="$cache_dir/hidden"
@@ -144,7 +145,8 @@ toggle_label() {
 
 case ${1:-} in
 	--set) set_setting "$2" "$3"; exit 0 ;;
-	--label) toggle_label "$2" "$3"; exit 0 ;;
+	# The menu passes the label base64-encoded: label names come from GitLab and must not reach a shell as they are.
+	--label) toggle_label "$2" "$(printf '%s' "$3" | base64 --decode)"; exit 0 ;;
 	--clear-labels)
 		set_setting work_items_with_labels ''
 		set_setting work_items_without_labels ''
@@ -158,13 +160,37 @@ case ${1:-} in
 	--preview-failure) "$watch" --test-failure $(watch_flags); exit 0 ;;
 esac
 
-# SwiftBar does not source ~/.zshrc, where the tokens are exported.
-exported() {
-	sed -nE "s/^[[:space:]]*export $1=[\"']?([^\"']+)[\"']?[[:space:]]*\$/\1/p" "$HOME/.zshrc" 2>/dev/null | tail -n 1
+# SwiftBar does not source ~/.zshrc, so a token comes from the environment, the login keychain (service jenkins-menubar,
+# account the variable name) or a plain export in ~/.zshrc.
+token() {
+	local value=${!1:-}
+	[[ -n $value ]] || value=$(security find-generic-password -s jenkins-menubar -a "$1" -w 2>/dev/null)
+	[[ -n $value ]] || value=$(exported "$1")
+	printf '%s' "$value"
 }
 
+# The value of the last "export NAME=value" in ~/.zshrc, quoted or not, with or without a comment after it. A computed
+# value like $(security …) would need zsh to run it, so it is left out.
+exported() {
+	local value
+	value=$(grep -E "^[[:space:]]*export $1=" "$HOME/.zshrc" 2>/dev/null | tail -n 1)
+	value=${value#*=}
+	case $value in
+		\'*)
+			value=${value#\'}
+			printf '%s' "${value%%\'*}"
+			return
+			;;
+		\"*) value=${value#\"}; value=${value%%\"*} ;;
+		*) value=${value%%[[:space:]]*} ;;
+	esac
+	[[ $value == *'$'* || $value == *'`'* ]] || printf '%s' "$value"
+}
+
+# The token goes to curl through a file descriptor, so it does not show up in ps. Exits 22 when Jenkins answered with an
+# HTTP error, with another code when it was not reached.
 api() {
-	curl -fsS --max-time 20 -H "Authorization: Basic $JENKINS_MCP_BASIC_AUTH" "$JOB_ROOT$1" 2>/dev/null
+	curl -fsS --connect-timeout 5 --max-time 20 -H @<(printf 'Authorization: Basic %s\n' "$JENKINS_MCP_BASIC_AUTH") "$JOB_ROOT$1" 2>/dev/null
 }
 
 previous_state() {
@@ -185,46 +211,61 @@ APPLESCRIPT
 poll() {
 	date +%s >"$last_poll_file"
 
-	if [[ -z ${JENKINS_MCP_BASIC_AUTH:-} ]]; then
-		JENKINS_MCP_BASIC_AUTH=$(exported JENKINS_MCP_BASIC_AUTH)
-		export JENKINS_MCP_BASIC_AUTH
-	fi
+	JENKINS_MCP_BASIC_AUTH=$(token JENKINS_MCP_BASIC_AUTH)
+	export JENKINS_MCP_BASIC_AUTH
 	if [[ -z $JENKINS_MCP_BASIC_AUTH ]]; then
-		echo 'No Jenkins credentials: export JENKINS_MCP_BASIC_AUTH in ~/.zshrc' >"$error_file"
+		echo 'No Jenkins token: export JENKINS_MCP_BASIC_AUTH in ~/.zshrc, or put it in the keychain (README)' >"$error_file"
 		return
 	fi
-	local me
-	me=$(printf '%s' "$JENKINS_MCP_BASIC_AUTH" | base64 --decode 2>/dev/null | cut -d : -f 1)
+	# MR jobs name the GitLab author as contributor; the Jenkins login stands in for the GitLab username until GitLab answered.
+	local me offline=0
+	me=$(jq -r '.data.currentUser.username // empty' "$gitlab_file" 2>/dev/null)
+	[[ -n $me ]] || me=$(printf '%s' "$JENKINS_MCP_BASIC_AUTH" | base64 --decode 2>/dev/null | cut -d : -f 1)
 
 	# Listing all MR jobs takes seconds, so the set of my jobs is refreshed less often than the builds.
-	if [[ ! -f $jobs_file || -z $(find "$jobs_file" -mmin "-$DISCOVERY_MINUTES" 2>/dev/null) ]]; then
+	if [[ ! -f $jobs_file || -z $(find "$jobs_file" -mmin "-$DISCOVERY_MINUTES" 2>/dev/null) || $(cat "$jobs_user_file" 2>/dev/null) != "$me" ]]; then
 		local discovered
 		if discovered=$(api '/api/json?tree=jobs%5Bname,actions%5Bcontributor%5D%5D'); then
 			jq -r --arg me "$me" '.jobs[] | select(any(.actions[]?; .contributor == $me)) | .name' <<<"$discovered" >"$jobs_file.tmp" &&
-				mv "$jobs_file.tmp" "$jobs_file"
-		elif [[ ! -f $jobs_file ]]; then
-			echo 'Jenkins unreachable (VPN?)' >"$error_file"
-			return
+				mv "$jobs_file.tmp" "$jobs_file" && printf '%s\n' "$me" >"$jobs_user_file"
+		else
+			(($? == 22)) || offline=1
+			if [[ ! -f $jobs_file ]]; then
+				echo 'Jenkins unreachable (VPN?)' >"$error_file"
+				return
+			fi
 		fi
 	fi
 
-	local new_state="$cache_dir/state.new" new_rows="$cache_dir/rows.new" reached=0 flags stage_alerts
+	local new_state="$cache_dir/state.new" new_rows="$cache_dir/rows.new" reached=0 flags stage_alerts code
 	local job json title mr_url number building result started_ms estimate_ms duration_ms stages failed_stages stages_json
-	local previous previous_number previous_building previous_failed build_url
+	local previous previous_row previous_number previous_building previous_failed finished_failed build_url
 	flags=$(watch_flags)
 	stage_alerts=$(setting stage_alerts on)
 	: >"$new_state"
 	: >"$new_rows"
 	while IFS= read -r job; do
 		[[ -n $job ]] || continue
-		if ! json=$(api "/job/$job/api/json?tree=actions%5BobjectDisplayName,objectUrl%5D,lastBuild%5Bnumber,building,result,timestamp,estimatedDuration,duration%5D"); then
-			previous_state "$job" >>"$new_state"
+		previous=$(previous_state "$job")
+		previous_row=$(awk -F '\t' -v job="$job" '$1 == job' "$rows_file")
+		# Once Jenkins is not reached, every other job would only wait for its timeout too.
+		code=1
+		if ((!offline)); then
+			json=$(api "/job/$job/api/json?tree=actions%5BobjectDisplayName,objectUrl%5D,lastBuild%5Bnumber,building,result,timestamp,estimatedDuration,duration%5D")
+			code=$?
+			((code == 0 || code == 22)) || offline=1
+		fi
+		if ((code != 0)); then
+			# The build stays as it was, in the menu and hidden or not, until Jenkins answers for it again.
+			[[ -n $previous ]] && printf '%s\n' "$previous" >>"$new_state"
+			[[ -n $previous_row ]] && printf '%s\n' "$previous_row" >>"$new_rows"
 			continue
 		fi
 		reached=1
+		# No field may be empty: read merges neighbouring tabs and would shift the fields after it.
 		IFS=$'\t' read -r title mr_url number building result started_ms estimate_ms duration_ms < <(jq -r '[
-			([.actions[]? | .objectDisplayName // empty][0] // "-"),
-			([.actions[]? | .objectUrl // empty][0] // "-"),
+			([.actions[]? | .objectDisplayName // empty | select(. != "")][0] // "-"),
+			([.actions[]? | .objectUrl // empty | select(. != "")][0] // "-"),
 			(.lastBuild.number // 0),
 			(.lastBuild.building // false),
 			(.lastBuild.result // "NONE"),
@@ -235,18 +276,28 @@ poll() {
 		[[ $number != 0 ]] || continue
 		[[ $title != - ]] || title=$job
 
+		previous_number='' previous_building='' previous_failed=''
+		[[ -n $previous ]] && IFS=$'\t' read -r _ previous_number previous_building previous_failed <<<"$previous"
+		[[ $previous_number == "$number" ]] || previous_failed=''
+
 		stages=''
 		failed_stages=''
-		if [[ $building == true || $result == FAILURE || $result == UNSTABLE ]] && stages_json=$(api "/job/$job/$number/wfapi/describe"); then
-			stages=$(jq -r '[.stages[]? | select(.status == "IN_PROGRESS") | .name] | join(", ")' <<<"$stages_json")
-			failed_stages=$(jq -r '[.stages[]? | select(.status == "FAILED") | .name] | join(", ")' <<<"$stages_json")
+		# The stages of a finished build do not change any more, so the last poll already knows its failed ones.
+		if [[ $building == false ]] && finished_failed=$(awk -F '\t' -v number="$number" '
+			$4 == number && $5 == "false" { print $11; found = 1 } END { exit !found }' <<<"$previous_row"); then
+			[[ $finished_failed == - ]] || failed_stages=$finished_failed
+		elif [[ $building == true || $result == FAILURE || $result == UNSTABLE ]]; then
+			if stages_json=$(api "/job/$job/$number/wfapi/describe"); then
+				stages=$(jq -r '[.stages[]? | select(.status == "IN_PROGRESS") | .name] | join(", ")' <<<"$stages_json")
+				failed_stages=$(jq -r '[.stages[]? | select(.status == "FAILED") | .name] | join(", ")' <<<"$stages_json")
+			else
+				# Unknown this time: the last known ones keep a stage that failed before from getting a second banner.
+				failed_stages=$previous_failed
+			fi
 		fi
 
 		build_url="$JOB_ROOT/job/$job/$number/"
-		previous=$(previous_state "$job")
 		if [[ -n $previous ]]; then
-			IFS=$'\t' read -r _ previous_number previous_building previous_failed <<<"$previous"
-			[[ $previous_number == "$number" ]] || previous_failed=''
 			if [[ $previous_number == "$number" && $previous_building == true && $building == false ]]; then
 				nohup "$watch" $flags "$build_url" </dev/null >/dev/null 2>&1 &
 			fi
@@ -267,6 +318,7 @@ poll() {
 	fi
 	sort -t $'\t' -k 7,7nr "$new_rows" >"$rows_file"
 	rm -f "$new_rows" "$error_file"
+	((offline)) && echo 'Jenkins unreachable (VPN?)' >"$error_file"
 
 	# A hidden build only stays hidden until the next build of that MR starts.
 	awk -F '\t' 'NR == FNR { current[$1 "\t" $4]; next } ($1 "\t" $2) in current' "$rows_file" "$hidden_file" >"$hidden_file.tmp"
@@ -404,7 +456,7 @@ def choice($title; $key; $current; $options):
 	"--\($title): \([$options[] | select(.[0] == $current) | .[1]][0] // $current)",
 	($options[] | option("----"; $key; .[0]; .[1]; $current));
 def labelToggle($depth; $mode; $list; $text; $value):
-	"\($depth)\($text | clean) | bash=\"\($self)\" param1=--label param2=\($mode) param3=\"\($value)\" terminal=false refresh=true\(if $value | IN($list[]) then " checked=true" else "" end)";
+	"\($depth)\($text | clean) | bash=\"\($self)\" param1=--label param2=\($mode) param3=\($value | @base64) terminal=false refresh=true\(if $value | IN($list[]) then " checked=true" else "" end)";
 def labelTree($mode; $list):
 	($labels + $with + $without) | unique | group_by(scopeOf)[]
 	| "------\(.[0] | scopeOf | clean)", (.[] | labelToggle("--------"; $mode; $list; valueOf; .));
@@ -447,9 +499,11 @@ def section($title):
 	(if $checked != "" then "--Last checked \($checked) | size=12 color=#8E8E93" else empty end)
 JQ
 
-# Writes the response body to $3 and prints the HTTP status (000 when GitLab was not reached).
+# Writes the response body to $3 and prints the HTTP status (000 when GitLab was not reached). The token goes to curl
+# through a file descriptor, so it does not show up in ps.
 gitlab_request() {
-	curl -sS --max-time 30 -o "$3" -w '%{http_code}' -H "Authorization: Bearer $GITLAB_TOKEN" -H 'Content-Type: application/json' \
+	curl -sS --connect-timeout 5 --max-time 30 -o "$3" -w '%{http_code}' -H @<(printf 'Authorization: Bearer %s\n' "$GITLAB_TOKEN") \
+		-H 'Content-Type: application/json' \
 		-d "$(jq -n --arg query "$1" --argjson variables "$2" '{query: $query, variables: $variables}')" "$GITLAB_URL/api/graphql" 2>/dev/null
 }
 
@@ -536,7 +590,7 @@ refresh_merged_merge_requests() {
 
 poll_gitlab() {
 	date +%s >"$last_gitlab_poll_file"
-	[[ -n ${GITLAB_TOKEN:-} ]] || GITLAB_TOKEN=$(exported GITLAB_TOKEN)
+	GITLAB_TOKEN=$(token GITLAB_TOKEN)
 	if [[ -z $GITLAB_TOKEN ]]; then
 		rm -f "$gitlab_file" "$gitlab_error_file" "$work_items_file" "$work_items_error_file"
 		return
@@ -550,7 +604,8 @@ poll_gitlab() {
 		refresh_merged_merge_requests
 	else
 		rm -f "$gitlab_file.new"
-		if [[ $status == 401 || $status == 200 ]]; then
+		# 403 is a token without the read_api scope.
+		if [[ $status == 401 || $status == 403 || $status == 200 ]]; then
 			echo 'GitLab rejected the token (expired, or without the read_api scope?)' >"$gitlab_error_file"
 		else
 			echo "GitLab unreachable (HTTP $status)" >"$gitlab_error_file"
@@ -563,10 +618,13 @@ poll_gitlab() {
 		mv "$work_items_file.new" "$work_items_file"
 		rm -f "$work_items_error_file"
 		refresh_related_merge_requests
-		# Collects the labels offered by the label filters; an answer filtered to a label only contains its co-labels.
+		# Collects the labels offered by the label filters, with when a work item last had each, so labels unseen for 30 days
+		# drop out again; an answer filtered to a label only contains its co-labels. The list used to be a plain array.
 		if [[ -z $(setting work_items_with_labels '') ]]; then
-			[[ -s $work_item_labels_file ]] || echo '[]' >"$work_item_labels_file"
-			jq -s '.[0] + [.[1].data[]?.nodes[]?.labels.nodes[].title] | unique' "$work_item_labels_file" "$work_items_file" >"$work_item_labels_file.new" &&
+			[[ -s $work_item_labels_file ]] || echo '{}' >"$work_item_labels_file"
+			jq -s 'def seen: map({key: ., value: now | floor}) | from_entries;
+				(.[0] | if type == "array" then seen else . end) + ([.[1].data[]?.nodes[]?.labels.nodes[].title] | seen)
+				| with_entries(select(.value > now - 30 * 86400))' "$work_item_labels_file" "$work_items_file" >"$work_item_labels_file.new" &&
 				mv "$work_item_labels_file.new" "$work_item_labels_file"
 		fi
 	else
@@ -589,7 +647,7 @@ render_work_items() {
 	fi
 	local result=null labels='[]' checked=''
 	[[ -s $work_items_file ]] && result=$(cat "$work_items_file")
-	[[ -s $work_item_labels_file ]] && labels=$(cat "$work_item_labels_file")
+	[[ -s $work_item_labels_file ]] && labels=$(jq -c 'if type == "array" then . else keys end' "$work_item_labels_file" 2>/dev/null || echo '[]')
 	[[ -s $last_gitlab_poll_file ]] && checked=$(date -r "$(cat "$last_gitlab_poll_file")" +%H:%M)
 	jq -nr --argjson result "$result" --arg problem "$(cat "$work_items_error_file" 2>/dev/null)" --arg self "$self" \
 		--arg project "$GITLAB_PROJECT" --arg base "$GITLAB_URL" --arg me "$(jq -r '.data.currentUser.username // empty' "$gitlab_file" 2>/dev/null)" \
@@ -615,7 +673,7 @@ render_gitlab() {
 		echo "GitLab merge requests$(gitlab_icon)"
 		echo '--Needs a GitLab token with the read_api scope | color=#8E8E93'
 		echo "--1. Create the token in GitLab | href=$GITLAB_URL/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api"
-		echo '--2. Add  export GITLAB_TOKEN=<the token>  to ~/.zshrc | color=#8E8E93'
+		echo '--2. Add  export GITLAB_TOKEN=<the token>  to ~/.zshrc, or put it in the keychain (README) | color=#8E8E93'
 		echo "--3. Check now | bash=\"$self\" param1=--check-now terminal=false refresh=true"
 	fi
 }
@@ -724,6 +782,9 @@ render() {
 	[[ -s $error_file ]] && echo "$(cat "$error_file") | color=red"
 	if [[ -n $menu ]]; then
 		printf '%s' "$menu"
+	elif [[ ! -s $jobs_file && -s $jobs_user_file ]]; then
+		# Names the user the jobs were looked up for, which helps when the Jenkins and the GitLab username differ.
+		echo "No merge request builds by $(cat "$jobs_user_file") in Jenkins | color=#8E8E93"
 	else
 		echo 'No builds to show | color=#8E8E93'
 	fi

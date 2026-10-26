@@ -1,0 +1,19 @@
+#!/bin/bash
+# Fake security find-generic-password -s <service> -a <account> [-w]: the keychain is the folder $FAKE_KEYCHAIN, with a file
+# named <service>.<account> per password.
+service='' account='' print=0
+while (($#)); do
+	case $1 in
+		-s) service=$2; shift ;;
+		-a) account=$2; shift ;;
+		-w) print=1 ;;
+	esac
+	shift
+done
+file="$FAKE_KEYCHAIN/$service.$account"
+if [[ ! -f $file ]]; then
+	echo 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.' >&2
+	exit 44
+fi
+((print)) && cat "$file"
+exit 0
