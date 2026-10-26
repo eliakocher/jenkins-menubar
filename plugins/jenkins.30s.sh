@@ -71,6 +71,8 @@ alert=dialog
 voice=off
 # Banner as soon as a stage fails: on | off
 stage_alerts=on
+# Build icons in the menubar: monochrome (like the system icons) | emoji (colored)
+menubar_icons=monochrome
 
 # ── GitLab ──
 # Check GitLab (merge requests and work items) every N seconds.
@@ -703,13 +705,20 @@ render() {
 		menu+="--🙈 Hide from menu until the next build | bash=\"$self\" param1=--hide param2=$job param3=$number terminal=false refresh=true"$'\n'
 	done <"$rows_file"
 
-	((running)) && summary+="⏳$running "
-	((failed)) && summary+="❌$failed "
-	((unstable)) && summary+="⚠️$unstable "
-	((green)) && summary+="✅$green "
+	# SF Symbols keep the menubar monochrome like the system icons next to it.
+	local running_icon=':hourglass:' failed_icon=':xmark.circle.fill:' unstable_icon=':exclamationmark.triangle:'
+	local green_icon=':checkmark.circle:' error_icon=':exclamationmark.circle:'
+	if [[ $(setting menubar_icons monochrome) == emoji ]]; then
+		running_icon='⏳' failed_icon='❌' unstable_icon='⚠️' green_icon='✅' error_icon='⚠️'
+	fi
+	((running)) && summary+="$running_icon$running "
+	((failed)) && summary+="$failed_icon$failed "
+	((unstable)) && summary+="$unstable_icon$unstable "
+	((green)) && summary+="$green_icon$green "
 	summary=${summary% }
-	[[ -s $error_file ]] && summary="⚠️ $summary"
-	echo "${summary:-CI}"
+	[[ -s $error_file ]] && summary="$error_icon $summary"
+	# emojize=false, or SwiftBar reads :hourglass: as the GitHub emoji shortcode instead of the symbol.
+	echo "${summary:-CI} | emojize=false"
 
 	echo '---'
 	[[ -s $error_file ]] && echo "$(cat "$error_file") | color=red"
@@ -775,6 +784,10 @@ render() {
 	current=$(setting stage_alerts on)
 	option "$current" stage_alerts on 'On'
 	option "$current" stage_alerts off 'Off'
+	echo '--Menubar icons'
+	current=$(setting menubar_icons monochrome)
+	option "$current" menubar_icons monochrome 'Black and white'
+	option "$current" menubar_icons emoji 'Colored emoji'
 	echo '-----'
 	echo '--Preview the alert'
 	echo "----Success | bash=\"$self\" param1=--preview-success terminal=false"
