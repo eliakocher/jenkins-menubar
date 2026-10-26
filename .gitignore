@@ -1,0 +1,5 @@
+config/team.conf
+config/settings
+notifier/Jenkins Watch.app/
+.DS_Store
+*.zip
