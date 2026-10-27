@@ -5,7 +5,7 @@
 test_plugin_asks_for_the_team_config() {
 	: >"$tool/config/team.conf"
 	plugin_run
-	assert_equals "$(menubar)" 'CI ⚠️'
+	assert_equals "$(menubar)" "⚠️ | $(butler)" 'menubar'
 	assert_contains "$menu" 'Fill in the team settings'
 	assert_contains "$menu" "Open the team settings… | $(opens_settings team)"
 }
@@ -50,6 +50,13 @@ test_plugin_keeps_the_tokens_off_the_command_line() {
 }
 
 # ── Jenkins builds ──
+
+test_plugin_shows_the_jenkins_butler_without_builds() {
+	jenkins_jobs MR-2:someone-else
+	plugin_run
+	assert_equals "$(menubar)" " | $(butler)" 'menubar'
+	assert_contains "$menu" 'No merge request builds by me in Jenkins'
+}
 
 test_plugin_shows_the_running_builds_of_my_merge_requests() {
 	jenkins_jobs MR-1:me MR-2:someone-else

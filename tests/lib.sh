@@ -184,6 +184,11 @@ menubar() {
 	printf '%s\n' "$menu" | head -n 1
 }
 
+# The SwiftBar parameter of the Jenkins butler in the menubar.
+butler() {
+	printf 'templateImage=%s' "$(base64 <"$tool/icons/menubar.png" | tr -d '\n')"
+}
+
 # ── Recorded calls ──
 
 calls() {

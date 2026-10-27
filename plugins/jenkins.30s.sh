@@ -43,6 +43,7 @@ related_dir="$cache_dir/related-merge-requests"
 merged_file="$cache_dir/merged-merge-requests"
 poll_lock="$cache_dir/poll.lock"
 gitlab_icon_file="$tool_dir/icons/gitlab.png"
+menubar_icon_file="$tool_dir/icons/menubar.png"
 # Jenkins and GitLab answer within seconds, once connected.
 connect_seconds=5
 # The log of the settings window's Logs, where macOS apps keep theirs (Console.app opens it too), the times of the
@@ -1030,6 +1031,16 @@ submenu_params() {
 	fi
 }
 
+# menubar_logo [text]: the menubar's line with the Jenkins butler (36px saved at 144 DPI, so 18pt high) before the text.
+# It is a template image, which macOS draws black on a light menubar and white on a dark one, like its own icons.
+menubar_logo() {
+	if [[ -s $menubar_icon_file ]]; then
+		echo "${1:-} | templateImage=$(base64 <"$menubar_icon_file" | tr -d '\n')"
+	else
+		echo "CI${1:+ $1}"
+	fi
+}
+
 render_work_items() {
 	local scope state me all_work_items
 	scope=$(setting work_items_scope assigned)
@@ -1194,7 +1205,11 @@ render() {
 	summary=${summary% }
 	[[ -s $error_file ]] && summary="$error_icon $summary"
 	# emojize=false, or SwiftBar reads :hourglass: as the GitHub emoji shortcode instead of the symbol.
-	echo "${summary:-CI} | emojize=false"
+	if [[ -n $summary ]]; then
+		echo "$summary | emojize=false"
+	else
+		menubar_logo
+	fi
 
 	echo '---'
 	[[ -s $error_file ]] && echo "$(cat "$error_file") | color=red"
@@ -1468,7 +1483,7 @@ case ${1:-} in
 esac
 
 if [[ -z $JOB_ROOT || -z $GITLAB_URL || -z $GITLAB_PROJECT ]]; then
-	echo 'CI ⚠️'
+	menubar_logo ⚠️
 	echo '---'
 	echo 'Fill in the team settings: your Jenkins job and GitLab project | color=red'
 	has_settings_app && echo "Open the team settings… | $(settings_action team)"

@@ -62,7 +62,7 @@ under **Watching** in the menu, with their author, and follow the same rules as 
 | Alert script | `bin/jenkins-watch`, linked as `~/bin/jenkins-watch` |
 | App for the banners and the settings window | `notifier/Jenkins Watch.app`, built from `notifier/*.swift` |
 | Tests | `tests/`, run with `tests/run.sh` |
-| Icons | `icons/`: the app icon is `AppIcon.icon` (edit it in Icon Composer), `app.png` is its flat version for builds without Xcode |
+| Icons | `icons/`: the app icon is `AppIcon.icon` (edit it in Icon Composer), `app.png` is its flat version for builds without Xcode; `menubar.png` is the menubar's butler without builds, a template image (black on transparent, macOS colors it) |
 | README screenshots | `docs/` |
 | Team configuration (Jenkins, GitLab, label conventions) | `config/team.conf`, not committed |
 | Your settings | `config/settings`, created on the first run, not committed |
@@ -86,7 +86,7 @@ it.
 
 The code is MIT licensed, see [LICENSE](LICENSE).
 
-The Jenkins icons in `icons/` (`AppIcon.icon` and `app.png` for the app, `happy.png` and `sad.png` for the alert) are
+The Jenkins icons in `icons/` (`AppIcon.icon` and `app.png` for the app, `happy.png` and `sad.png` for the alert, `menubar.png` for the menubar) are
 AI-generated images of the Jenkins mascot. The mascot is the [Jenkins logo](https://www.jenkins.io/artwork/) by Charles Lowell and Frontside,
 licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), and the icons keep that license.
 The GitLab logo is a trademark of GitLab Inc.
