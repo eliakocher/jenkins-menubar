@@ -4,6 +4,12 @@
 set -euo pipefail
 
 source_dir=$(cd "$(dirname "$0")" && pwd)
+# Since the macOS 27 SDK, @State is SwiftUI's State macro, whose plugin only Xcode has: the views use @ViewState, the
+# property wrapper under another name (see ViewState.swift), so the app builds with only the Command Line Tools too.
+if grep -nE '^[^/]*@(SwiftUI(Core)?\.)?State\b' "$source_dir"/*.swift >&2; then
+	echo 'Use @ViewState instead of @State, so the app builds without Xcode too (see ViewState.swift).' >&2
+	exit 1
+fi
 app="$source_dir/Jenkins Watch.app"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

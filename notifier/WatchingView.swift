@@ -5,9 +5,9 @@ import SwiftUI
 /// it, with a link copied before already in the field.
 struct WatchingPane: View {
 	@ObservedObject var model: SettingsModel
-	@State private var link = ""
-	@State private var watching = false
-	@State private var outcome: (ok: Bool, message: String)?
+	@ViewState private var link = ""
+	@ViewState private var watching = false
+	@ViewState private var outcome: (ok: Bool, message: String)?
 	@FocusState private var focused: Bool
 
 	var body: some View {

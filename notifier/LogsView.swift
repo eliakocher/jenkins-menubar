@@ -322,10 +322,10 @@ struct LogsView: View {
 	@StateObject private var store: LogStore
 	@AppStorage("logs.level") private var level = LevelFilter.everything
 	@AppStorage("logs.source") private var source = ""
-	@State private var search = ""
-	@State private var selection = Set<Int>()
-	@State private var confirmingClear = false
-	@State private var inspected: LogEntry?
+	@ViewState private var search = ""
+	@ViewState private var selection = Set<Int>()
+	@ViewState private var confirmingClear = false
+	@ViewState private var inspected: LogEntry?
 
 	/// More rows make the list slow; searching and the filters reach the older ones.
 	private static let shownAtMost = 1000
@@ -620,7 +620,7 @@ struct SourceTag: View {
 struct CheckTimesView: View {
 	let contents: LogStore.Contents
 	@AppStorage("logs.showsCheckTimes") private var showsChart = true
-	@State private var pointed: Date?
+	@ViewState private var pointed: Date?
 
 	private static let sources = ["jenkins", "gitlab"]
 
@@ -910,7 +910,7 @@ struct EntryDetails: View {
 	let entry: LogEntry
 	let request: RequestRecord?
 	/// What went wrong, or what came back, is what one looks for first.
-	@State private var part = Part.response
+	@ViewState private var part = Part.response
 	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {

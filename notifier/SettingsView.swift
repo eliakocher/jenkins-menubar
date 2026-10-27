@@ -238,7 +238,7 @@ func scopeAndValue(of label: String) -> (scope: String, value: String)? {
 struct LabelFilterRow: View {
 	let filter: LabelFilter
 	@ObservedObject var model: SettingsModel
-	@State private var adding = false
+	@ViewState private var adding = false
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 8) {
@@ -475,7 +475,7 @@ struct LabelChoice: View {
 	let selected: Bool
 	let inOtherFilter: Bool
 	let action: () -> Void
-	@State private var hovering = false
+	@ViewState private var hovering = false
 
 	var body: some View {
 		let tint = color?.background ?? Color.secondary
@@ -543,9 +543,9 @@ struct FlowLayout: Layout {
 
 struct AccountsPane: View {
 	@ObservedObject var model: SettingsModel
-	@State private var jenkinsUser = ""
-	@State private var jenkinsToken = ""
-	@State private var gitlabToken = ""
+	@ViewState private var jenkinsUser = ""
+	@ViewState private var jenkinsToken = ""
+	@ViewState private var gitlabToken = ""
 
 	var body: some View {
 		Form {

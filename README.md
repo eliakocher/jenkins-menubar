@@ -78,7 +78,9 @@ answers like Jenkins and GitLab, and fakes for the sounds, dialogs, banners and 
 The settings window has no tests of its own: it keeps no logic, the plugin answers it (`--settings-json`,
 `--check-accounts`) and makes every change (`--set`, `--set-team`, `--label-filter`, `--set-token`, `--clear-logs`, …),
 and the tests cover those. It only reads the log files itself, to show them. After changing `notifier/*.swift`, rebuild
-the app with `notifier/build.sh`.
+the app with `notifier/build.sh`. Views use `@ViewState` instead of `@State`: since the macOS 27 SDK, `@State` is a
+macro that only compiles with Xcode, and the app has to build with only the Command Line Tools, so `build.sh` refuses
+it.
 
 ## License and credits
 
