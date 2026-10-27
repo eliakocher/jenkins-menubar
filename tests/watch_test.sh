@@ -84,3 +84,10 @@ test_watch_reads_the_token_from_the_keychain() {
 	assert_equals "$status" 0 'exit status'
 	assert_contains "$(cat "$FAKE_CURL/headers")" "Authorization: Basic $auth" 'the sent headers'
 }
+
+test_watch_logs_the_alert_in_the_menus_log() {
+	mkdir -p "$HOME/Library/Logs/jenkins-menubar"
+	jenkins_build MR-1 7 false FAILURE
+	run_watch --banner "$JOB_ROOT/job/MR-1/7/"
+	assert_contains "$(log_lines)" 'info alerts ❌ MR-1 #7 FAILURE (banner)'
+}

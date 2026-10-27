@@ -19,6 +19,31 @@ struct Snapshot: Decodable {
 		let gitlabToken: String?
 	}
 
+	/// The log, with its older files next to it as .1, .2, …, the check times and the requests with their responses.
+	struct Logs: Decodable {
+		let file: String
+		let checks: String
+		let requests: String
+		/// the most all of them take together
+		let maxBytes: Int64
+	}
+
+	/// A job of someone else, whose builds the menu shows like mine.
+	struct Watched: Decodable, Identifiable {
+		let job: String
+		/// like !123, or develop for a branch
+		let label: String
+		/// what the last check found
+		let build: Int?
+		let building: Bool
+		let result: String?
+		let title: String?
+		let author: String?
+		let url: String
+
+		var id: String { job }
+	}
+
 	let settings: [String: String]
 	let team: [String: String]
 	/// the filter labels GitLab no longer has
@@ -26,8 +51,19 @@ struct Snapshot: Decodable {
 	/// GitLab's colors of the filter labels, like #9400d3
 	let labelColors: [String: String]
 	let tokens: [String: Token]
+	let watched: [Watched]?
 	let files: Files
+	let logs: Logs?
 	let links: Links
+}
+
+/// What the plugin answers to --watch.
+struct WatchResult: Decodable {
+	let job: String
+	let label: String
+	let title: String
+	/// a job of mine, which the menu shows anyway
+	let mine: Bool
 }
 
 /// What the plugin answers to --check-accounts.
@@ -257,6 +293,37 @@ final class SettingsModel: ObservableObject {
 		}
 	}
 
+	// ── Watching ──
+
+	var watched: [Snapshot.Watched] {
+		snapshot?.watched ?? []
+	}
+
+	/// Watches the job of what was pasted; the plugin asks Jenkins first, so it runs in the background.
+	func watch(_ text: String) async -> Result<WatchResult, Error> {
+		let plugin = plugin
+		let result = await Task.detached {
+			Result { try JSONDecoder().decode(WatchResult.self, from: plugin.run(["--watch", text])) }
+		}.value
+		if case .success(let watched) = result, !watched.mine {
+			reload()
+			refreshMenuSoon()
+		}
+		return result
+	}
+
+	func unwatch(_ job: String) {
+		perform(["--unwatch", job])
+		reload()
+	}
+
+	// ── Logs ──
+
+	/// The Logs pane notices on its own that the files are gone.
+	func clearLogs() {
+		perform(["--clear-logs"])
+	}
+
 	/// Opens the file in the default text editor, like the menu does.
 	func openInEditor(_ path: String?) {
 		guard let path else { return }
@@ -278,7 +345,7 @@ final class SettingsModel: ObservableObject {
 
 	/// SwiftBar renders the menu again after a short pause, so several quick changes refresh it once.
 	/// It also asks GitLab again, which checks that the filter labels still exist.
-	private func refreshMenuSoon() {
+	func refreshMenuSoon() {
 		menuRefresh?.cancel()
 		menuRefresh = Task {
 			try? await Task.sleep(for: .milliseconds(700))

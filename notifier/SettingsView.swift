@@ -1,34 +1,40 @@
 import SwiftUI
 
 enum Pane: String, CaseIterable, Identifiable {
-	case jenkins, gitlab, accounts, team
+	case jenkins, watching, gitlab, accounts, team, logs
 
 	var id: String { rawValue }
 
 	var title: String {
 		switch self {
 		case .jenkins: "Jenkins"
+		case .watching: "Watching"
 		case .gitlab: "GitLab"
 		case .accounts: "Accounts"
 		case .team: "Team"
+		case .logs: "Logs"
 		}
 	}
 
 	var symbol: String {
 		switch self {
 		case .jenkins: "hammer.fill"
+		case .watching: "eye.fill"
 		case .gitlab: "arrow.triangle.merge"
 		case .accounts: "key.fill"
 		case .team: "person.2.fill"
+		case .logs: "doc.text.magnifyingglass"
 		}
 	}
 
 	var color: Color {
 		switch self {
 		case .jenkins: .blue
+		case .watching: .teal
 		case .gitlab: .orange
 		case .accounts: .gray
 		case .team: .green
+		case .logs: .purple
 		}
 	}
 }
@@ -63,9 +69,11 @@ struct SettingsView: View {
 			Group {
 				switch pane {
 				case .jenkins: JenkinsPane(model: model)
+				case .watching: WatchingPane(model: model)
 				case .gitlab: GitLabPane(model: model)
 				case .accounts: AccountsPane(model: model)
 				case .team: TeamPane(model: model)
+				case .logs: LogsPane(model: model)
 				}
 			}
 			.formStyle(.grouped)

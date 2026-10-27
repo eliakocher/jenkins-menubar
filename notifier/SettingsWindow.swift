@@ -104,6 +104,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 		edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
 		edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
 		edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+		// The find bar of a request's details.
+		edit.addItem(.separator())
+		let find = edit.addItem(withTitle: "Find…", action: #selector(NSTextView.performFindPanelAction(_:)), keyEquivalent: "f")
+		find.tag = Int(NSFindPanelAction.showFindPanel.rawValue)
 		add(edit)
 
 		return main

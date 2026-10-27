@@ -3,6 +3,8 @@
 A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds with a multibranch job:
 
 - **Your Jenkins MR pipelines** with live stage and ETA, and a big alert (or a banner) the moment one finishes
+- **Your colleagues' builds** the same way: **Watch a Build…** takes a link to a Jenkins build (an MR's or a branch's
+  like `develop`) or to a GitLab merge request, or `!123`
 - **Your GitLab merge requests**: your own, review requested, reviewed, each with a status badge in GitLab's colors
   (ready to merge, approvals missing, review requested, pipeline failed, …), the details on hover
 - **Your GitLab work items**: committed and not committed, with filters, label filters and sorting
@@ -30,13 +32,27 @@ A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds 
    ```
 5. Click **Allow** when macOS asks whether "Jenkins" may send notifications.
 
-**Settings…** in the menu opens the settings window: **Jenkins** (checking, hiding, alerts), **GitLab** (checking, the
-work item filters and labels; the work items submenu's **Filters…** opens it too), **Accounts** (the tokens) and
-**Team** (`config/team.conf`). It writes `config/settings` and `config/team.conf`, which you can also edit by hand.
+**Settings…** in the menu opens the settings window: **Jenkins** (checking, hiding, alerts), **Watching** (the builds of
+others, see below), **GitLab** (checking, the work item filters and labels; the work items submenu's **Filters…** opens
+it too), **Accounts** (the tokens), **Team** (`config/team.conf`) and **Logs**. It writes `config/settings` and
+`config/team.conf`, which you can also edit by hand.
+
+**Logs** shows what the menu did, each entry with how it went (a green 200 or SUCCESS, a red TIMEOUT or FAILURE, …):
+every request to Jenkins and GitLab with its time, the builds that started and finished, the alerts, the problems (once
+when they start, once when they are resolved) and the setting changes, never a token. Search it, filter it by level
+and source, copy entries. A double-click on a request (or its ⓘ) shows the request and the response, with the headers,
+and copies it as a curl command; the tokens and the cookies are never kept. Above, **Check Times** charts how long the
+checks of the last 24 hours took, their requests together, per hour, with the averages. The log starts a new file at
+1 MB and keeps 4 old ones, the check times keep their newest half at 512 KB, the requests the newest 10 MB with the
+first 128 KB of each response: together never more than 16.3 MB.
 
 <img src="docs/settings.png" alt="The settings window at its Jenkins pane: check interval, when to hide finished builds, the alert and the menubar icons" width="600">
 
-`jenkins-watch <MR number | build URL>` watches someone else's build from the terminal; `jenkins-watch --help` for more.
+**Watch a Build…** in the menu opens **Watching** with the link you copied already in, Return watches it: all builds of
+that merge request or branch, the next ones too, until Jenkins drops its job or you stop watching. Watched builds show
+under **Watching** in the menu, with their author, and follow the same rules as yours: the same alerts, the same hiding.
+
+`jenkins-watch <MR number | build URL>` watches a build from the terminal instead; `jenkins-watch --help` for more.
 
 ## What is where
 
@@ -51,6 +67,7 @@ work item filters and labels; the work items submenu's **Filters…** opens it t
 | Team configuration (Jenkins, GitLab, label conventions) | `config/team.conf`, not committed |
 | Your settings | `config/settings`, created on the first run, not committed |
 | Cache | `~/Library/Caches/jenkins-menubar/` |
+| Logs (also for Console.app) | `~/Library/Logs/jenkins-menubar/` |
 
 ## Tests
 
@@ -59,8 +76,9 @@ their name. They need nothing but jq: each test runs a copy of the tool in a tem
 answers like Jenkins and GitLab, and fakes for the sounds, dialogs, banners and the keychain.
 
 The settings window has no tests of its own: it keeps no logic, the plugin answers it (`--settings-json`,
-`--check-accounts`) and makes every change (`--set`, `--set-team`, `--label-filter`, `--set-token`, …), and the tests
-cover those. After changing `notifier/*.swift`, rebuild the app with `notifier/build.sh`.
+`--check-accounts`) and makes every change (`--set`, `--set-team`, `--label-filter`, `--set-token`, `--clear-logs`, …),
+and the tests cover those. It only reads the log files itself, to show them. After changing `notifier/*.swift`, rebuild
+the app with `notifier/build.sh`.
 
 ## License and credits
 

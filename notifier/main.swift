@@ -2,8 +2,8 @@ import AppKit
 import UserNotifications
 
 // Usage: notifier --title T [--subtitle S] [--body B] [--build URL] [--mr URL] [--default build|mr]
-//        notifier --settings [jenkins|gitlab|accounts|team]    the settings window, at that pane
-//        open jenkins-menubar://settings/<pane>                the same, the way the menu opens it
+//        notifier --settings [jenkins|watching|gitlab|accounts|team|logs]    the settings window, at that pane
+//        open jenkins-menubar://settings/<pane>                              the same, the way the menu opens it
 final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
 	let options: [String: String]
 	let settingsPane: String?

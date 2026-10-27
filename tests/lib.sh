@@ -94,21 +94,22 @@ jenkins_jobs() {
 	route 'tree=jobs' 200 "$(jq -n '{jobs: [$ARGS.positional[] | split(":") | {name: .[0], actions: [{}, {contributor: .[1]}]}]}' --args "$@")"
 }
 
-# jenkins_build <job> <number> <building: true | false> <result | null> [MR title]: the job and its last build, in one
-# answer for both the job's and the build's API.
+# jenkins_build <job> <number> <building: true | false> <result | null> [MR title] [author]: the job and its last build,
+# in one answer for both the job's and the build's API.
 jenkins_build() {
-	local job=$1 number=$2 building=$3 result=$4 title=${5-Title of $1}
+	local job=$1 number=$2 building=$3 result=$4 title=${5-Title of $1} author=${6:-}
 	local json
 	json=$(jq -n --arg job "$job" --arg title "$title" --argjson number "$number" --argjson building "$building" \
-		--arg result "$result" --argjson now "$(date +%s)" '
+		--arg result "$result" --arg author "$author" --argjson now "$(date +%s)" '
 		(if $result == "null" then null else $result end) as $result
 		| {timestamp: (($now - 3600) * 1000), estimatedDuration: 7200000, duration: (if $building then 0 else 1800000 end)} as $times
 		| {
 			displayName: $job,
 			inQueue: false,
-			actions: [{}, {objectDisplayName: $title, objectUrl: "https://gitlab.test/group/project/-/merge_requests/\($job | ltrimstr("MR-"))"}],
+			actions: ([{}, {objectDisplayName: $title, objectUrl: "https://gitlab.test/group/project/-/merge_requests/\($job | ltrimstr("MR-"))"}]
+				+ (if $author == "" then [] else [{contributorDisplayName: $author}] end)),
 			lastBuild: ({number: $number, building: $building, result: $result} + $times)
-		} + {building: $building, result: $result} + $times')
+		} + {number: $number, building: $building, result: $result} + $times')
 	route "/job/$job/api/json" 200 "$json"
 	route "/job/$job/$number/api/json" 200 "$json"
 }
@@ -207,4 +208,38 @@ wait_for_call() {
 assert_no_call() {
 	sleep 0.3
 	[[ $(call_count "$1") == 0 ]] || fail "expected no call to $1" "--- calls:" "$(cat "$CALLS")"
+}
+
+# ── The log ──
+
+# The log's lines as "level source message", without the time and the detail.
+log_lines() {
+	cut -f 2-4 "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log" 2>/dev/null | tr '\t' ' '
+}
+
+# The outcome of each log line with one, as "message → outcome".
+log_outcomes() {
+	awk -F '\t' '$6 != "" { print $4 " → " $6 }' "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log" 2>/dev/null
+}
+
+# saved_request <text in the message of its log line>: the request and response kept for that line, as JSON.
+saved_request() {
+	local file
+	file=$(awk -F '\t' -v text="$1" 'index($4, text) && $7 != "" { file = $7 } END { print file }' "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log")
+	[[ -n $file ]] || fail "expected a saved request for: $1" "--- log:" "$(cat "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log")"
+	cat "$HOME/Library/Logs/jenkins-menubar/requests/$file"
+}
+
+# ── Watching ──
+
+# The watched jobs.
+watched() {
+	cat "$cache/watched"
+}
+
+# watch_result <link>: the job --watch watches for a link, or why not.
+watch_result() {
+	local result
+	result=$("$tool/plugins/jenkins.30s.sh" --watch "$1" 2>&1) && result=$(jq -r .job <<<"$result")
+	printf '%s' "$result"
 }

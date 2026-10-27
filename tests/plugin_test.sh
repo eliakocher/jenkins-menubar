@@ -637,3 +637,263 @@ test_plugin_gives_every_item_with_a_submenu_an_action() {
 	assert_contains "$parents" 'GitLab work items (0) | href=https://gitlab.test/dashboard/issues?assignee_username=me&state=opened'
 	assert_equals "$(printf '%s\n' "$parents" | grep -vc ' | href=')" 0 'items with a submenu but no action'
 }
+
+# ── Logs ──
+
+test_plugin_logs_the_requests_and_the_builds() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 true null 'Fix the login'
+	jenkins_stages MR-1 7 build:IN_PROGRESS
+	plugin_run
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	plugin_run
+	assert_contains "$(log_lines)" 'debug jenkins GET /api/json in 0.01s'
+	assert_contains "$(log_lines)" 'debug jenkins GET /job/MR-1/7/wfapi/describe in 0.01s'
+	assert_contains "$(log_lines)" 'info jenkins MR-1 #7 started: Fix the login'
+	assert_contains "$(log_lines)" 'info jenkins MR-1 #7 finished'
+	assert_contains "$(log_lines)" 'debug jenkins Checked Jenkins: 3 requests, 0.04s together'
+	# Each check: when, jenkins or gitlab, the seconds of its requests together, how many and how many failed.
+	assert_equals "$(cut -f 2- "$HOME/Library/Logs/jenkins-menubar/checks.tsv")" $'jenkins\t0.04\t3\t0\njenkins\t0.01\t1\t0' 'the check times'
+}
+
+test_plugin_logs_the_gitlab_requests_by_their_query() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me
+	plugin_run
+	assert_contains "$(log_lines)" 'debug gitlab POST MergeRequests in 0.01s'
+	assert_contains "$(log_lines)" 'debug gitlab POST WorkItems in 0.01s'
+	assert_contains "$(cut -f 2- "$HOME/Library/Logs/jenkins-menubar/checks.tsv")" $'gitlab\t0.02\t2\t0' 'the check times'
+	assert_not_contains "$(cat "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log")" glpat-secret 'the log'
+}
+
+test_plugin_logs_a_problem_once_and_when_it_is_resolved() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS
+	plugin_run
+	route jenkins.test exit:28
+	plugin_run
+	FAKE_CURL_SECONDS=20.004 plugin_run
+	assert_equals "$(log_lines | grep -c 'error jenkins Jenkins unreachable (VPN?)')" 1 'logged problems'
+	# Without a connection, curl gives up after 5 seconds; once connected, after the time to answer.
+	assert_contains "$(log_lines)" 'warning jenkins GET /job/MR-1/api/json: no connection within 5 seconds (VPN?)'
+	assert_contains "$(log_lines)" 'warning jenkins GET /job/MR-1/api/json: no answer within 20 seconds'
+	assert_equals "$(tail -n 1 "$HOME/Library/Logs/jenkins-menubar/checks.tsv" | cut -f 4-)" $'1\t1' 'requests and failed ones'
+	jenkins_build MR-1 7 false SUCCESS
+	plugin_run
+	assert_contains "$(log_lines)" 'info jenkins Resolved: Jenkins unreachable (VPN?)'
+}
+
+test_plugin_logs_the_settings_changes_but_never_a_token() {
+	plugin_action --set refresh_seconds 120
+	plugin_action --set refresh_seconds 120
+	plugin_action --label-filter type::bug without
+	printf 'glpat-New_token-123' | plugin_action --set-token GITLAB_TOKEN
+	assert_equals "$(log_lines | grep -c refresh_seconds)" 1 'logged changes of refresh_seconds'
+	assert_contains "$(log_lines)" 'info settings refresh_seconds: 60 → 120'
+	assert_contains "$(log_lines)" 'info settings Work items must not have the label type::bug'
+	assert_contains "$(log_lines)" 'info settings Saved the GitLab token in the keychain'
+	assert_not_contains "$(cat "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log")" glpat-New_token-123 'the log'
+}
+
+test_plugin_keeps_each_log_entry_on_one_line() {
+	plugin_action --set-team gitlab_project $'group/other\tproject\nInjected'
+	assert_contains "$(log_lines)" 'info settings team.conf gitlab_project: group/project → group/other project Injected'
+	assert_equals "$(awk -F '\t' 'NF != 7' "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log")" '' 'lines without 7 fields'
+}
+
+test_plugin_keeps_the_logs_from_growing() {
+	local logs=$HOME/Library/Logs/jenkins-menubar n
+	mkdir -p "$logs"
+	head -c 1100000 /dev/zero | tr '\0' x >"$logs/jenkins-menubar.log"
+	for n in 1 2 3 4; do
+		echo "old $n" >"$logs/jenkins-menubar.log.$n"
+	done
+	seq 1 60000 | sed $'s/$/\tjenkins\t0.10\t2\t0/' >"$logs/checks.tsv"
+	plugin_run
+	assert_equals "$(ls "$logs" | grep -c '^jenkins-menubar.log')" 5 'log files'
+	assert_equals "$(stat -f %z "$logs/jenkins-menubar.log.1")" 1100000 'size of the log before'
+	assert_equals "$(cat "$logs/jenkins-menubar.log.4")" 'old 3' 'the oldest log'
+	(($(stat -f %z "$logs/jenkins-menubar.log") < 10000)) || fail 'expected the log to start over'
+	(($(wc -l <"$logs/checks.tsv") <= 30001)) || fail 'expected the check times to keep their newest half'
+	assert_equals "$(head -n 1 "$logs/checks.tsv" | cut -f 1)" 30001 'the oldest check time'
+}
+
+test_plugin_clears_the_logs() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS
+	plugin_run
+	plugin_action --clear-logs
+	assert_equals "$(log_lines)" 'info settings Cleared the logs' 'the log'
+	[[ ! -e $HOME/Library/Logs/jenkins-menubar/checks.tsv ]] || fail 'expected no check times'
+	[[ ! -e $HOME/Library/Logs/jenkins-menubar/requests ]] || fail 'expected no saved requests'
+}
+
+test_plugin_settings_json_tells_where_the_logs_are() {
+	assert_equals "$(plugin_json '.logs.file')" "$HOME/Library/Logs/jenkins-menubar/jenkins-menubar.log" 'log file'
+	assert_equals "$(plugin_json '.logs.checks')" "$HOME/Library/Logs/jenkins-menubar/checks.tsv" 'check times'
+	assert_equals "$(plugin_json '.logs.requests')" "$HOME/Library/Logs/jenkins-menubar/requests" 'requests'
+	assert_equals "$(plugin_json '.logs.maxBytes')" 16252928 'most the logs take'
+}
+
+test_plugin_logs_the_outcome_of_requests_and_builds() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 true null 'Fix the login'
+	jenkins_stages MR-1 7 build:IN_PROGRESS
+	plugin_run
+	jenkins_build MR-1 7 false FAILURE 'Fix the login'
+	jenkins_stages MR-1 7 build:FAILED
+	plugin_run
+	route /job/MR-1/api/json exit:28
+	FAKE_CURL_SECONDS=20.004 plugin_run
+	assert_contains "$(log_outcomes)" 'GET /api/json in 0.01s → ok:200'
+	assert_contains "$(log_outcomes)" 'MR-1 #7 started: Fix the login → running:RUNNING'
+	assert_contains "$(log_outcomes)" 'MR-1 #7 finished → failed:FAILURE'
+	assert_contains "$(log_outcomes)" 'GET /job/MR-1/api/json: no answer within 20 seconds → failed:TIMEOUT'
+	assert_contains "$(log_outcomes)" 'Checked Jenkins: 1 request, 20.00s together → failed:1 FAILED'
+	assert_contains "$(log_outcomes)" 'Jenkins unreachable (VPN?) → failed:PROBLEM'
+}
+
+test_plugin_keeps_each_request_with_its_response_but_no_token_or_cookie() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS 'Fix the login'
+	plugin_run
+	local jenkins gitlab
+	jenkins=$(saved_request 'GET /job/MR-1/api/json')
+	assert_equals "$(jq -r '[.method, .url, .status, .exit, .seconds] | join(" ")' <<<"$jenkins")" \
+		"GET $JOB_ROOT/job/MR-1/api/json?tree=actions%5BobjectDisplayName,objectUrl,contributorDisplayName%5D,lastBuild%5Bnumber,building,result,timestamp,estimatedDuration,duration%5D 200 0 0.012345" 'the Jenkins request'
+	assert_equals "$(jq -r '.body | fromjson | .actions[1].objectDisplayName' <<<"$jenkins")" 'Fix the login' 'the Jenkins response'
+	assert_equals "$(jq -r '.headers' <<<"$jenkins")" $'HTTP/1.1 200\nContent-Type: application/json' 'the response headers'
+	gitlab=$(saved_request 'POST WorkItems')
+	assert_contains "$(jq -r '.query' <<<"$gitlab")" 'query WorkItems(' 'the GraphQL query'
+	assert_equals "$(jq -r '.variables | fromjson | .assignee[0]' <<<"$gitlab")" me 'the GraphQL variables'
+	assert_not_contains "$(cat "$HOME/Library/Logs/jenkins-menubar/requests"/*)" glpat-secret 'the saved requests'
+	assert_not_contains "$(cat "$HOME/Library/Logs/jenkins-menubar/requests"/*)" "$JENKINS_MCP_BASIC_AUTH" 'the saved requests'
+	assert_not_contains "$(cat "$HOME/Library/Logs/jenkins-menubar/requests"/*)" fake-session 'the saved requests'
+}
+
+test_plugin_keeps_the_start_of_a_big_response() {
+	jenkins_jobs MR-1:me
+	route /job/MR-1/api/json 200 "$(head -c 200000 /dev/zero | tr '\0' x)"
+	plugin_run
+	local saved
+	saved=$(saved_request 'GET /job/MR-1/api/json')
+	assert_equals "$(jq -r '[.bytes, .truncated, (.body | length)] | join(" ")' <<<"$saved")" '200000 true 131072' 'size, cut and kept'
+}
+
+test_plugin_keeps_only_the_newest_requests_that_fit_in_10_mb() {
+	local requests=$HOME/Library/Logs/jenkins-menubar/requests n
+	mkdir -p "$requests"
+	for n in 1 2 3 4; do
+		head -c 3000000 /dev/zero >"$requests/20260101-00000$n-abcdef.json"
+	done
+	plugin_run
+	[[ ! -e $requests/20260101-000001-abcdef.json ]] || fail 'expected the oldest request to go'
+	[[ -e $requests/20260101-000004-abcdef.json ]] || fail 'expected the newest request to stay'
+	assert_equals "$(find "$requests" -name '20260101-*' | wc -l | tr -d ' ')" 3 'old requests kept'
+}
+
+# ── Watching the builds of others ──
+
+test_plugin_watches_the_builds_of_someone_else_like_mine() {
+	jenkins_jobs MR-1:me MR-2:anna
+	jenkins_build MR-1 7 false SUCCESS 'My change'
+	jenkins_build MR-2 5 true null 'Their change' 'Anna Muster'
+	jenkins_stages MR-2 5 build:IN_PROGRESS
+	plugin_run
+	plugin_action --watch "$JOB_ROOT/job/MR-2/5/console"
+	plugin_run
+	assert_contains "$menu" $'Watching | size=12 color=#8E8E93\n⏳ Their change'
+	assert_contains "$menu" '--by Anna Muster · ▶ build · '
+	assert_contains "$menu" '--👀 Stop watching !2 | bash='
+	assert_contains "$menu" 'param1=--unwatch param2=MR-2 terminal=false refresh=true'
+	assert_equals "$(menubar)" ':hourglass:1 :checkmark.circle:1 | emojize=false' 'menubar'
+	jenkins_build MR-2 5 false FAILURE 'Their change' 'Anna Muster'
+	jenkins_stages MR-2 5 build:FAILED
+	plugin_run
+	wait_for_call jenkins-watch
+	assert_contains "$(calls jenkins-watch)" "$JOB_ROOT/job/MR-2/5/"
+}
+
+test_plugin_watches_the_builds_after_a_watched_build() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-2 5 false FAILURE 'Their change'
+	plugin_action --watch "$JOB_ROOT/job/MR-2/5/"
+	plugin_run
+	assert_contains "$menu" '❌ Their change'
+	plugin_action --hide MR-2 5
+	plugin_run
+	assert_not_contains "$menu" 'Their change'
+	jenkins_build MR-2 6 true null 'Their change'
+	plugin_run
+	assert_contains "$menu" "--👷‍♂️ Open build #6 | href=$JOB_ROOT/job/MR-2/6/"
+	assert_equals "$(watched)" 'MR-2' 'watched'
+}
+
+test_plugin_treats_a_watched_merge_request_like_mine() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me
+	jenkins_jobs MR-1:me
+	jenkins_build MR-2 5 false SUCCESS 'Their change'
+	plugin_action --watch "$GITLAB/group/project/-/merge_requests/2"
+	plugin_run
+	assert_contains "$menu" '✅ Their change'
+	# Hidden once merged, like mine, and watched until Jenkins drops the job.
+	route MergedMergeRequests 200 '{"data": {"project": {"mergeRequests": {"nodes": [{"iid": "2"}]}}}}'
+	plugin_run
+	plugin_run
+	assert_not_contains "$menu" 'Their change'
+	assert_equals "$(watched)" 'MR-2' 'watched'
+	route /job/MR-2/ 404
+	plugin_run
+	assert_equals "$(watched)" '' 'watched'
+	assert_contains "$(log_lines)" 'info jenkins Stopped watching !2: Jenkins no longer has it'
+}
+
+test_plugin_stops_watching_by_hand() {
+	jenkins_build develop 12 false SUCCESS develop
+	plugin_action --watch "$JOB_ROOT/job/develop/12/"
+	plugin_action --unwatch develop
+	assert_equals "$(watched)" '' 'watched'
+	assert_contains "$(log_lines)" 'info jenkins Watching develop'
+	assert_contains "$(log_lines)" 'info jenkins Stopped watching develop: stopped by hand'
+}
+
+test_plugin_understands_the_links_to_watch() {
+	jenkins_build MR-7 3 false SUCCESS
+	jenkins_build develop 12 false SUCCESS develop
+	assert_equals "$(watch_result "$JOB_ROOT/job/MR-7/3/console")" 'MR-7' 'a build link'
+	assert_equals "$(watch_result "$JOB_ROOT/job/MR-7/")" 'MR-7' 'a job link'
+	assert_equals "$(watch_result "  $JOB_ROOT/job/develop/12/  ")" 'develop' 'a branch build with spaces around'
+	assert_equals "$(watch_result "$GITLAB/group/project/-/merge_requests/7/diffs")" 'MR-7' 'a merge request link'
+	assert_equals "$(watch_result '!7')" 'MR-7' '!7'
+	assert_equals "$(watch_result 'MR-7')" 'MR-7' 'MR-7'
+}
+
+test_plugin_refuses_links_it_cannot_watch() {
+	jenkins_build MR-7 3 false SUCCESS
+	assert_equals "$(watch_result "$GITLAB/other/project/-/merge_requests/7")" 'That is not in group/project, the GitLab project in Team' 'another project'
+	assert_equals "$(watch_result "$GITLAB/group/project/-/pipelines/4711")" 'That GitLab link is not a merge request' 'a GitLab pipeline'
+	assert_contains "$(watch_result 'https://other.test/job/x/job/MR-7/3/')" 'That is not a link into the Jenkins job in Team' 'another Jenkins'
+	assert_equals "$(watch_result '!9')" 'Jenkins has no job !9' 'an unknown job'
+	assert_equals "$(watch_result 'develop')" 'Paste a link to a Jenkins build or a GitLab merge request, or !123' 'no link'
+	assert_equals "$(cat "$cache/watched")" '' 'watched'
+}
+
+test_plugin_does_not_watch_my_own_builds() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 false SUCCESS
+	plugin_run
+	assert_equals "$("$tool/plugins/jenkins.30s.sh" --watch '!1' | jq -r .mine)" true 'mine'
+	assert_equals "$(watched)" '' 'watched'
+}
+
+test_plugin_settings_json_lists_the_watched_builds() {
+	jenkins_jobs MR-1:me
+	jenkins_build MR-2 5 true null 'Their change' 'Anna Muster'
+	plugin_action --watch '!2'
+	plugin_run
+	assert_equals "$(plugin_json '.watched[] | [.job, .label, .build, .building, .title, .author, .url] | map(tostring) | join(" ")')" \
+		"MR-2 !2 5 true Their change Anna Muster $JOB_ROOT/job/MR-2/5/" 'the watched builds'
+}
