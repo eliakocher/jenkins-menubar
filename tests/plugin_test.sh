@@ -376,6 +376,16 @@ test_plugin_label_filter_puts_a_label_in_one_list() {
 	assert_equals "$(plugin_json '.labels | join(",")')" 'type::bug' 'offered labels'
 }
 
+test_plugin_keeps_one_must_have_label_per_scope() {
+	plugin_action --label-filter uStatus::Todo with
+	plugin_action --label-filter uStatus::Done without
+	plugin_action --label-filter uStatus::Sub::Deep with
+	plugin_action --label-filter uStatus::InProgress with
+	plugin_action --label-filter bug with
+	assert_equals "$(plugin_json .settings.work_items_with_labels)" 'uStatus::Sub::Deep,uStatus::InProgress,bug' 'with'
+	assert_equals "$(plugin_json .settings.work_items_without_labels)" 'uStatus::Done' 'without'
+}
+
 # ── Tokens and accounts in the settings window ──
 
 test_plugin_settings_json_tells_where_the_tokens_come_from() {
@@ -516,4 +526,114 @@ test_plugin_keeps_a_label_with_shell_syntax_as_plain_text() {
 	(cd "$sandbox" && plugin_action --label-filter 'evil::$(touch pwned)' with && plugin_run)
 	assert_equals "$(plugin_json .settings.work_items_with_labels)" 'evil::$(touch pwned)' 'with'
 	[[ ! -e $sandbox/pwned && ! -e $tool/pwned ]] || fail 'a label ran as a command'
+}
+
+# gitlab_labels <title> …: GitLab's answer to every label search, the labels in GitLab's default blue.
+gitlab_labels() {
+	route includeAncestorGroups 200 "$(jq -n '{data: {project: {labels: {nodes: [$ARGS.positional[] | {title: ., color: "#428bca"}]}}}}' --args "$@")"
+}
+
+# gitlab_variables <text in the query>: the variables of the last GitLab request with that query.
+gitlab_variables() {
+	requests | grep -F -- "$1" | tail -n 1 | cut -f 2- | jq -c .variables
+}
+
+test_plugin_searches_the_labels_of_gitlab_and_of_my_work_items() {
+	export GITLAB_TOKEN=glpat-secret
+	mkdir -p "$cache"
+	jq -n --argjson now "$(date +%s)" '{"uStatus::Seen": $now, "bug": $now}' >"$cache/work-item-labels.json"
+	# GitLab also finds Answered by its description.
+	route includeAncestorGroups 200 '{"data": {"project": {"labels": {"nodes": [
+		{"title": "uStatus::Todo", "color": "#9400d3"}, {"title": "Answered", "color": "#808080"}]}}}}'
+	local result
+	result=$("$tool/plugins/jenkins.30s.sh" --search-labels STATUS 2>>"$sandbox/stderr")
+	assert_equals "$(jq -c . <<<"$result")" '{"labels":["uStatus::Seen","uStatus::Todo"],"colors":{"uStatus::Todo":"#9400d3"},"problem":null}' \
+		'the labels found'
+}
+
+test_plugin_searches_only_the_labels_of_my_work_items_without_gitlab() {
+	mkdir -p "$cache"
+	echo '["uStatus::Seen", "bug"]' >"$cache/work-item-labels.json"
+	local result
+	result=$("$tool/plugins/jenkins.30s.sh" --search-labels status 2>>"$sandbox/stderr")
+	assert_equals "$(jq -c .labels <<<"$result")" '["uStatus::Seen"]' 'the labels found'
+	assert_contains "$(jq -r .problem <<<"$result")" 'No GitLab token' 'the problem'
+	export GITLAB_TOKEN=glpat-secret
+	route includeAncestorGroups exit:7
+	result=$("$tool/plugins/jenkins.30s.sh" --search-labels status 2>>"$sandbox/stderr")
+	assert_equals "$(jq -c .labels <<<"$result")" '["uStatus::Seen"]' 'the labels found while GitLab is unreachable'
+	assert_contains "$(jq -r .problem <<<"$result")" 'GitLab did not answer' 'the problem'
+}
+
+test_plugin_flags_a_filter_label_gitlab_no_longer_has() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me
+	gitlab_labels uStatus::Done
+	plugin_action --label-filter uStatus::Done without
+	plugin_action --label-filter uStatus::Gone without
+	plugin_run
+	assert_equals "$(plugin_json '.missingLabels | join(",")')" 'uStatus::Gone' 'missing labels'
+	assert_equals "$(plugin_json '.labelColors | tojson')" '{"uStatus::Done":"#428bca"}' 'the colors of the filter labels'
+	assert_contains "$menu" "--⚠️ Filter label uStatus::Gone is not in GitLab any more | color=red $(opens_settings gitlab)"
+	plugin_action --label-filter uStatus::Gone any
+	assert_equals "$(plugin_json '.missingLabels | length')" 0 'missing labels once it is out of the filter'
+	plugin_render
+	assert_not_contains "$menu" 'not in GitLab any more'
+}
+
+test_plugin_asks_gitlab_for_all_or_any_of_the_must_have_labels() {
+	export GITLAB_TOKEN=glpat-secret
+	plugin_action --set-team committed_label Committed
+	gitlab_answers me
+	plugin_action --label-filter type::bug with
+	plugin_action --label-filter team::web with
+	plugin_run
+	assert_equals "$(gitlab_variables withCommitted | jq -c '[.committedLabels, .committedOr, .otherLabels, .otherOr]')" \
+		'[["Committed","team::web","type::bug"],null,["type::bug","team::web"],null]' 'all of the labels'
+	plugin_action --label-match any
+	plugin_run
+	assert_equals "$(gitlab_variables withCommitted | jq -c '[.committedLabels, .committedOr, .otherLabels, .otherOr]')" \
+		'[["Committed"],{"labelNames":["type::bug","team::web"]},null,{"labelNames":["type::bug","team::web"]}]' 'any of the labels'
+	assert_contains "$menu" '· +(bug or web) |'
+}
+
+test_plugin_keeps_several_labels_of_a_scope_for_any_of_them() {
+	plugin_action --label-match any
+	plugin_action --label-filter uStatus::Todo with
+	plugin_action --label-filter uStatus::InProgress with
+	plugin_action --label-filter bug with
+	assert_equals "$(plugin_json .settings.work_items_with_labels)" 'uStatus::Todo,uStatus::InProgress,bug' 'with, any of them'
+	plugin_action --label-match all
+	assert_equals "$(plugin_json .settings.work_items_labels_match)" all 'match'
+	assert_equals "$(plugin_json .settings.work_items_with_labels)" 'uStatus::InProgress,bug' 'with, all of them'
+}
+
+test_plugin_shows_the_work_items_with_a_broken_related_merge_requests_file() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me
+	gitlab_work_item_with_labels type::bug
+	plugin_run
+	# Half written, like while another run polls.
+	mkdir -p "$cache/related-merge-requests"
+	printf '{"reference": "group/pro' >"$cache/related-merge-requests/half.json"
+	plugin_render
+	assert_contains "$menu" $'\n--#1  Item | href=https://gitlab.test/group/project/-/issues/1'
+}
+
+# SwiftBar 2.1.0 and 2.1.1 grey out an item with a submenu but no action for good once its line changes
+# (swiftbar/SwiftBar#512).
+test_plugin_gives_every_item_with_a_submenu_an_action() {
+	export GITLAB_TOKEN=glpat-secret
+	gitlab_answers me "$(gitlab_merge_request 1 'My change' me NOT_APPROVED)"
+	jenkins_jobs MR-1:me
+	jenkins_build MR-1 7 true null 'Fix the login'
+	jenkins_stages MR-1 7
+	plugin_run
+	local parents
+	parents=$(printf '%s\n' "$menu" | awk '/^--/ && $0 != "---" && previous != "" && previous != "---" && previous !~ /^--/ { print previous }
+		{ previous = $0 }' | sed -E 's/ image=[^ ]+//')
+	assert_contains "$parents" $'⏳ Fix the login | href=https://jenkins.test/job/project/job/MR-1/7/\n'
+	assert_contains "$parents" $'GitLab merge requests · 1 open | href=https://gitlab.test/dashboard/merge_requests\n'
+	assert_contains "$parents" 'GitLab work items (0) | href=https://gitlab.test/dashboard/issues?assignee_username=me&state=opened'
+	assert_equals "$(printf '%s\n' "$parents" | grep -vc ' | href=')" 0 'items with a submenu but no action'
 }

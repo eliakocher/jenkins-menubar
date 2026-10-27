@@ -35,6 +35,8 @@ last_gitlab_poll_file="$cache_dir/last-gitlab-poll"
 work_items_file="$cache_dir/work-items.json"
 work_items_error_file="$cache_dir/work-items-error"
 work_item_labels_file="$cache_dir/work-item-labels.json"
+missing_labels_file="$cache_dir/missing-filter-labels"
+label_colors_file="$cache_dir/label-colors.json"
 related_dir="$cache_dir/related-merge-requests"
 merged_file="$cache_dir/merged-merge-requests"
 poll_lock="$cache_dir/poll.lock"
@@ -93,6 +95,8 @@ work_items_state=opened
 # Labels a work item must have / must not have, comma-separated, e.g. workflow::done,type::bug
 work_items_with_labels=
 work_items_without_labels=
+# A work item needs all of the must-have labels, or any one of them: all | any
+work_items_labels_match=all
 # Any GitLab issue sort, e.g. UPDATED_DESC | CREATED_DESC | CREATED_ASC | DUE_DATE_ASC | TITLE_ASC | WEIGHT_DESC | PRIORITY_ASC
 work_items_sort=UPDATED_DESC
 # How many not-committed work items to show, at most 100 (committed ones always show).
@@ -148,15 +152,39 @@ label_list() {
 	list_setting "$1" | jq -R . | jq -sc .
 }
 
+# The filter labels that GitLab did not have at the last check, as a JSON array.
+missing_labels() {
+	grep -v '^$' "$missing_labels_file" 2>/dev/null | jq -R . | jq -sc .
+}
+
 # set_label_filter <label> <with | without | any>: puts the label in the "with" or the "without" list, or in neither; a
 # label is never in both.
 set_label_filter() {
 	[[ $2 == with || $2 == without || $2 == any ]] || return 2
 	local key
+	# A work item has one label per scope (all before the last "::"), so when it needs all must-have labels, a must-have
+	# label replaces the one of its scope.
+	if [[ $2 == with && $1 == *::* && $(setting work_items_labels_match all) == all ]]; then
+		set_setting work_items_with_labels "$(list_setting work_items_with_labels | SCOPE="${1%::*}::" awk '
+			index($0, ENVIRON["SCOPE"]) != 1 || index(substr($0, length(ENVIRON["SCOPE"]) + 1), "::")' | paste -sd , -)"
+	fi
 	for key in work_items_with_labels work_items_without_labels; do
 		set_setting "$key" "$(list_setting "$key" | grep -vxF -- "$1" | paste -sd , -)"
 	done
 	[[ $2 == any ]] || set_setting "work_items_$2_labels" "$( (list_setting "work_items_$2_labels"; echo "$1") | paste -sd , -)"
+}
+
+# set_labels_match <all | any>: whether a work item needs all must-have labels or any one of them. For all, the last
+# must-have label of each scope stays, since a work item never has two.
+set_labels_match() {
+	[[ $1 == all || $1 == any ]] || return 2
+	local labels label
+	set_setting work_items_labels_match "$1"
+	[[ $1 == all ]] || return 0
+	labels=$(list_setting work_items_with_labels)
+	while IFS= read -r label; do
+		[[ -n $label ]] && set_label_filter "$label" with
+	done <<<"$labels"
 }
 
 # SwiftBar does not source ~/.zshrc, so a token comes from the environment, the login keychain (service jenkins-menubar,
@@ -436,7 +464,7 @@ def section($title; $items; $me; $requested):
 | ($user.reviewing.nodes | map(select(.webUrl | IN($shownUrls[]) | not))) as $reviewed
 | [section("Your merge requests"; $mine; $me; false), section("Review requested"; $requested; $me; true), section("Reviewed"; $reviewed; $me; false)] as $sections
 | ([(if ($mine | length) > 0 then "\($mine | length) open" else empty end), (if ($requested | length) > 0 then "\($requested | length) to review" else empty end)]) as $counts
-| "GitLab merge requests\(if ($counts | length) > 0 then " · " + ($counts | join(" · ")) else "" end)\($icon)",
+| "GitLab merge requests\(if ($counts | length) > 0 then " · " + ($counts | join(" · ")) else "" end)\($params)",
 	(if ($sections | length) > 0 then $sections | map(. + ["-----"]) | add | .[] else "--No open merge requests | color=#8E8E93", "-----" end),
 	"--All merge requests in GitLab | href=\($dashboard)",
 	"--Last checked \($checked) | size=12 color=#8E8E93"
@@ -449,19 +477,20 @@ fragment item on Issue {
   webUrl
   reference(full: true)
   updatedAt
-  labels(first: 30) { nodes { title } }
+  labels(first: 30) { nodes { title color } }
 }
 
 query($assignee: [String!], $author: String, $types: [IssueType!], $state: IssuableState, $sort: IssueSort,
-      $withCommitted: Boolean!, $committedLabels: [String], $committedNot: NegatedIssueFilterInput,
-      $withOthers: Boolean!, $otherLabels: [String], $otherNot: NegatedIssueFilterInput, $first: Int) {
+      $withCommitted: Boolean!, $committedLabels: [String], $committedOr: UnionedIssueFilterInput,
+      $committedNot: NegatedIssueFilterInput, $withOthers: Boolean!, $otherLabels: [String],
+      $otherOr: UnionedIssueFilterInput, $otherNot: NegatedIssueFilterInput, $first: Int) {
   committed: issues(assigneeUsernames: $assignee, authorUsername: $author, types: $types, state: $state,
-      labelName: $committedLabels, not: $committedNot, sort: $sort, first: 50) @include(if: $withCommitted) {
+      labelName: $committedLabels, or: $committedOr, not: $committedNot, sort: $sort, first: 50) @include(if: $withCommitted) {
     count
     nodes { ...item }
   }
   others: issues(assigneeUsernames: $assignee, authorUsername: $author, types: $types, state: $state,
-      labelName: $otherLabels, not: $otherNot, sort: $sort, first: $first) @include(if: $withOthers) {
+      labelName: $otherLabels, or: $otherOr, not: $otherNot, sort: $sort, first: $first) @include(if: $withOthers) {
     count
     nodes { ...item }
   }
@@ -487,7 +516,8 @@ def filters:
 	[named([["assigned", "Assigned to me"], ["authored", "Created by me"]]; $scope),
 		(if $type == "all" then empty else named([["ISSUE", "Issues"], ["TASK", "Tasks"], ["EPIC", "Epics"], ["INCIDENT", "Incidents"]]; $type) end),
 		named([["opened", "Open"], ["closed", "Closed"], ["all", "Open and closed"]]; $state),
-		($with[] | "+" + valueOf), ($without[] | "−" + valueOf)]
+		(if $match == "any" and ($with | length) > 1 then "+(\($with | map(valueOf) | join(" or ")))" else $with[] | "+" + valueOf end),
+		($without[] | "−" + valueOf)]
 	| join(" · ") | clean;
 def entry:
 	# Automatic MRs (like cascades between release branches) only mention the work item, they are not work on it.
@@ -503,8 +533,10 @@ def section($title):
 ($result.data // null) as $data
 | ($data.committed // null) as $committedItems
 | ($data.others // null) as $otherItems
-| "GitLab work items\(if $data == null then "" elif ($committedItems.count // 0) > 0 then " · \($committedItems.count) committed" else " (\($otherItems // {count: 0, nodes: []} | countText))" end)\(if $problem != "" then " ⚠️" else "" end)\($icon)",
+| [$missing[] | select(IN(($with + $without)[]))] as $missingFilters
+| "GitLab work items\(if $data == null then "" elif ($committedItems.count // 0) > 0 then " · \($committedItems.count) committed" else " (\($otherItems // {count: 0, nodes: []} | countText))" end)\(if $problem != "" or ($missingFilters | length) > 0 then " ⚠️" else "" end)\($params)",
 	(if $problem != "" then "--\($problem | clean) | color=red" else empty end),
+	($missingFilters[] | "--⚠️ Filter label \(clean) is not in GitLab any more | color=red \($filtersAction)"),
 	($committedItems | section("🟣 Committed")),
 	($otherItems | section(if $committedLabel == "" then "Work items" else "Not committed" end)),
 	(if $data != null and ([$committedItems, $otherItems] | map(.nodes // [] | length) | add) == 0
@@ -513,7 +545,7 @@ def section($title):
 	"--\(filters) | size=12 color=#8E8E93",
 	"--Filters… | \($filtersAction)",
 	"-----",
-	"--All work items in GitLab | href=\($base)/dashboard/issues?\(if $scope == "authored" then "author_username" else "assignee_username" end)=\($me)&state=\($state)",
+	"--All work items in GitLab | href=\($allWorkItems)",
 	(if $checked != "" then "--Last checked \($checked) | size=12 color=#8E8E93" else empty end)
 JQ
 
@@ -530,21 +562,26 @@ work_items_variables() {
 		--arg state "$(setting work_items_state opened)" --argjson with "$(label_list work_items_with_labels)" \
 		--argjson without "$(label_list work_items_without_labels)" \
 		--arg sort "$(setting work_items_sort UPDATED_DESC)" --argjson first "$(number_setting work_items_limit 20)" \
-		--arg committed "$COMMITTED_LABEL" '{
-		assignee: (if $scope == "authored" then null else [$me] end),
-		author: (if $scope == "authored" then $me else null end),
-		types: (if $type == "all" then null else [$type] end),
-		state: $state,
-		sort: $sort,
-		withCommitted: ($committed != "" and ($committed | IN($without[]) | not)),
-		committedLabels: ($with + [$committed] | unique),
-		committedNot: (if ($without | length) > 0 then {labelName: $without} else null end),
-		withOthers: ($committed == "" or ($committed | IN($with[]) | not)),
-		otherLabels: (if ($with | length) > 0 then $with else null end),
-		otherNot: (($without + [$committed] | map(select(. != "")) | unique) as $not
-			| if ($not | length) > 0 then {labelName: $not} else null end),
-		first: $first
-	}'
+		--arg match "$(setting work_items_labels_match all)" --arg committed "$COMMITTED_LABEL" '
+		# With any of the must-have labels, labelName (all of them) only keeps the committed label.
+		($match == "any" and ($with | length) > 0) as $any
+		| {
+			assignee: (if $scope == "authored" then null else [$me] end),
+			author: (if $scope == "authored" then $me else null end),
+			types: (if $type == "all" then null else [$type] end),
+			state: $state,
+			sort: $sort,
+			withCommitted: ($committed != "" and ($committed | IN($without[]) | not)),
+			committedLabels: (if $any then [$committed] else $with + [$committed] | unique end),
+			committedOr: (if $any then {labelNames: $with} else null end),
+			committedNot: (if ($without | length) > 0 then {labelName: $without} else null end),
+			withOthers: ($any or $committed == "" or ($committed | IN($with[]) | not)),
+			otherLabels: (if $any or ($with | length) == 0 then null else $with end),
+			otherOr: (if $any then {labelNames: $with} else null end),
+			otherNot: (($without + [$committed] | map(select(. != "")) | unique) as $not
+				| if ($not | length) > 0 then {labelName: $not} else null end),
+			first: $first
+		}'
 }
 
 read -r -d '' RELATED_QUERY <<'GRAPHQL'
@@ -557,14 +594,52 @@ query($path: ID!, $iid: String!) {
 }
 GRAPHQL
 
+# GitLab's labels of the project and its groups whose title, or description, contains the term.
+read -r -d '' LABELS_QUERY <<'GRAPHQL'
+query($path: ID!, $term: String!) {
+  project(fullPath: $path) { labels(searchTerm: $term, includeAncestorGroups: true, first: 100) { nodes { title color } } }
+}
+GRAPHQL
+
+# remember_label_colors <GitLab answer>: adds the colors of the labels in it to those the settings window draws them in.
+remember_label_colors() {
+	[[ -s $label_colors_file ]] || echo '{}' >"$label_colors_file"
+	# The settings window can search while a poll runs.
+	jq -s '.[0] + ([.[1] | .. | objects | select(has("title") and (.color | type) == "string") | {key: .title, value: .color}] | from_entries)' \
+		"$label_colors_file" "$1" >"$label_colors_file.$$" 2>/dev/null && mv "$label_colors_file.$$" "$label_colors_file"
+	rm -f "$label_colors_file.$$"
+}
+
+# The remembered colors of the labels, as a JSON object from title to color.
+label_colors() {
+	cat "$label_colors_file" 2>/dev/null || echo '{}'
+}
+
+# Notes the filter labels that GitLab no longer has (renamed or removed), for the menu and the settings window. A label
+# one of the work items has exists; GitLab is asked about the others.
+check_filter_labels() {
+	local label answer="$cache_dir/filter-label.json"
+	{ list_setting work_items_with_labels; list_setting work_items_without_labels; } | while IFS= read -r label; do
+		jq -e --arg label "$label" 'any(.data[]?.nodes[]?.labels.nodes[]?; .title == $label)' "$work_items_file" >/dev/null && continue
+		[[ $(gitlab_request "$LABELS_QUERY" "$(jq -n --arg path "$GITLAB_PROJECT" --arg term "$label" '{path: $path, term: $term}')" "$answer") == 200 ]] ||
+			continue
+		remember_label_colors "$answer"
+		jq -e --arg label "$label" '.data.project.labels.nodes | any(.title == $label) | not' "$answer" >/dev/null && printf '%s\n' "$label"
+	done >"$missing_labels_file.new"
+	mv "$missing_labels_file.new" "$missing_labels_file"
+	rm -f "$answer"
+}
+
 fetch_related_merge_requests() {
 	local reference=$1 updated=$2 file=$3
 	gitlab_request "$RELATED_QUERY" "$(jq -n --arg path "${reference%#*}" --arg iid "${reference##*#}" '{path: $path, iid: $iid}')" "$file.new" >/dev/null
+	# Swapped in whole: a run that only renders can read the folder while this one polls.
 	if jq -e '.data.project.issue' "$file.new" >/dev/null 2>&1; then
 		jq --arg reference "$reference" --arg updated "$updated" \
-			'{reference: $reference, updatedAt: $updated, mergeRequests: .data.project.issue.relatedMergeRequests.nodes}' "$file.new" >"$file"
+			'{reference: $reference, updatedAt: $updated, mergeRequests: .data.project.issue.relatedMergeRequests.nodes}' "$file.new" >"$file.tmp" &&
+			mv "$file.tmp" "$file"
 	fi
-	rm -f "$file.new"
+	rm -f "$file.new" "$file.tmp"
 }
 
 # GitLab resolves relatedMergeRequests for one work item per request only, so each item is asked separately, a few in
@@ -636,6 +711,8 @@ poll_gitlab() {
 		mv "$work_items_file.new" "$work_items_file"
 		rm -f "$work_items_error_file"
 		refresh_related_merge_requests
+		remember_label_colors "$work_items_file"
+		check_filter_labels
 		# Collects the labels offered by the label filters, with when a work item last had each, so labels unseen for 30 days
 		# drop out again; an answer filtered to a label only contains its co-labels. The list used to be a plain array.
 		if [[ -z $(setting work_items_with_labels '') ]]; then
@@ -652,14 +729,25 @@ poll_gitlab() {
 	fi
 }
 
-# The GitLab logo as SwiftBar item parameter; 32px saved at 144 DPI, so it draws at 16pt like the menu text.
-gitlab_icon() {
-	[[ -s $gitlab_icon_file ]] && printf ' | image=%s' "$(base64 <"$gitlab_icon_file" | tr -d '\n')"
+# submenu_params <url> [logo]: the SwiftBar parameters of a menu item with a submenu, with the GitLab logo (32px saved at
+# 144 DPI, so it draws at 16pt like the menu text) when asked for. A click on such an item opens its submenu, not the
+# href: the href is there because SwiftBar 2.1.0 and 2.1.1 grey out an item with a submenu and no action of its own for
+# good once its line changes, like a count in its title (swiftbar/SwiftBar#512, fixed in 2.1.2).
+submenu_params() {
+	printf ' | href=%s' "$1"
+	if [[ ${2:-} == logo && -s $gitlab_icon_file ]]; then
+		printf ' image=%s' "$(base64 <"$gitlab_icon_file" | tr -d '\n')"
+	fi
 }
 
 render_work_items() {
+	local scope state me all_work_items
+	scope=$(setting work_items_scope assigned)
+	state=$(setting work_items_state opened)
+	me=$(jq -r '.data.currentUser.username // empty' "$gitlab_file" 2>/dev/null)
+	all_work_items="$GITLAB_URL/dashboard/issues?$([[ $scope == authored ]] && echo author_username || echo assignee_username)=$me&state=$state"
 	if [[ ! -s $gitlab_file && ! -s $work_items_file ]]; then
-		echo "GitLab work items$(gitlab_icon)"
+		echo "GitLab work items$(submenu_params "$GITLAB_URL/dashboard/issues" logo)"
 		echo '--Needs the GitLab token, see GitLab merge requests | color=#8E8E93'
 		return
 	fi
@@ -667,26 +755,28 @@ render_work_items() {
 	[[ -s $work_items_file ]] && result=$(cat "$work_items_file")
 	[[ -s $last_gitlab_poll_file ]] && checked=$(date -r "$(cat "$last_gitlab_poll_file")" +%H:%M)
 	jq -nr --argjson result "$result" --arg problem "$(cat "$work_items_error_file" 2>/dev/null)" \
-		--arg project "$GITLAB_PROJECT" --arg base "$GITLAB_URL" --arg me "$(jq -r '.data.currentUser.username // empty' "$gitlab_file" 2>/dev/null)" \
-		--arg scope "$(setting work_items_scope assigned)" --arg type "$(setting work_items_type all)" \
-		--arg state "$(setting work_items_state opened)" --argjson with "$(label_list work_items_with_labels)" \
-		--argjson without "$(label_list work_items_without_labels)" \
-		--argjson related "$(cat "$related_dir"/*.json 2>/dev/null | jq -sc 'map({key: .reference, value: .}) | from_entries')" \
-		--arg checked "$checked" --arg icon "$(gitlab_icon)" --arg filtersAction "$(settings_action gitlab)" \
+		--arg project "$GITLAB_PROJECT" --arg allWorkItems "$all_work_items" \
+		--arg scope "$scope" --arg type "$(setting work_items_type all)" \
+		--arg state "$state" --argjson with "$(label_list work_items_with_labels)" \
+		--argjson without "$(label_list work_items_without_labels)" --argjson missing "$(missing_labels)" \
+		--arg match "$(setting work_items_labels_match all)" \
+		--argjson related "$(cat "$related_dir"/*.json 2>/dev/null | jq -sc 'map({key: .reference, value: .}) | from_entries' 2>/dev/null || echo '{}')" \
+		--arg checked "$checked" --arg params "$(submenu_params "$all_work_items" logo)" --arg filtersAction "$(settings_action gitlab)" \
 		--arg slotPrefix "$SLOT_LABEL_PREFIX" --arg ignoredPrefix "$IGNORED_MR_PREFIX" --arg committedLabel "$COMMITTED_LABEL" "$WORK_ITEMS_MENU"
 }
 
 render_gitlab() {
 	if [[ -s $gitlab_file ]]; then
 		jq -r --arg project "$GITLAB_PROJECT" --arg dashboard "$GITLAB_URL/dashboard/merge_requests" \
-			--arg checked "$(date -r "$(cat "$last_gitlab_poll_file")" +%H:%M)" --arg icon "$(gitlab_icon)" "$GITLAB_MENU" "$gitlab_file"
+			--arg checked "$(date -r "$(cat "$last_gitlab_poll_file")" +%H:%M)" \
+			--arg params "$(submenu_params "$GITLAB_URL/dashboard/merge_requests" logo)" "$GITLAB_MENU" "$gitlab_file"
 		[[ -s $gitlab_error_file ]] && echo "--⚠️ $(cat "$gitlab_error_file") | color=red"
 	elif [[ -s $gitlab_error_file ]]; then
-		echo "GitLab merge requests ⚠️$(gitlab_icon)"
+		echo "GitLab merge requests ⚠️$(submenu_params "$GITLAB_URL/dashboard/merge_requests" logo)"
 		echo "--$(cat "$gitlab_error_file") | color=red"
 		echo "--Check now | bash=\"$self\" param1=--check-now terminal=false refresh=true"
 	else
-		echo "GitLab merge requests$(gitlab_icon)"
+		echo "GitLab merge requests$(submenu_params "$GITLAB_URL/dashboard/merge_requests" logo)"
 		echo '--Needs a GitLab token with the read_api scope | color=#8E8E93'
 		echo "--1. Create the token in GitLab | href=$GITLAB_URL/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api"
 		if has_settings_app; then
@@ -717,10 +807,11 @@ has_settings_app() {
 }
 
 # settings_action <pane>: the SwiftBar parameters of a menu item that opens the settings window at the pane (jenkins,
-# gitlab, accounts or team); without the app, which install.sh builds, the settings file in a text editor.
+# gitlab, accounts or team); without the app, which install.sh builds, the settings file in a text editor. A URL the app
+# handles, because macOS brings an app to the front for a URL SwiftBar opens, but not for an app that bash= starts.
 settings_action() {
 	if has_settings_app; then
-		printf 'bash=/usr/bin/open param1=-n param2="%s" param3=--args param4=--settings param5=%s terminal=false' "$settings_app" "$1"
+		printf 'href=jenkins-menubar://settings/%s' "$1"
 	else
 		printf 'bash=/usr/bin/open param1=-t param2="%s" terminal=false' "$settings_file"
 	fi
@@ -780,7 +871,7 @@ render() {
 		# Truncated here rather than with SwiftBar's length=, which adds a tooltip that covers the submenu.
 		label="$icon ${title//|/¦}"
 		((${#label} > 70)) && label="${label:0:69}…"
-		menu+="$label"$'\n'
+		menu+="$label$(submenu_params "$build_url")"$'\n'
 		menu+="--${detail//|/¦} | color=#8E8E93 href=$build_url"$'\n'
 		menu+="-----"$'\n'
 		[[ $mr_url != - ]] && menu+="--🦊 Open merge request !$mr in GitLab | href=$mr_url"$'\n'
@@ -856,7 +947,7 @@ settings_json() {
 		for pair in refresh_seconds=60 hide_successful_after_hours=24 hide_failed_after_hours=168 hide_merged=on alert=dialog \
 			voice=off stage_alerts=on menubar_icons=monochrome gitlab_refresh_seconds=120 work_items_scope=assigned \
 			work_items_type=all work_items_state=opened work_items_with_labels= work_items_without_labels= \
-			work_items_sort=UPDATED_DESC work_items_limit=20; do
+			work_items_labels_match=all work_items_sort=UPDATED_DESC work_items_limit=20; do
 			key=${pair%%=*}
 			if [[ $key == hide_*_after_hours ]]; then
 				value=$(hide_setting "$key" "${pair#*=}")
@@ -872,14 +963,16 @@ settings_json() {
 			printf '%s\t%s\n' "$key" "$(team_value "$key")"
 		done | jq -Rn '[inputs | split("\t") | {key: .[0], value: (.[1] // "")}] | from_entries'
 	)" --argjson known "$known" --argjson with "$(label_list work_items_with_labels)" \
-		--argjson without "$(label_list work_items_without_labels)" \
-		--arg jenkinsSource "$(token_source JENKINS_MCP_BASIC_AUTH)" \
+		--argjson without "$(label_list work_items_without_labels)" --argjson missing "$(missing_labels)" \
+		--argjson colors "$(label_colors)" --arg jenkinsSource "$(token_source JENKINS_MCP_BASIC_AUTH)" \
 		--arg jenkinsUser "$(token JENKINS_MCP_BASIC_AUTH | base64 --decode 2>/dev/null | cut -d : -f 1)" \
 		--arg gitlabSource "$(token_source GITLAB_TOKEN)" --arg settingsFile "$settings_file" --arg teamFile "$team_file" \
 		--arg jenkinsRoot "${JOB_ROOT%%/job/*}" --arg gitlabUrl "$GITLAB_URL" '{
 		settings: $settings,
 		team: $team,
 		labels: ($known + $with + $without | unique),
+		missingLabels: [$missing[] | select(IN(($with + $without)[]))],
+		labelColors: ($colors | with_entries(select(.key | IN(($with + $without)[])))),
 		tokens: {jenkins: {source: $jenkinsSource, user: $jenkinsUser}, gitlab: {source: $gitlabSource, user: ""}},
 		files: {settings: $settingsFile, team: $teamFile},
 		links: {
@@ -888,6 +981,39 @@ settings_json() {
 				else "\($gitlabUrl)/-/user_settings/personal_access_tokens?name=Jenkins%20menubar&scopes=read_api" end)
 		}
 	}'
+}
+
+# search_labels <text>: the labels whose title contains the text (all without one) for the label filters' Add…, as JSON:
+# those of the work items and the filters, and GitLab's, with a problem when GitLab's are missing.
+search_labels() {
+	local known='[]' found='[]' problem='' answer
+	[[ -s $work_item_labels_file ]] && known=$(jq -c 'if type == "array" then . else keys end' "$work_item_labels_file" 2>/dev/null || echo '[]')
+	GITLAB_TOKEN=$(token GITLAB_TOKEN)
+	if [[ -z $1 ]]; then
+		:
+	elif [[ -z $GITLAB_TOKEN ]]; then
+		problem='No GitLab token: only the labels of your work items'
+	else
+		# Typing starts a search per pause, and an older one can still run.
+		answer=$(mktemp "$cache_dir/search-labels.XXXXXX")
+		if [[ $(gitlab_request "$LABELS_QUERY" "$(jq -n --arg path "$GITLAB_PROJECT" --arg term "$1" '{path: $path, term: $term}')" "$answer") != 200 ]] ||
+			! found=$(jq -c '[.data.project.labels.nodes[].title]' "$answer" 2>/dev/null); then
+			found='[]'
+			problem='GitLab did not answer: only the labels of your work items'
+		else
+			remember_label_colors "$answer"
+		fi
+		rm -f "$answer"
+	fi
+	# GitLab also finds labels by their description.
+	jq -n --arg text "$1" --argjson known "$known" --argjson found "$found" --argjson with "$(label_list work_items_with_labels)" \
+		--argjson without "$(label_list work_items_without_labels)" --argjson colors "$(label_colors)" --arg problem "$problem" '
+		($known + $with + $without + $found | unique | map(select(ascii_downcase | contains($text | ascii_downcase)))) as $labels
+		| {
+			labels: $labels,
+			colors: ($colors | with_entries(select(.key | IN($labels[])))),
+			problem: (if $problem == "" then null else $problem end)
+		}'
 }
 
 # store_token <JENKINS_MCP_BASIC_AUTH | GITLAB_TOKEN>: puts the token read from stdin in the keychain. security reads its
@@ -952,6 +1078,7 @@ case ${1:-} in
 	--set) set_setting "$2" "$3"; exit 0 ;;
 	--set-team) set_value "$team_file" "$2" "$3"; exit 0 ;;
 	--label-filter) set_label_filter "$2" "$3"; exit ;;
+	--label-match) set_labels_match "$2"; exit ;;
 	--clear-labels)
 		set_setting work_items_with_labels ''
 		set_setting work_items_without_labels ''
@@ -963,6 +1090,7 @@ case ${1:-} in
 	--preview-success) "$watch" --test $(watch_flags); exit 0 ;;
 	--preview-failure) "$watch" --test-failure $(watch_flags); exit 0 ;;
 	--settings-json) settings_json; exit ;;
+	--search-labels) search_labels "${2:-}"; exit ;;
 	--set-token) store_token "$2"; exit ;;
 	--delete-token) delete_token "$2"; exit ;;
 	--check-accounts) check_accounts; exit ;;

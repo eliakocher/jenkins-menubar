@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// The settings window. The menu opens it with `open -n … --args --settings <pane>`, so every click starts a new
-/// instance of the app: that one hands the pane to an instance that already shows the window, and quits.
+/// The settings window. The menu opens it with jenkins-menubar://settings/<pane>, which macOS hands to any running
+/// instance of the app, and `open -n … --args --settings <pane>` starts a new one: an instance without the window hands
+/// the pane to the one that shows it, and quits.
 @MainActor
 final class SettingsWindow: NSObject, NSWindowDelegate {
 	private static let showPane = Notification.Name("local.jenkins-menubar.settings.show")
@@ -51,8 +52,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 
 		NSApp.setActivationPolicy(.regular)
 		NSApp.mainMenu = Self.mainMenu()
-		NSApp.activate()
-		window.makeKeyAndOrderFront(nil)
+		bringWindowToFront()
 
 		DistributedNotificationCenter.default().addObserver(forName: Self.showPane, object: nil, queue: .main) { [weak self] notification in
 			let pane = notification.object as? String
@@ -62,12 +62,19 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
 		}
 	}
 
-	private func bringToFront(pane: String?) {
+	func bringToFront(pane: String?) {
 		if let pane = pane.flatMap(Pane.init(rawValue:)) {
 			navigation.pane = pane
 		}
+		bringWindowToFront()
+	}
+
+	/// macOS only lets an app take the focus for a click in that app, and the click that opens the settings goes to
+	/// SwiftBar's menu: when macOS refuses, the window still comes in front of the others and takes the focus on a click.
+	private func bringWindowToFront() {
 		NSApp.activate()
 		window.makeKeyAndOrderFront(nil)
+		window.orderFrontRegardless()
 	}
 
 	func windowWillClose(_ notification: Notification) {

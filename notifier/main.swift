@@ -3,6 +3,7 @@ import UserNotifications
 
 // Usage: notifier --title T [--subtitle S] [--body B] [--build URL] [--mr URL] [--default build|mr]
 //        notifier --settings [jenkins|gitlab|accounts|team]    the settings window, at that pane
+//        open jenkins-menubar://settings/<pane>                the same, the way the menu opens it
 final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
 	let options: [String: String]
 	let settingsPane: String?
@@ -37,7 +38,11 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 			return
 		}
 		// An unanswered permission prompt never calls back.
-		DispatchQueue.main.asyncAfter(deadline: .now() + 20) { exit(1) }
+		DispatchQueue.main.asyncAfter(deadline: .now() + 20) {
+			if self.settingsWindow == nil {
+				exit(1)
+			}
+		}
 		let center = UNUserNotificationCenter.current()
 		center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
 			guard granted else {
@@ -61,6 +66,24 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 		}
 	}
 
+	/// The menu opens the settings with jenkins-menubar://settings/<pane>: macOS brings an app that SwiftBar opens a URL
+	/// with to the front, but not one that SwiftBar's background `open -n` starts. macOS hands the URL to a running instance
+	/// (maybe one that is about to quit after its banner) or starts one without arguments.
+	func application(_ application: NSApplication, open urls: [URL]) {
+		guard let url = urls.first(where: { $0.scheme == "jenkins-menubar" && $0.host == "settings" }) else { return }
+		let pane = url.pathComponents.dropFirst().first ?? "jenkins"
+		MainActor.assumeIsolated {
+			if let settingsWindow {
+				settingsWindow.bringToFront(pane: pane)
+			} else {
+				settingsWindow = SettingsWindow.show(pane: pane)
+				if settingsWindow == nil {
+					quit(after: 0)
+				}
+			}
+		}
+	}
+
 	func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
 		let info = response.notification.request.content.userInfo
 		let key: String?
@@ -74,10 +97,7 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 			NSWorkspace.shared.open(url)
 		}
 		completionHandler()
-		// macOS may hand a click to the instance with the settings window, which stays open.
-		if settingsPane == nil {
-			quit(after: 0.5)
-		}
+		quit(after: 0.5)
 	}
 
 	func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -93,8 +113,14 @@ final class Notifier: NSObject, NSApplicationDelegate, UNUserNotificationCenterD
 		]
 	}
 
+	/// An instance with the settings window stays until the window closes: macOS may hand it a banner click, and a URL may
+	/// open the window in an instance that was about to quit.
 	private func quit(after seconds: Double) {
-		DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { NSApp.terminate(nil) }
+		DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
+			if self.settingsWindow == nil {
+				NSApp.terminate(nil)
+			}
+		}
 	}
 }
 

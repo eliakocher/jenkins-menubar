@@ -170,8 +170,7 @@ plugin_action() {
 
 # opens_settings <pane>: the SwiftBar parameters of a menu item that opens the settings window at the pane.
 opens_settings() {
-	printf 'bash=/usr/bin/open param1=-n param2="%s" param3=--args param4=--settings param5=%s terminal=false' \
-		"$tool/notifier/Jenkins Watch.app" "$1"
+	printf 'href=jenkins-menubar://settings/%s' "$1"
 }
 
 # What the settings window reads: plugin_json [jq filter].

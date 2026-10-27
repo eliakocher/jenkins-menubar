@@ -167,7 +167,6 @@ struct JenkinsPane: View {
 
 struct GitLabPane: View {
 	@ObservedObject var model: SettingsModel
-	@State private var query = ""
 
 	var body: some View {
 		Form {
@@ -192,85 +191,343 @@ struct GitLabPane: View {
 				Choice("Show at most", value: model.setting("work_items_limit"), [("10", "10"), ("20", "20"), ("30", "30"), ("50", "50"), ("100", "100")])
 			}
 			Section {
-				if !(model.withLabels + model.withoutLabels).isEmpty {
-					LabeledContent("Filtering by") {
-						HStack {
-							ForEach(model.withLabels, id: \.self) { label in LabelPill(name: label, mark: "+") }
-							ForEach(model.withoutLabels, id: \.self) { label in LabelPill(name: label, mark: "−") }
-						}
-					}
-				}
-				TextField("Search", text: $query, prompt: Text("Search labels"))
-					.labelsHidden()
-				if shownLabels.isEmpty {
-					Text(model.labels.isEmpty ? "No labels yet: they come with the work items GitLab shows." : "No label matches.")
-						.foregroundStyle(.secondary)
-				}
-				ForEach(shownLabels, id: \.self) { label in
-					LabeledContent {
-						Picker("Filter", selection: model.labelFilter(label)) {
-							Text("Any").tag(LabelFilter.any)
-							Text("With").tag(LabelFilter.with)
-							Text("Without").tag(LabelFilter.without)
-						}
-						.pickerStyle(.segmented)
-						.labelsHidden()
-						.fixedSize()
-					} label: {
-						LabelPill(name: label)
+				LabelFilterRow(filter: .with, model: model)
+				LabelFilterRow(filter: .without, model: model)
+				ForEach(model.missingLabels, id: \.self) { label in
+					HStack {
+						Label("\(label) is not in GitLab any more (renamed or removed?)", systemImage: "exclamationmark.triangle.fill")
+							.foregroundStyle(.orange)
+						Spacer()
+						Button("Remove") { model.setLabelFilter(label, .any) }
 					}
 				}
 			} header: {
 				HStack {
-					Text("Labels")
+					Text("Work item labels")
 					Spacer()
-					if !(model.withLabels + model.withoutLabels).isEmpty {
-						Button("Clear Label Filters") { model.clearLabelFilters() }
+					if model.hasLabelFilters {
+						Button("Clear All") { model.clearLabelFilters() }
 							.buttonStyle(.link)
 							.font(.callout)
 					}
 				}
 			} footer: {
-				Text("Work items need every “With” label and none of the “Without” ones. The list has the labels of the work items GitLab showed in the last 30 days.")
+				Text("Only for the work items, the merge requests always show. With “all of these”, a work item needs every label; it has only one label per scope (the part before ::), so a new label replaces the one of its scope. With “any of these”, one of them is enough. Work items with a “none of these” label never show.")
 					.foregroundStyle(.secondary)
 			}
 		}
 	}
+}
 
-	private var shownLabels: [String] {
-		let query = query.trimmingCharacters(in: .whitespaces)
-		return query.isEmpty ? model.labels : model.labels.filter { $0.localizedCaseInsensitiveContains(query) }
+/// GitLab's scoped labels: the scope is all before the last "::", like uStatus in uStatus::Todo.
+func scopeAndValue(of label: String) -> (scope: String, value: String)? {
+	guard let separator = label.range(of: "::", options: .backwards) else { return nil }
+	return (String(label[..<separator.lowerBound]), String(label[separator.upperBound...]))
+}
+
+/// The labels of one filter as pills, and a dashed Add Label pill for more. The must-have filter's title chooses
+/// between all of its labels and any of them.
+struct LabelFilterRow: View {
+	let filter: LabelFilter
+	@ObservedObject var model: SettingsModel
+	@State private var adding = false
+
+	var body: some View {
+		VStack(alignment: .leading, spacing: 8) {
+			if filter == .with {
+				HStack(spacing: 2) {
+					Text("Must have")
+					Menu(model.labelsMatch == "any" ? "any of these" : "all of these") {
+						Button("all of these") { model.setLabelsMatch("all") }
+						Button("any of these") { model.setLabelsMatch("any") }
+					}
+					.menuStyle(.button)
+					.buttonStyle(.borderless)
+					.fixedSize()
+				}
+			} else {
+				Text("Must have none of these")
+			}
+			FlowLayout(spacing: 6) {
+				ForEach(model.labels(in: filter), id: \.self) { label in
+					LabelPill(name: label, color: LabelColor(model.labelColor(label)), missing: model.missingLabels.contains(label)) {
+						model.setLabelFilter(label, .any)
+					}
+				}
+				Button {
+					adding = true
+				} label: {
+					Label("Add Label", systemImage: "plus")
+						.font(.callout)
+						.padding(.horizontal, 8)
+						.padding(.vertical, 2)
+						.overlay(Capsule().strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+						.contentShape(Capsule())
+				}
+				.buttonStyle(.plain)
+				.foregroundStyle(.secondary)
+				.popover(isPresented: $adding, arrowEdge: .bottom) {
+					LabelPicker(filter: filter, model: model, isPresented: $adding)
+				}
+			}
+		}
 	}
 }
 
-/// A label the way GitLab draws it: a scoped label (scope::value) as a two-part pill; the mark (+ or −) goes first.
+/// A GitLab label color (#rrggbb), with black or white text on it, whichever reads better.
+struct LabelColor {
+	let background: Color
+	let text: Color
+
+	init?(_ hex: String?) {
+		guard let hex, hex.count == 7, hex.hasPrefix("#"), let rgb = Int(hex.dropFirst(), radix: 16) else { return nil }
+		let red = Double(rgb >> 16 & 0xFF) / 255, green = Double(rgb >> 8 & 0xFF) / 255, blue = Double(rgb & 0xFF) / 255
+		background = Color(red: red, green: green, blue: blue)
+		text = 0.299 * red + 0.587 * green + 0.114 * blue > 0.6 ? .black : .white
+	}
+}
+
+/// A label the way GitLab draws it, in its color when known: a scoped label (scope::value) as a pill with the scope
+/// filled in, any other label filled in completely. A label GitLab no longer has is orange; remove adds an × that takes
+/// the label out of its filter.
 struct LabelPill: View {
 	let name: String
-	var mark: String?
+	var color: LabelColor?
+	var missing = false
+	var remove: (() -> Void)?
 
 	var body: some View {
-		let parts = name.components(separatedBy: "::")
+		let color = missing ? nil : color
+		let parts = scopeAndValue(of: name)
+		let tint = missing ? Color.orange : Color.secondary
 		HStack(spacing: 0) {
-			if let mark {
-				Text(mark)
-					.bold()
-					.padding(.leading, 7)
-			}
-			if parts.count > 1 {
-				Text(parts[0])
+			if let parts {
+				Text(parts.scope)
+					.foregroundStyle(color?.text ?? .primary)
 					.padding(.horizontal, 7)
-					.background(Color.secondary.opacity(0.28))
-				Text(parts.dropFirst().joined(separator: "::"))
+					.padding(.vertical, 2)
+					.background(color?.background ?? tint.opacity(0.28))
+				Text(parts.value)
 					.padding(.horizontal, 7)
+					.padding(.vertical, 2)
 			} else {
 				Text(name)
+					.foregroundStyle(color?.text ?? .primary)
 					.padding(.horizontal, 7)
+					.padding(.vertical, 2)
+			}
+			if missing {
+				Image(systemName: "exclamationmark.triangle.fill")
+					.foregroundStyle(.orange)
+					.padding(.trailing, 5)
+			}
+			if let remove {
+				Button(action: remove) {
+					Image(systemName: "xmark.circle.fill")
+				}
+				.buttonStyle(.plain)
+				.foregroundStyle(parts == nil ? color?.text.opacity(0.75) ?? .secondary : .secondary)
+				.padding(.trailing, 5)
+				.help("Remove from the filter")
+				.accessibilityLabel("Remove \(name)")
 			}
 		}
 		.font(.callout)
-		.padding(.vertical, 2)
-		.background(Color.secondary.opacity(0.12))
+		.background(parts == nil ? color?.background ?? tint.opacity(0.12) : tint.opacity(0.12))
+		.overlay {
+			if let color, parts != nil {
+				Capsule().strokeBorder(color.background, lineWidth: 1.5)
+			}
+		}
 		.clipShape(Capsule())
+	}
+}
+
+/// Add Label's popover: a search over GitLab's labels and those of the work items, with the labels as pills in their
+/// GitLab colors, grouped by scope. A click puts a label in the filter or takes it out again.
+struct LabelPicker: View {
+	let filter: LabelFilter
+	@ObservedObject var model: SettingsModel
+	@Binding var isPresented: Bool
+	@StateObject private var search: LabelSearch
+	@FocusState private var searchFocused: Bool
+
+	init(filter: LabelFilter, model: SettingsModel, isPresented: Binding<Bool>) {
+		self.filter = filter
+		self.model = model
+		_isPresented = isPresented
+		_search = StateObject(wrappedValue: LabelSearch(plugin: model.plugin))
+	}
+
+	var body: some View {
+		VStack(spacing: 0) {
+			VStack(alignment: .leading, spacing: 10) {
+				Text(filter == .with ? "Work items must have \(model.labelsMatch == "any" ? "any" : "all") of these" : "Work items must have none of these")
+					.font(.headline)
+				HStack(spacing: 6) {
+					Image(systemName: "magnifyingglass")
+						.foregroundStyle(.secondary)
+					TextField("Search", text: $search.text, prompt: Text("Search GitLab labels"))
+						.textFieldStyle(.plain)
+						.focused($searchFocused)
+					if search.searching {
+						ProgressView()
+							.controlSize(.small)
+					} else if !search.text.isEmpty {
+						Button {
+							search.text = ""
+						} label: {
+							Image(systemName: "xmark.circle.fill")
+						}
+						.buttonStyle(.plain)
+						.foregroundStyle(.secondary)
+						.accessibilityLabel("Clear the search")
+					}
+				}
+				.padding(.horizontal, 8)
+				.padding(.vertical, 6)
+				.background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
+			}
+			.padding(14)
+			Divider()
+			ScrollView {
+				VStack(alignment: .leading, spacing: 16) {
+					ForEach(groups, id: \.title) { group in
+						VStack(alignment: .leading, spacing: 6) {
+							Text(group.title)
+								.font(.caption.weight(.semibold))
+								.foregroundStyle(.secondary)
+							FlowLayout(spacing: 6) {
+								ForEach(group.labels, id: \.self) { label in
+									choice(label, shown: group.scope == nil ? label : scopeAndValue(of: label)?.value ?? label)
+								}
+							}
+						}
+					}
+				}
+				.frame(maxWidth: .infinity, alignment: .leading)
+				.padding(14)
+			}
+			.overlay {
+				if groups.isEmpty && !search.searching {
+					if search.text.isEmpty {
+						ContentUnavailableView("Find a Label", systemImage: "tag",
+							description: Text("Type a part of its name to search GitLab."))
+					} else {
+						ContentUnavailableView.search(text: search.text)
+					}
+				}
+			}
+			Divider()
+			HStack {
+				if let problem = search.problem {
+					Label(problem, systemImage: "exclamationmark.triangle")
+						.foregroundStyle(.orange)
+				} else {
+					Text("Click a label to add it, again to remove it.")
+						.foregroundStyle(.secondary)
+				}
+				Spacer()
+				Button("Done") { isPresented = false }
+					.keyboardShortcut(.defaultAction)
+			}
+			.font(.callout)
+			.padding(10)
+		}
+		.frame(width: 400, height: 460)
+		.onAppear { searchFocused = true }
+	}
+
+	private func choice(_ label: String, shown: String) -> some View {
+		let other: LabelFilter = filter == .with ? .without : .with
+		return LabelChoice(
+			text: shown,
+			color: LabelColor(search.colors[label]),
+			selected: model.labels(in: filter).contains(label),
+			inOtherFilter: model.labels(in: other).contains(label)
+		) {
+			model.toggleLabel(label, in: filter)
+		}
+	}
+
+	/// The scopes in alphabetical order, then the labels without one.
+	private var groups: [(title: String, scope: String?, labels: [String])] {
+		let byScope = Dictionary(grouping: search.labels) { scopeAndValue(of: $0)?.scope }
+		let scopes = byScope.keys.compactMap { $0 }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+		return scopes.map { (title: $0, scope: $0, labels: byScope[$0] ?? []) }
+			+ (byScope[nil].map { [(title: "Other labels", scope: nil, labels: $0)] } ?? [])
+	}
+}
+
+/// A label in the picker, in its GitLab color: tinted until it is in the filter, then filled in with a checkmark. A label
+/// in the other filter is faded; a click moves it over.
+struct LabelChoice: View {
+	let text: String
+	let color: LabelColor?
+	let selected: Bool
+	let inOtherFilter: Bool
+	let action: () -> Void
+	@State private var hovering = false
+
+	var body: some View {
+		let tint = color?.background ?? Color.secondary
+		Button(action: action) {
+			HStack(spacing: 4) {
+				if selected {
+					Image(systemName: "checkmark")
+						.font(.caption.weight(.bold))
+				}
+				Text(text)
+			}
+			.font(.callout)
+			.foregroundStyle(selected ? color?.text ?? .primary : .primary)
+			.padding(.horizontal, 9)
+			.padding(.vertical, 3)
+			.background(selected ? tint : tint.opacity(hovering ? 0.32 : 0.16), in: Capsule())
+			.overlay(Capsule().strokeBorder(tint.opacity(selected ? 0 : 0.55)))
+			.opacity(inOtherFilter ? 0.45 : 1)
+			.contentShape(Capsule())
+		}
+		.buttonStyle(.plain)
+		.onHover { hovering = $0 }
+		.help(inOtherFilter ? "In the other filter: click to move it here" : selected ? "Click to remove it" : "Click to add it")
+	}
+}
+
+/// Lays its views out in rows, like words in a line of text, each centered in its row.
+struct FlowLayout: Layout {
+	var spacing: CGFloat = 8
+
+	func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+		let frames = frames(width: proposal.width ?? .infinity, subviews: subviews)
+		return CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
+	}
+
+	func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+		for (subview, frame) in zip(subviews, frames(width: bounds.width, subviews: subviews)) {
+			subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+		}
+	}
+
+	private func frames(width: CGFloat, subviews: Subviews) -> [CGRect] {
+		var frames: [CGRect] = []
+		var row: [CGRect] = []
+		var top: CGFloat = 0
+		func endRow() {
+			let height = row.map(\.height).max() ?? 0
+			frames += row.map { $0.offsetBy(dx: 0, dy: (height - $0.height) / 2) }
+			top += height + spacing
+			row = []
+		}
+		for subview in subviews {
+			let size = subview.sizeThatFits(.unspecified)
+			if let last = row.last, last.maxX + spacing + size.width > width {
+				endRow()
+			}
+			row.append(CGRect(origin: CGPoint(x: row.last.map { $0.maxX + spacing } ?? 0, y: top), size: size))
+		}
+		endRow()
+		return frames
 	}
 }
 

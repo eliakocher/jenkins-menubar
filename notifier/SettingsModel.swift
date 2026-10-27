@@ -21,7 +21,10 @@ struct Snapshot: Decodable {
 
 	let settings: [String: String]
 	let team: [String: String]
-	let labels: [String]
+	/// the filter labels GitLab no longer has
+	let missingLabels: [String]
+	/// GitLab's colors of the filter labels, like #9400d3
+	let labelColors: [String: String]
 	let tokens: [String: Token]
 	let files: Files
 	let links: Links
@@ -36,6 +39,15 @@ struct AccountCheck: Decodable {
 
 	let jenkins: Result
 	let gitlab: Result
+}
+
+/// What the plugin answers to --search-labels.
+struct LabelSearchResult: Decodable {
+	let labels: [String]
+	/// GitLab's colors of the labels it knows
+	let colors: [String: String]
+	/// why GitLab's labels are missing
+	let problem: String?
 }
 
 struct PluginError: LocalizedError {
@@ -146,29 +158,43 @@ final class SettingsModel: ObservableObject {
 
 	// ── Label filters ──
 
-	var labels: [String] {
-		snapshot?.labels ?? []
+	/// The labels a work item must have (with) or must not have (without).
+	func labels(in filter: LabelFilter) -> [String] {
+		filter == .any ? [] : (settings["work_items_\(filter.rawValue)_labels"] ?? "").split(separator: ",").map(String.init)
 	}
 
-	private func labelList(_ key: String) -> [String] {
-		(settings[key] ?? "").split(separator: ",").map(String.init)
+	var hasLabelFilters: Bool {
+		!(labels(in: .with) + labels(in: .without)).isEmpty
 	}
 
-	var withLabels: [String] { labelList("work_items_with_labels") }
-	var withoutLabels: [String] { labelList("work_items_without_labels") }
+	var missingLabels: [String] {
+		snapshot?.missingLabels ?? []
+	}
 
-	func labelFilter(_ label: String) -> Binding<LabelFilter> {
-		Binding(
-			get: {
-				if self.withLabels.contains(label) { return .with }
-				if self.withoutLabels.contains(label) { return .without }
-				return .any
-			},
-			set: { filter in
-				self.perform(["--label-filter", label, filter.rawValue])
-				self.reload()
-			}
-		)
+	func labelColor(_ label: String) -> String? {
+		snapshot?.labelColors[label]
+	}
+
+	/// Puts the label in the filter, out of the other one; the plugin keeps one must-have label per scope.
+	func setLabelFilter(_ label: String, _ filter: LabelFilter) {
+		perform(["--label-filter", label, filter.rawValue])
+		reload()
+	}
+
+	/// Whether a work item needs all must-have labels or any one of them: all | any.
+	var labelsMatch: String {
+		settings["work_items_labels_match"] ?? "all"
+	}
+
+	/// For all, the plugin keeps the last must-have label of each scope.
+	func setLabelsMatch(_ match: String) {
+		perform(["--label-match", match])
+		reload()
+	}
+
+	/// Adds the label to the filter, or takes it out when it is in already.
+	func toggleLabel(_ label: String, in filter: LabelFilter) {
+		setLabelFilter(label, labels(in: filter).contains(label) ? .any : filter)
 	}
 
 	func clearLabelFilters() {
@@ -251,6 +277,7 @@ final class SettingsModel: ObservableObject {
 	}
 
 	/// SwiftBar renders the menu again after a short pause, so several quick changes refresh it once.
+	/// It also asks GitLab again, which checks that the filter labels still exist.
 	private func refreshMenuSoon() {
 		menuRefresh?.cancel()
 		menuRefresh = Task {
@@ -259,6 +286,50 @@ final class SettingsModel: ObservableObject {
 			let configuration = NSWorkspace.OpenConfiguration()
 			configuration.activates = false
 			NSWorkspace.shared.open(url, configuration: configuration, completionHandler: nil)
+		}
+	}
+}
+
+/// The search of the label filters' Add…: the plugin asks GitLab, so it runs in the background, once typing pauses.
+@MainActor
+final class LabelSearch: ObservableObject {
+	@Published var text = "" {
+		didSet { start(after: .milliseconds(300)) }
+	}
+	@Published private(set) var labels: [String] = []
+	@Published private(set) var colors: [String: String] = [:]
+	@Published private(set) var searching = false
+	@Published private(set) var problem: String?
+
+	private let plugin: Plugin
+	private var search: Task<Void, Never>?
+
+	init(plugin: Plugin) {
+		self.plugin = plugin
+		start(after: .zero)
+	}
+
+	private func start(after pause: Duration) {
+		search?.cancel()
+		let plugin = plugin
+		let text = text.trimmingCharacters(in: .whitespaces)
+		search = Task {
+			try? await Task.sleep(for: pause)
+			guard !Task.isCancelled else { return }
+			searching = true
+			let result = await Task.detached { () -> Result<LabelSearchResult, Error> in
+				Result { try JSONDecoder().decode(LabelSearchResult.self, from: plugin.run(["--search-labels", text])) }
+			}.value
+			guard !Task.isCancelled else { return }
+			searching = false
+			switch result {
+			case .success(let found):
+				labels = found.labels
+				colors = found.colors
+				problem = found.problem
+			case .failure(let error):
+				problem = error.localizedDescription
+			}
 		}
 	}
 }
