@@ -470,8 +470,8 @@ test_plugin_lists_my_merge_requests_and_the_reviews_asked_of_me() {
 	gitlab_answers me "$(gitlab_merge_request 1 'My change' me NOT_APPROVED)" "$(gitlab_merge_request 2 'Their change' someone MERGEABLE me)"
 	plugin_run
 	assert_contains "$menu" 'GitLab merge requests · 1 open · 1 to review'
-	assert_contains "$menu" '--My change | href=https://gitlab.test/group/project/-/merge_requests/1 tooltip="!1 · No reviewers yet'
-	assert_contains "$menu" '--Their change | href=https://gitlab.test/group/project/-/merge_requests/2 tooltip="!2 · Review requested · Ready to merge · by someone'
+	assert_contains "$menu" '--:hourglass.circle.fill: My change | href=https://gitlab.test/group/project/-/merge_requests/1 sfcolor=#737278,#A4A3A8 tooltip="!1 · No reviewers yet'
+	assert_contains "$menu" '--:eye.circle.fill: Their change | href=https://gitlab.test/group/project/-/merge_requests/2 sfcolor=#C17D10,#D99530 tooltip="!2 · Review requested · Ready to merge · by someone'
 }
 
 # assert_label_offered <label>: the label filters of the settings window offer the label.

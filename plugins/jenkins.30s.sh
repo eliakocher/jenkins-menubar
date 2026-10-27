@@ -430,26 +430,36 @@ def approvals:
 	| if ($reviewers | length) == 0 then "No reviewers yet"
 	elif $missing == 0 then "All reviewers approved, approval rules still open"
 	else "Missing \($missing) of \($reviewers | length | count("approval"))" end;
+# The status badge in front of a merge request: an SF Symbol of a round badge, in GitLab's colors of the light and the
+# dark menu. Only round badges, so the titles line up.
+def badge($text; $icon; $color): {$text, $icon, $color};
+def green: "#108548,#52B87A";
+def neutral: "#737278,#A4A3A8";
+def orange: "#C17D10,#D99530";
+def red: "#DD2B0E,#EC5941";
+def blue: "#1F75CB,#428FDC";
 def status:
-	if .detailedMergeStatus == "MERGEABLE" then "Ready to merge"
-	elif .draft then "Draft"
-	elif .headPipeline.status == "FAILED" then "Pipeline failed"
-	elif .detailedMergeStatus == "CONFLICT" then "Merge conflicts"
-	elif .detailedMergeStatus == "NEED_REBASE" then "Needs a rebase"
-	elif .detailedMergeStatus == "REQUESTED_CHANGES" then "Changes requested"
-	elif .detailedMergeStatus == "NOT_APPROVED" then approvals
-	elif .detailedMergeStatus == "DISCUSSIONS_NOT_RESOLVED" then "Unresolved threads"
-	elif .detailedMergeStatus == "CI_STILL_RUNNING" then "Pipeline running"
-	elif .detailedMergeStatus | IN("UNCHECKED", "CHECKING", "PREPARING", "APPROVALS_SYNCING") then "Checking mergeability"
-	else (.detailedMergeStatus // "unknown" | ascii_downcase | gsub("_"; " ")) end;
+	if .detailedMergeStatus == "MERGEABLE" then badge("Ready to merge"; "checkmark.circle.fill"; green)
+	elif .draft then badge("Draft"; "pencil.circle.fill"; neutral)
+	elif .headPipeline.status == "FAILED" then badge("Pipeline failed"; "xmark.circle.fill"; red)
+	elif .detailedMergeStatus == "CONFLICT" then badge("Merge conflicts"; "exclamationmark.circle.fill"; red)
+	elif .detailedMergeStatus == "NEED_REBASE" then badge("Needs a rebase"; "arrow.up.circle.fill"; orange)
+	elif .detailedMergeStatus == "REQUESTED_CHANGES" then badge("Changes requested"; "exclamationmark.circle.fill"; orange)
+	elif .detailedMergeStatus == "NOT_APPROVED" then badge(approvals; "hourglass.circle.fill"; neutral)
+	elif .detailedMergeStatus == "DISCUSSIONS_NOT_RESOLVED" then badge("Unresolved threads"; "bubble.left.circle.fill"; orange)
+	elif .detailedMergeStatus == "CI_STILL_RUNNING" then badge("Pipeline running"; "arrow.triangle.2.circlepath.circle.fill"; blue)
+	elif .detailedMergeStatus | IN("UNCHECKED", "CHECKING", "PREPARING", "APPROVALS_SYNCING") then
+		badge("Checking mergeability"; "ellipsis.circle.fill"; neutral)
+	else badge(.detailedMergeStatus // "unknown" | ascii_downcase | gsub("_"; " "); "questionmark.circle.fill"; neutral) end;
 def details($me; $state):
 	[(.reference | ref), $state, (if .author.username != $me then "by \(.author.name)" else empty end), (.updatedAt | updated),
 		"\(.diffStatsSummary.fileCount // 0 | count("file")) +\(.diffStatsSummary.additions // 0) −\(.diffStatsSummary.deletions // 0)",
 		(if .headPipeline.status then "pipeline \(.headPipeline.status | ascii_downcase)" else empty end)]
 	| map(select(. != "")) | join(" · ") | clean | gsub("\""; "'");
+# SwiftBar draws the :name: in front of the title as that SF Symbol, in the sfcolor.
 def entry($me; $requested):
-	(if $requested then "Review requested · \(status)" else status end) as $state
-	| "--\(.title | clean | shorten(60)) | href=\(.webUrl) tooltip=\"\(details($me; $state))\"";
+	(if $requested then badge("Review requested · \(status.text)"; "eye.circle.fill"; orange) else status end) as $badge
+	| "--:\($badge.icon): \(.title | clean | shorten(60)) | href=\(.webUrl) sfcolor=\($badge.color) tooltip=\"\(details($me; $badge.text))\"";
 def section($title; $items; $me; $requested):
 	if ($items | length) > 0
 	then ["--\($title) | size=12 color=#8E8E93"] + [$items | sort_by(.updatedAt) | reverse | .[] | entry($me; $requested)]

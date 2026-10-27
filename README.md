@@ -3,7 +3,8 @@
 A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds with a multibranch job:
 
 - **Your Jenkins MR pipelines** with live stage and ETA, and a big alert (or a banner) the moment one finishes
-- **Your GitLab merge requests**: your own, review requested, reviewed, with approvals and pipeline state on hover
+- **Your GitLab merge requests**: your own, review requested, reviewed, each with a status badge in GitLab's colors
+  (ready to merge, approvals missing, review requested, pipeline failed, …), the details on hover
 - **Your GitLab work items**: committed and not committed, with filters, label filters and sorting
 
 <img src="docs/menubar.png" alt="The menu with a running and a finished MR pipeline, GitLab merge requests and work items" width="546">
