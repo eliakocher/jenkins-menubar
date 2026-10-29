@@ -1,0 +1,8 @@
+{
+  "_class": "hudson.model.Queue$LeftItem",
+  "cancelled": false,
+  "executable": {
+    "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+    "number": 8
+  }
+}

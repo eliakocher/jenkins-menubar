@@ -1,0 +1,18 @@
+{
+  "formatVersion" : 1,
+  "team" : {
+    "committedLabel" : "workflow::committed",
+    "gitLabProject" : "group/subgroup/project",
+    "gitLabURL" : "https://gitlab.example.com",
+    "ignoredMergeRequestPrefix" : "[cascade]",
+    "inProgressLabel" : "status::InProgress",
+    "jenkinsJobURL" : "https://jenkins.example.com/job/project",
+    "slotCodeFreezeDays" : "14",
+    "slotEarlyAccessDays" : "7",
+    "slotLabelPrefix" : "slot::",
+    "slotPlanningURL" : "",
+    "slotReleaseWeekday" : "Monday",
+    "slotWarnDays" : "3",
+    "typeLabelPrefix" : "type::"
+  }
+}

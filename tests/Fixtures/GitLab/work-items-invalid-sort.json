@@ -1,0 +1,22 @@
+{
+  "errors": [
+    {
+      "message": "Variable $sort of type IssueSort was provided invalid value",
+      "locations": [
+        {
+          "line": 9,
+          "column": 101
+        }
+      ],
+      "extensions": {
+        "value": "NOPE",
+        "problems": [
+          {
+            "path": [],
+            "explanation": "Expected \"NOPE\" to be one of: DUE_DATE_ASC, TITLE_ASC, WEIGHT_DESC, PRIORITY_ASC, UPDATED_DESC, CREATED_DESC, CREATED_ASC"
+          }
+        ]
+      }
+    }
+  ]
+}

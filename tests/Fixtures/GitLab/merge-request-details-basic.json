@@ -1,0 +1,11 @@
+{
+  "data": {
+    "project": {
+      "mergeRequest": {
+        "approvedBy": { "nodes": [ { "username": "slee", "name": "Sam Lee" }, { "username": "akim", "name": "Alex Kim" } ] },
+        "discussions": { "pageInfo": { "hasNextPage": true }, "nodes": [] },
+        "headPipeline": null
+      }
+    }
+  }
+}

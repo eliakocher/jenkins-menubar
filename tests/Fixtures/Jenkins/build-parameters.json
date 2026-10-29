@@ -1,0 +1,44 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+  "actions": [
+    {
+      "_class": "hudson.model.CauseAction"
+    },
+    {
+      "_class": "hudson.model.ParametersAction",
+      "parameters": [
+        {
+          "_class": "hudson.model.StringParameterValue",
+          "name": "TARGET_BRANCH",
+          "value": "release/8.x"
+        },
+        {
+          "_class": "hudson.model.BooleanParameterValue",
+          "name": "SKIP_UI_TESTS",
+          "value": false
+        },
+        {
+          "_class": "hudson.model.StringParameterValue",
+          "name": "EXTRA_ARGS",
+          "value": "-Dsuite=smoke & more"
+        },
+        {
+          "_class": "hudson.model.PasswordParameterValue",
+          "name": "DEPLOY_PASSWORD"
+        },
+        {
+          "_class": "hudson.model.RunParameterValue",
+          "name": "UPSTREAM",
+          "value": {
+            "_class": "hudson.model.FreeStyleBuild",
+            "number": 12
+          }
+        }
+      ]
+    },
+    {},
+    {
+      "_class": "org.jenkinsci.plugins.workflow.libs.LibrariesAction"
+    }
+  ]
+}

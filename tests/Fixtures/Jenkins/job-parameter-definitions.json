@@ -1,0 +1,29 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+  "property": [
+    {
+      "_class": "jenkins.branch.BranchJobProperty"
+    },
+    {
+      "_class": "hudson.model.ParametersDefinitionProperty",
+      "parameterDefinitions": [
+        {
+          "_class": "hudson.model.StringParameterDefinition",
+          "name": "TARGET_BRANCH"
+        },
+        {
+          "_class": "hudson.model.BooleanParameterDefinition",
+          "name": "SKIP_UI_TESTS"
+        },
+        {
+          "_class": "hudson.model.StringParameterDefinition",
+          "name": "EXTRA_ARGS"
+        },
+        {
+          "_class": "hudson.model.PasswordParameterDefinition",
+          "name": "DEPLOY_PASSWORD"
+        }
+      ]
+    }
+  ]
+}

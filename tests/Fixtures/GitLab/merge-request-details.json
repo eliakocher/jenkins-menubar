@@ -1,0 +1,52 @@
+{
+  "data": {
+    "project": {
+      "mergeRequest": {
+        "approvalsRequired": 2,
+        "approvalsLeft": 1,
+        "approvedBy": { "nodes": [ { "username": "akim", "name": "Alex Kim" } ] },
+        "approvalState": {
+          "rules": [
+            { "name": "Code Owners", "approvalsRequired": 1, "approved": true,
+              "approvedBy": { "nodes": [ { "username": "akim", "name": "Alex Kim" } ] } },
+            { "name": "Backend Review", "approvalsRequired": 1, "approved": false, "approvedBy": { "nodes": [] } },
+            { "name": "Optional Docs", "approvalsRequired": 0, "approved": true, "approvedBy": { "nodes": [] } }
+          ]
+        },
+        "discussions": {
+          "pageInfo": { "hasNextPage": false },
+          "nodes": [
+            { "id": "gid://gitlab/Discussion/a1", "resolvable": true, "resolved": false,
+              "notes": { "nodes": [ {
+                "id": "gid://gitlab/DiffNote/501",
+                "url": "https://gitlab.example.com/group/project/-/merge_requests/16#note_501",
+                "body": "## Question\n\nWhy not retry on the **caller's** side? See [the docs](https://docs.example.com/retry) and `RetryPolicy`.\n\n```swift\nlet x = 1\n```",
+                "author": { "username": "slee", "name": "Sam Lee" },
+                "position": { "filePath": "Sources/Export/ExportJob.swift", "oldPath": "Sources/Export/ExportJob.swift", "newPath": "Sources/Export/ExportJob.swift", "oldLine": null, "newLine": 42 }
+              } ] } },
+            { "id": "gid://gitlab/Discussion/a2", "resolvable": true, "resolved": true,
+              "notes": { "nodes": [ { "id": "gid://gitlab/DiffNote/502", "url": "https://gitlab.example.com/group/project/-/merge_requests/16#note_502", "body": "Done.", "author": { "username": "akim", "name": "Alex Kim" }, "position": null } ] } },
+            { "id": "gid://gitlab/Discussion/a3", "resolvable": false, "resolved": false,
+              "notes": { "nodes": [ { "id": "gid://gitlab/Note/503", "url": null, "body": "Pipeline passed", "author": null, "position": null } ] } },
+            { "id": "gid://gitlab/Discussion/a4", "resolvable": true, "resolved": false,
+              "notes": { "nodes": [ { "id": "gid://gitlab/Note/504", "url": null, "body": "> quoted\nThe description says three attempts, the code makes five.", "author": { "username": "cnovak", "name": null }, "position": null } ] } }
+          ]
+        },
+        "headPipeline": {
+          "status": "FAILED",
+          "detailedStatus": { "detailsPath": "/group/project/-/pipelines/9001" },
+          "stages": { "nodes": [
+            { "name": "build", "jobs": { "nodes": [
+              { "id": "gid://gitlab/Ci::Build/1", "name": "compile", "status": "SUCCESS", "detailedStatus": { "detailsPath": "/group/project/-/jobs/1" } } ] } },
+            { "name": "test", "jobs": { "nodes": [
+              { "id": "gid://gitlab/Ci::Build/2", "name": "unit-tests", "status": "SUCCESS", "detailedStatus": { "detailsPath": "/group/project/-/jobs/2" } },
+              { "id": "gid://gitlab/Ci::Build/3", "name": "ui-tests", "status": "FAILED", "detailedStatus": { "detailsPath": "/group/project/-/jobs/3" } },
+              { "id": "gid://gitlab/Ci::Build/4", "name": "snapshot-tests", "status": "RUNNING", "detailedStatus": { "detailsPath": "/group/project/-/jobs/4" } } ] } },
+            { "name": "deploy", "jobs": { "nodes": [
+              { "id": "gid://gitlab/Ci::Build/5", "name": "publish", "status": "WAITING_FOR_RESOURCE", "detailedStatus": null } ] } }
+          ] }
+        }
+      }
+    }
+  }
+}

@@ -1,8 +1,0 @@
-#!/bin/bash
-# Stands in for a command that makes noise (afplay, say, osascript, open, the notifier, jenkins-watch) and records the call
-# in $CALLS: one line per call, the command name and its arguments separated by tabs, a newline in an argument as \n.
-line=${0##*/}
-for arg; do
-	line+=$'\t'${arg//$'\n'/\\n}
-done
-printf '%s\n' "$line" >>"$CALLS"

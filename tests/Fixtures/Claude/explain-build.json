@@ -1,0 +1,94 @@
+{
+  "duration_api_ms": 3139,
+  "stop_reason": "tool_use",
+  "session_id": "557afc5a-adbb-4f65-b2f7-790690550023",
+  "total_cost_usd": 0.016748,
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 1405,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 275,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 1405,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "modelUsage": {
+    "claude-opus-5-5": {
+      "inputTokens": 2,
+      "outputTokens": 275,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 1405,
+      "webSearchRequests": 0,
+      "costUSD": 0.016748,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 0,
+      "cacheCreationEphemeral5mInputTokens": 0,
+      "cacheCreationEphemeral1hInputTokens": 1405,
+      "canonicalModel": "claude-opus-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "safety_stops": 0,
+  "is_error": false,
+  "num_turns": 2,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "{\"cause\":\"CartServiceTest.appliesDiscount (line 42) failed: it expected 90 but got 100, so the discount was never applied.\\nThe only change since the last green build is 1a2b3c4 by Jane Doe, \\\"Apply discount after tax\\\", which changes the discount logic this test checks.\\nThe other 119 tests passed. Only this discount test failed.\",\"fix\":\"Look at the discount and tax order that 1a2b3c4 changed in CartService. The discount is probably skipped or overwritten after the tax step. If 100 is now the intended result, update the expected value in the test.\",\"verdict\":\"real\"}",
+  "structured_output": {
+    "cause": "CartServiceTest.appliesDiscount (line 42) failed: it expected 90 but got 100, so the discount was never applied.\nThe only change since the last green build is 1a2b3c4 by Jane Doe, \"Apply discount after tax\", which changes the discount logic this test checks.\nThe other 119 tests passed. Only this discount test failed.",
+    "fix": "Look at the discount and tax order that 1a2b3c4 changed in CartService. The discount is probably skipped or overwritten after the tax step. If 100 is now the intended result, update the expected value in the test.",
+    "verdict": "real"
+  },
+  "ttft_ms": 3552,
+  "type": "result",
+  "duration_ms": 3562,
+  "uuid": "75c1e4f2-02e5-40bc-ad2a-afe40cd85b3f",
+  "ttft_stream_ms": 1511,
+  "time_to_request_ms": 424,
+  "first_content_frame_ms": 1511,
+  "queued_turn_count": 0,
+  "result_index": 0
+}

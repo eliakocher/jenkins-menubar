@@ -1,0 +1,18 @@
+{
+  "comment": "Which fixture answers which request in scripts/smoke.sh. The team values point the Jenkins job at <stub>/job/project and GitLab at <stub>; files are relative to Tests/Fixtures.",
+  "jenkins": [
+    { "path": "^/job/project/api/json$", "query": "tree=jobs", "file": "Jenkins/jobs.json" },
+    { "path": "^/job/project/job/[^/]+/api/json$", "file": "Jenkins/job-finished.json" },
+    { "path": "^/job/project/job/[^/]+/[0-9]+/wfapi/describe$", "file": "Jenkins/describe-finished.json" },
+    { "path": "^/job/project/job/[^/]+/[0-9]+/api/json$", "query": "failCount", "file": "Jenkins/test-counts.json" }
+  ],
+  "graphql": {
+    "CurrentUser": "GitLab/current-user.json",
+    "Metadata": "GitLab/metadata.json",
+    "MergedMergeRequests": "GitLab/merged-merge-requests.json",
+    "MergeRequests": "GitLab/merge-requests.json",
+    "WorkItems": "GitLab/work-items.json",
+    "Labels": "GitLab/labels.json",
+    "RelatedMergeRequests": "GitLab/related-merge-requests-none.json"
+  }
+}

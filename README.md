@@ -1,92 +1,100 @@
-# Jenkins & GitLab menubar
+# menubar-monitor
 
-A macOS menubar menu (SwiftBar plugin) for a GitLab project that Jenkins builds with a multibranch job:
+A native macOS menu bar app for a GitLab project that Jenkins builds with a multibranch job. It shows your builds,
+merge requests and work items, and tells you the moment a build finishes.
 
-- **Your Jenkins MR pipelines** with live stage and ETA, and a big alert (or a banner) the moment one finishes
-- **Your colleagues' builds** the same way: **Watch a Build…** takes a link to a Jenkins build (an MR's or a branch's
-  like `develop`) or to a GitLab merge request, or `!123`
-- **Your GitLab merge requests**: your own, review requested, reviewed, each with a status badge in GitLab's colors
-  (ready to merge, approvals missing, review requested, pipeline failed, …), the details on hover
-- **Your GitLab work items**: committed and not committed, with filters, label filters and sorting
+![The panel with a running and a failed build, merge requests and work items](docs/panel.png)
 
-<img src="docs/menubar.png" alt="The menu with a running and a finished MR pipeline, GitLab merge requests and work items" width="546">
+![The main window at Pipelines: the list of builds and the stages of the selected one](docs/main-window.png)
 
 ## Install
 
-1. Put this folder where it will stay (it runs from here).
-2. Copy `config/team.example.conf` to `config/team.conf` and fill in your Jenkins job and GitLab project, or use the
-   `team.conf` your team shares.
-3. In Terminal: `./install.sh`
-   It installs jq and SwiftBar through Homebrew if missing, needs the Xcode Command Line Tools
-   (`xcode-select --install`) and makes SwiftBar start at login.
-4. Add the two tokens if the script says they are missing: in the menu, **Settings… → Accounts** stores them in the
-   login keychain and checks that Jenkins and GitLab take them. Plain exports in `~/.zshrc` work too:
-   - `export JENKINS_MCP_BASIC_AUTH=<base64 of jenkins-user:api-token>`
-   - `export GITLAB_TOKEN=<GitLab token with the read_api scope>`
+It needs macOS 26 and the Xcode Command Line Tools (`xcode-select --install`); nothing else, no Xcode and no Homebrew.
 
-   A `~/.zshrc` that computes them (like `$(security …)`) does not, since the menu cannot run it: use Accounts instead,
-   or put them in the keychain yourself (each command asks for the value):
-   ```
-   security add-generic-password -U -s jenkins-menubar -a JENKINS_MCP_BASIC_AUTH -w
-   security add-generic-password -U -s jenkins-menubar -a GITLAB_TOKEN -w
-   ```
-5. Click **Allow** when macOS asks whether "Jenkins" may send notifications.
+1. Put this folder where it will stay: the app remembers it, to update itself from it.
+2. In Terminal: `./install.sh`. It builds the app into `~/Applications/menubar-monitor.app` and opens it.
+3. The welcome flow takes it from there: what it imported from the old tool (see below), your team values (the Jenkins
+   job, the GitLab URL and project), the two tokens, the notification permission, and whether to start at login.
 
-**Settings…** in the menu opens the settings window: **Jenkins** (checking, hiding, alerts), **Watching** (the builds of
-others, see below), **GitLab** (checking, the work item filters and labels; the work items submenu's **Filters…** opens
-it too), **Accounts** (the tokens), **Team** (`config/team.conf`) and **Logs**. It writes `config/settings` and
-`config/team.conf`, which you can also edit by hand.
+`./install.sh --dry-run` prints what would change and changes nothing.
 
-**Logs** shows what the menu did, each entry with how it went (a green 200 or SUCCESS, a red TIMEOUT or FAILURE, …):
-every request to Jenkins and GitLab with its time, the builds that started and finished, the alerts, the problems (once
-when they start, once when they are resolved) and the setting changes, never a token. Search it, filter it by level
-and source, copy entries. A double-click on a request (or its ⓘ) shows the request and the response, with the headers,
-and copies it as a curl command; the tokens and the cookies are never kept. Above, **Check Times** charts how long the
-checks of the last 24 hours took, their requests together, per hour, with the averages. The log starts a new file at
-1 MB and keeps 4 old ones, the check times keep their newest half at 512 KB, the requests the newest 10 MB with the
-first 128 KB of each response: together never more than 16.3 MB.
+For the team values, **Settings → Team** can import and export a file without tokens: see `team.example.json`. The
+tokens go into the login keychain, **Settings → Accounts** checks that Jenkins and GitLab take them. Jenkins needs your
+user and an API token, GitLab a token with the `api` scope (`read_api` is enough to read, but re-requesting a review writes).
 
-<img src="docs/settings.png" alt="The settings window at its Jenkins pane: check interval, when to hide finished builds, the alert and the menubar icons" width="600">
+### Update
 
-**Watch a Build…** in the menu opens **Watching** with the link you copied already in, Return watches it: all builds of
-that merge request or branch, the next ones too, until Jenkins drops its job or you stop watching. Watched builds show
-under **Watching** in the menu, with their author, and follow the same rules as yours: the same alerts, the same hiding.
+When the checkout changes (after a `git pull`, say), the app notices and offers **Update Ready — Rebuild** in the
+panel and in the window's toolbar. One click runs `build.sh --install`, opens the new app and quits the old one.
+Nothing is rebuilt without that click.
 
-`jenkins-watch <MR number | build URL>` watches a build from the terminal instead; `jenkins-watch --help` for more.
+## What it does
 
-## What is where
+- **Menu bar icon and panel**: the icon counts your running, failed, unstable and successful builds, and marks
+  problems. The panel lists My Builds with stage, progress and ETA, Watching, Merge Requests and Work Items, with a
+  search over all of it.
+- **Alerts**: a big alert window or a banner (your choice) when a build you follow finishes, and optionally a banner
+  when a stage fails while the build goes on. **Rebuild** starts a finished build again with the same parameters, in
+  one click.
+- **Main window** (⌘0, sections with ⌘1 to ⌘4):
+  - **Pipelines**: your builds and the ones you watch, with stages, failed tests and links.
+  - **Merge Requests**: yours, review requested and reviewed, each with a status badge in GitLab's colors and its
+    description.
+  - **Work Items**: committed and not committed, with filters and label filters, and their related merge requests.
+  - **Activity**: a log of every request, build, alert and problem, with search, filters and a chart of the check times.
+    No token is ever kept in it.
+- **Watch a Build…** (⌘L) takes a Jenkins build link (of a merge request or of a branch like `develop`), a GitLab merge
+  request link or `!123`, and follows all its builds, the next ones too. A merge request's detail has **Watch Builds**
+  for the same. Watched builds alert and hide like yours.
+- **Settings** (⌘,): General, Jenkins, GitLab, Team and Accounts.
+- Jenkins is checked all the time; merge requests and work items load while you look at them, plus a few small
+  background requests.
 
-| What | Where |
-| --- | --- |
-| SwiftBar plugin | `plugins/jenkins.30s.sh`, SwiftBar's plugin folder (or linked into yours) |
-| Alert script | `bin/jenkins-watch`, linked as `~/bin/jenkins-watch` |
-| App for the banners and the settings window | `notifier/Jenkins Watch.app`, built from `notifier/*.swift` |
-| Tests | `tests/`, run with `tests/run.sh` |
-| Icons | `icons/`: the app icon is `AppIcon.icon` (edit it in Icon Composer), `app.png` is its flat version for builds without Xcode; `menubar.png` is the menubar's butler without builds, a template image (black on transparent, macOS colors it) |
-| README screenshots | `docs/` |
-| Team configuration (Jenkins, GitLab, label conventions) | `config/team.conf`, not committed |
-| Your settings | `config/settings`, created on the first run, not committed |
-| Cache | `~/Library/Caches/jenkins-menubar/` |
-| Logs (also for Console.app) | `~/Library/Logs/jenkins-menubar/` |
+## Coming from jenkins-menubar
 
-## Tests
+The first start imports what the old tool (a SwiftBar plugin with `jenkins-watch`) had: the tokens, the settings, the
+team values, and the watched and hidden builds. It imports once, and the old tool keeps working next to it, so you can
+compare. Some things can't move, and the welcome flow lists them: the notification permission (macOS keeps it per
+app), keychain items made outside `security` (macOS asks once for access), window positions, and the caches.
 
-`tests/run.sh` runs the tests of the plugin and of `jenkins-watch`; `tests/run.sh stage` only those with "stage" in
-their name. They need nothing but jq: each test runs a copy of the tool in a temporary folder, with a fake curl that
-answers like Jenkins and GitLab, and fakes for the sounds, dialogs, banners and the keychain.
+When you are happy with the new app, remove the old tool:
 
-The settings window has no tests of its own: it keeps no logic, the plugin answers it (`--settings-json`,
-`--check-accounts`) and makes every change (`--set`, `--set-team`, `--label-filter`, `--set-token`, `--clear-logs`, …),
-and the tests cover those. It only reads the log files itself, to show them. After changing `notifier/*.swift`, rebuild
-the app with `notifier/build.sh`. Views use `@ViewState` instead of `@State`: since the macOS 27 SDK, `@State` is a
-macro that only compiles with Xcode, and the app has to build with only the Command Line Tools, so `build.sh` refuses
-it.
+```
+./install.sh --retire-old
+```
+
+It unlinks the old SwiftBar plugin, removes SwiftBar from the login items (unless other plugins still need it), removes
+the `jenkins-watch` link, unregisters the old helper app and, after a yes, deletes the old caches, logs and keychain
+items. It leaves SwiftBar and jq installed and tells you what else is yours to clean up. Add `--dry-run` to see it first.
+
+## Development
+
+```
+./build.sh [--debug] [--install]   # builds build/menubar-monitor.app
+./test.sh [filter]                 # the Swift Testing tests
+scripts/smoke.sh                   # runs the built app once against a local stub server
+scripts/gallery-shots.sh all       # screenshots of the design gallery (not committed)
+```
+
+Everything builds with only the Command Line Tools, which limits the Swift in use. Swift 6, and no macro that needs
+Xcode: views use `@ViewState` instead of `@State` (since the macOS 27 SDK, `@State` is a macro that only compiles with
+Xcode), and `build.sh` refuses `@State`, `#Preview`, `@Entry`, `#Predicate`, SwiftData and the like.
+
+- `Sources/MenubarCore`: models, stores, the Jenkins and GitLab clients, scheduling, alerts rules, import. No AppKit or
+  SwiftUI.
+- `Sources/MenubarUI`: the SwiftUI views (panel, main window, settings, welcome flow, alert) and the design gallery.
+- `Sources/MenubarMonitor`: the app itself: the entry point, the system effects (notifications, keychain, login item)
+  and the smoke check.
+
+The debug build has a design gallery (`menubar-monitor --gallery`) that shows every screen with fixtures, in each
+appearance, without touching real data. The repository is public, and `scripts/check-names.sh` (run by `build.sh`)
+keeps a company name out of its files.
 
 ## License and credits
 
 The code is MIT licensed, see [LICENSE](LICENSE).
 
-The Jenkins icons in `icons/` (`AppIcon.icon` and `app.png` for the app, `happy.png` and `sad.png` for the alert, `menubar.png` for the menubar) are
+The Jenkins icons in `icons/` (`AppIcon.icon` and `app.png` for the app, `happy.png` and `sad.png` for the alert, `menubar.png` for the menu bar) are
 AI-generated images of the Jenkins mascot. The mascot is the [Jenkins logo](https://www.jenkins.io/artwork/) by Charles Lowell and Frontside,
 licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), and the icons keep that license.
 The GitLab logo is a trademark of GitLab Inc.

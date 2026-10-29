@@ -1,0 +1,40 @@
+# Jenkins menubar settings. The menus change them; hand edits work too and apply within 30 seconds.
+# A value goes right after the "=", comments need a line of their own.
+
+# ── Jenkins builds ──
+# Check Jenkins every N seconds.
+refresh_seconds=120
+# Hide finished builds after N hours, 0 = never, immediately = as soon as they finish.
+hide_successful_after_hours=8
+hide_failed_after_hours=0
+# Hide the builds of merged MRs: on | off
+hide_merged=off
+# When a build finishes: dialog (a big alert) | banner, one or the other
+alert=banner
+# Say the result out loud: on | off
+voice=on
+# Banner as soon as a stage fails: on | off
+stage_alerts=off
+# Build icons in the menubar: monochrome (like the system icons) | emoji (colored)
+menubar_icons=emoji
+
+# ── GitLab ──
+# Check GitLab (merge requests and work items) every N seconds.
+gitlab_refresh_seconds=15
+
+# ── GitLab work items ──
+# assigned (to me) | authored (created by me)
+work_items_scope=authored
+# all | ISSUE | TASK | EPIC | INCIDENT
+work_items_type=TASK
+# opened | closed | all
+work_items_state=all
+# Labels a work item must have / must not have, comma-separated, e.g. workflow::done,type::bug
+work_items_with_labels=workflow::in dev,team::platform
+work_items_without_labels=type::bug
+# A work item needs all of the must-have labels, or any one of them: all | any
+work_items_labels_match=any
+# Any GitLab issue sort, e.g. UPDATED_DESC | CREATED_DESC | CREATED_ASC | DUE_DATE_ASC | TITLE_ASC | WEIGHT_DESC | PRIORITY_ASC
+work_items_sort=TITLE_ASC
+# How many not-committed work items to show, at most 100 (committed ones always show).
+work_items_limit=50

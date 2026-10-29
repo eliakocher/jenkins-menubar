@@ -1,0 +1,59 @@
+{
+  "_links": {
+    "self": {
+      "href": "/jenkins/job/GitLab%20Team/job/team%252Fproduct/job/MR-1/7/wfapi/describe"
+    }
+  },
+  "id": "7",
+  "name": "#7",
+  "status": "IN_PROGRESS",
+  "startTimeMillis": 1792800000000,
+  "endTimeMillis": 1792800900000,
+  "durationMillis": 900000,
+  "queueDurationMillis": 1203,
+  "pauseDurationMillis": 0,
+  "stages": [
+    {
+      "_links": {
+        "self": {
+          "href": "/jenkins/job/GitLab%20Team/job/team%252Fproduct/job/MR-1/7/execution/node/6/wfapi/describe"
+        }
+      },
+      "id": "6",
+      "name": "build",
+      "execNode": "",
+      "status": "SUCCESS",
+      "startTimeMillis": 1792800001200,
+      "durationMillis": 412000,
+      "pauseDurationMillis": 0
+    },
+    {
+      "_links": {
+        "self": {
+          "href": "/jenkins/job/GitLab%20Team/job/team%252Fproduct/job/MR-1/7/execution/node/31/wfapi/describe"
+        }
+      },
+      "id": "31",
+      "name": "unit-tests",
+      "execNode": "",
+      "status": "IN_PROGRESS",
+      "startTimeMillis": 1792800413300,
+      "durationMillis": 486700,
+      "pauseDurationMillis": 0
+    },
+    {
+      "_links": {
+        "self": {
+          "href": "/jenkins/job/GitLab%20Team/job/team%252Fproduct/job/MR-1/7/execution/node/32/wfapi/describe"
+        }
+      },
+      "id": "32",
+      "name": "integration-tests",
+      "execNode": "",
+      "status": "IN_PROGRESS",
+      "startTimeMillis": 1792800413300,
+      "durationMillis": 486700,
+      "pauseDurationMillis": 0
+    }
+  ]
+}

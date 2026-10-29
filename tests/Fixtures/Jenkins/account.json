@@ -1,0 +1,4 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
+  "name": "team%2Fproduct"
+}

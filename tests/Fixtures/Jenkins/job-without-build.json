@@ -1,0 +1,43 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+  "actions": [
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {
+      "_class": "jenkins.scm.api.metadata.ObjectMetadataAction",
+      "objectDisplayName": "#4711: Resolve \"Update the reporting API version\"",
+      "objectUrl": "https://gitlab.example.com/team/product/-/merge_requests/1"
+    },
+    {
+      "_class": "jenkins.scm.api.metadata.ContributorMetadataAction",
+      "contributorDisplayName": "Jane Doe"
+    },
+    {},
+    {},
+    {},
+    {},
+    {
+      "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+    },
+    {},
+    {},
+    {},
+    {
+      "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+    },
+    {
+      "_class": "hudson.plugins.claim.JobClaimsAction"
+    }
+  ],
+  "lastBuild": null
+}

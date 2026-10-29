@@ -142,24 +142,34 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
         let fixtures = Fixtures()
         var topLeft = NSPoint.zero
         for entry in entries {
+            var styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+            if Self.mainWindowScreens.contains(entry.screen) {
+                // As the real main window: the split view's columns reach under the toolbar, which splits over them,
+                // and the sidebar floats (MAIN-WINDOW-04).
+                styleMask.insert(.fullSizeContentView)
+            }
             let window = NSWindow(
                 contentRect: NSRect(origin: .zero, size: entry.size),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                styleMask: styleMask,
                 backing: .buffered,
                 defer: false
             )
             window.title = entry.id
             window.isReleasedWhenClosed = false
+            // Without the open animation, a screenshot never catches a window still growing to its size.
+            window.animationBehavior = .none
             window.appearance = NSAppearance(named: options.appearance.name)
             let hostingView = NSHostingView(rootView: entry.makeView(fixtures).modifier(GalleryEnvironment(options: options)))
             hostingView.sceneBridgingOptions = .all
             window.contentView = hostingView
-            window.setContentSize(entry.size)
+            window.setContentSize(Self.fittingSize(of: hostingView, entry: entry))
             topLeft = window.cascadeTopLeft(from: topLeft)
             if options.activate {
                 window.makeKeyAndOrderFront(nil)
             } else {
-                window.orderFrontRegardless()
+                // Behind the other apps' windows, so the gallery stays out of the way; `screencapture -l` takes a
+                // window's own image even where others cover it.
+                window.orderBack(nil)
             }
             windows.append((entry, window))
         }
@@ -167,11 +177,53 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
             NSApp.activate()
         }
         Task {
-            // Lets SwiftUI lay out and the window server draw before anything takes a screenshot.
-            try? await Task.sleep(for: .seconds(1))
+            // Views that measure themselves, like the panel's scroll view, settle in the first layout passes, so the
+            // windows fit them again until no size changes, for at most 5 s. Then the window server gets time to draw
+            // before anything takes a screenshot: right after a previous gallery quit, it still scales new windows in
+            // for a while, and 0.5 s caught them shrunk.
+            for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(250))
+                if !fitWindows() {
+                    break
+                }
+            }
+            try? await Task.sleep(for: .seconds(2))
             writeManifest()
         }
     }
+
+    /// Fits every window to its content once more.
+    ///
+    /// - Returns: whether a window changed its size
+    private func fitWindows() -> Bool {
+        var changed = false
+        for (entry, window) in windows {
+            guard let hostingView = window.contentView else {
+                continue
+            }
+            let size = Self.fittingSize(of: hostingView, entry: entry)
+            // The content view's own size, which `setContentSize` sets; with a full-size content view the layout rect
+            // leaves out the toolbar and would never match.
+            if hostingView.frame.size != size {
+                window.setContentSize(size)
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    /// The size the entry's view asks for, so a screenshot shows what the real panel, alert or sheet shows: a fixed
+    /// width and the height of the content. The entry's size stands in for a view that asks for nothing.
+    private static func fittingSize(of view: NSView, entry: GalleryEntry) -> NSSize {
+        view.layoutSubtreeIfNeeded()
+        let fitting = view.fittingSize
+        return NSSize(
+            width: fitting.width > 1 ? fitting.width : entry.size.width,
+            height: fitting.height > 1 ? fitting.height : entry.size.height)
+    }
+
+    /// The screens whose entries show the main window, with its sidebar and toolbar.
+    private static let mainWindowScreens: Set<String> = ["main-window", "pipelines", "merge-requests", "work-items", "activity"]
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true

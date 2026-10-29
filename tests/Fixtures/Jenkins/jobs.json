@@ -1,0 +1,305 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject",
+  "jobs": [
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "develop"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "1234-search-filters"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "release%2F8.x"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {
+          "_class": "jenkins.scm.api.metadata.ContributorMetadataAction",
+          "contributor": "jdoe"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "MR-1"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {
+          "_class": "jenkins.scm.api.metadata.ContributorMetadataAction",
+          "contributor": "asmith"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "MR-2"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {
+          "_class": "jenkins.scm.api.metadata.ContributorMetadataAction",
+          "contributor": "jdoe"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "MR-3"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {
+          "_class": "jenkins.scm.api.metadata.ContributorMetadataAction",
+          "contributor": "JDoe"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "MR-4"
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+      "actions": [
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "jenkins.scm.api.metadata.ObjectMetadataAction"
+        },
+        {
+          "_class": "jenkins.scm.api.metadata.ContributorMetadataAction",
+          "contributor": "bwong"
+        },
+        {},
+        {},
+        {},
+        {},
+        {
+          "_class": "org.jenkinsci.plugins.displayurlapi.actions.JobDisplayAction"
+        },
+        {},
+        {},
+        {},
+        {
+          "_class": "com.cloudbees.plugins.credentials.ViewCredentialsAction"
+        },
+        {
+          "_class": "hudson.plugins.claim.JobClaimsAction"
+        }
+      ],
+      "name": "MR-5"
+    }
+  ]
+}

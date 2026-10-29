@@ -1,0 +1,1054 @@
+{
+  "data": {
+    "committed": {
+      "count": 2,
+      "nodes": [
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old session, and typed messages in the chat",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/19017",
+          "reference": "acme/main/server/server#19017",
+          "updatedAt": "2026-10-26T08:39:25Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cDueSlot::2026.51",
+                "color": "#9400d3"
+              },
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cLevelOfCommitment::Committed",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cScheduledSlot::2026.51",
+                "color": "#9400d3"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uStatus::MaintainerTriage",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16901",
+          "reference": "acme/main/server/server#16901",
+          "updatedAt": "2026-10-16T12:43:09Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cDueSlot::2026.51",
+                "color": "#9400d3"
+              },
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cLevelOfCommitment::Committed",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cScheduledSlot::2026.51",
+                "color": "#9400d3"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPriority::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "others": {
+      "count": 29,
+      "nodes": [
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old session, and typed messages in the chat pa",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/19514",
+          "reference": "acme/main/server/server#19514",
+          "updatedAt": "2026-10-28T09:56:24Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uAcceptanceTestingType::ReleaseWeek",
+                "color": "#808080"
+              },
+              {
+                "title": "uAffectsVersion:8.44.2",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uChangeClassification::None",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uSeverity::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              },
+              {
+                "title": "uVulnerability::No",
+                "color": "#c21e56"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a networ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/19460",
+          "reference": "acme/main/server/server#19460",
+          "updatedAt": "2026-10-23T14:58:05Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uAcceptanceTestingType::ReleaseWeek",
+                "color": "#808080"
+              },
+              {
+                "title": "uChangeClassification::None",
+                "color": "#808080"
+              },
+              {
+                "title": "uDocumentationStatus::Final",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uRequiresDocumentation::No",
+                "color": "#808080"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/19175",
+          "reference": "acme/main/server/server#19175",
+          "updatedAt": "2026-10-09T03:46:39Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Task",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uStatus::MaintainerTriage",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old session, and typed messages in the chat pane",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/13553",
+          "reference": "acme/main/server/server#13553",
+          "updatedAt": "2026-10-08T06:54:24Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uAffectsVersion:7.32.0",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uAffectsVersion:7.33.1",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uAuthor::dev.two",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uImported::Jira",
+                "color": "#e6e6fa"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:7.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uPriority::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uRequiresDocumentation::No",
+                "color": "#808080"
+              },
+              {
+                "title": "uSeverity::Critical",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old sess",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/19055",
+          "reference": "acme/main/server/server#19055",
+          "updatedAt": "2026-09-30T09:29:30Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Major",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uAcceptanceTestingType::Branch",
+                "color": "#808080"
+              },
+              {
+                "title": "uAffectsVersion:8.42.2",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uChangeClassification::None",
+                "color": "#808080"
+              },
+              {
+                "title": "uFeatureImportance::Critical",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uImpactOnFeature::Minordegradation",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uProbabilityOfBeingAffected::Likely",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uSeverity::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              },
+              {
+                "title": "uVulnerability::No",
+                "color": "#c21e56"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old ses",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/15003",
+          "reference": "acme/main/server/server#15003",
+          "updatedAt": "2026-09-07T13:47:43Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uAuthor::dev.three",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uImported::Jira",
+                "color": "#e6e6fa"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uPriority::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/17564",
+          "reference": "acme/main/server/server#17564",
+          "updatedAt": "2026-08-04T06:55:50Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uAcceptanceTestingType::ReleaseWeek",
+                "color": "#808080"
+              },
+              {
+                "title": "uChangeClassification::Additions",
+                "color": "#808080"
+              },
+              {
+                "title": "uFeatureImportance::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uImpactOnFeature::Minordegradation",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uProbabilityOfBeingAffected::Likely",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uSeverity::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              },
+              {
+                "title": "uVulnerability::No",
+                "color": "#c21e56"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keep",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/17471",
+          "reference": "acme/main/server/server#17471",
+          "updatedAt": "2026-07-01T12:18:42Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uAcceptanceTestingType::ReleaseWeek",
+                "color": "#808080"
+              },
+              {
+                "title": "uAffectsVersion:8.38.2",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uChangeClassification::None",
+                "color": "#808080"
+              },
+              {
+                "title": "uFeatureImportance::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uImpactOnFeature::Minordegradation",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uProbabilityOfBeingAffected::Unlikely",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uSeverity::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              },
+              {
+                "title": "uVulnerability::No",
+                "color": "#c21e56"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a ne",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16653",
+          "reference": "acme/main/server/server#16653",
+          "updatedAt": "2026-06-30T22:10:45Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:ExpertGroupFrontend",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/14466",
+          "reference": "acme/main/server/server#14466",
+          "updatedAt": "2026-06-23T14:02:26Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Major",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uAuthor::alex.doe",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uImported::Jira",
+                "color": "#e6e6fa"
+              },
+              {
+                "title": "uIssueType::NewFeature",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPriority::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps t",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16536",
+          "reference": "acme/main/server/server#16536",
+          "updatedAt": "2026-06-23T10:05:09Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:CustomerAcme",
+                "color": "#808080"
+              },
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Major",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mCustomer:Acme",
+                "color": "#cc338b"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uAffectsVersion:8.30.1",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPriority::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16562",
+          "reference": "acme/main/server/server#16562",
+          "updatedAt": "2026-06-23T09:55:03Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uAffectsVersion:8.31.0",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uFeatureImportance::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uImpactOnFeature::Minordegradation",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uProbabilityOfBeingAffected::Unlikely",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uReproducibility::Always",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uSeverity::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16648",
+          "reference": "acme/main/server/server#16648",
+          "updatedAt": "2026-06-23T09:43:31Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:ExpertGroupFrontend",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network cha",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16651",
+          "reference": "acme/main/server/server#16651",
+          "updatedAt": "2026-06-23T09:43:11Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:ExpertGroupFrontend",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16709",
+          "reference": "acme/main/server/server#16709",
+          "updatedAt": "2026-06-23T09:33:21Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uAffectsVersion:8.30.1",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uFeatureImportance::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uSeverity::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              },
+              {
+                "title": "uVulnerability::No",
+                "color": "#c21e56"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a netwo",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16769",
+          "reference": "acme/main/server/server#16769",
+          "updatedAt": "2026-06-23T09:23:30Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uSeverity::Major",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: th",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16811",
+          "reference": "acme/main/server/server#16811",
+          "updatedAt": "2026-06-23T09:12:42Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uRequiresDocumentation::No",
+                "color": "#808080"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16968",
+          "reference": "acme/main/server/server#16968",
+          "updatedAt": "2026-06-23T08:40:46Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:SquadAlpha",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "mSquad::Alpha",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uIssueType::Improvement",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the reconnect after a network change keeps the old ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/15706",
+          "reference": "acme/main/server/server#15706",
+          "updatedAt": "2026-06-22T07:35:48Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cPriority::Minor",
+                "color": "#ed9121"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uAcceptanceTestingType::ReleaseWeek",
+                "color": "#808080"
+              },
+              {
+                "title": "uAffectsVersion:8.20.2",
+                "color": "#dc143c"
+              },
+              {
+                "title": "uChangeClassification::None",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Bug",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uPlannedVersion:8.x.x",
+                "color": "#6699cc"
+              },
+              {
+                "title": "uPriority::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uProbabilityOfBeingAffected::Always",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uRequiresDocumentation::No",
+                "color": "#808080"
+              },
+              {
+                "title": "uSeverity::Minor",
+                "color": "#c21e56"
+              },
+              {
+                "title": "uStatus::Todo",
+                "color": "#808080"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Work item made-up title: the ",
+          "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/16652",
+          "reference": "acme/main/server/server#16652",
+          "updatedAt": "2026-05-12T14:50:50Z",
+          "labels": {
+            "nodes": [
+              {
+                "title": "cGroup:ExpertGroupFrontend",
+                "color": "#808080"
+              },
+              {
+                "title": "cPrerequisiteStatus::Ready",
+                "color": "#cc338b"
+              },
+              {
+                "title": "cTriageType::Maintainer",
+                "color": "#808080"
+              },
+              {
+                "title": "uIssueType::Task",
+                "color": "#ed9121"
+              },
+              {
+                "title": "uStatus::MaintainerTriage",
+                "color": "#808080"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

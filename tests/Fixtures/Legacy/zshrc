@@ -1,0 +1,6 @@
+# A made-up ~/.zshrc for the import tests. The tokens are not real: base64 of jenkins-user:fake-api-token, and a
+# made-up GitLab token.
+export PATH="$HOME/bin:$PATH"
+export JENKINS_MCP_BASIC_AUTH='amVua2lucy11c2VyOmZha2UtYXBpLXRva2Vu'
+alias ll='ls -l'
+  export GITLAB_TOKEN="fake-gitlab-token-0123"  # the work GitLab

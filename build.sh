@@ -32,7 +32,7 @@ if grep -rnE --include='*.swift' \
 	-e '^[^/]*@(SwiftUI(Core)?\.)?(State|Entry|Animatable|AnimatableIgnored|Previewable)\b' \
 	-e '^[^/]*#(Preview|Predicate|Expression|bundle)\b' \
 	-e '^[^/]*\bimport +(SwiftData|AppIntents|TipKit|FoundationModels)\b' \
-	Sources SwiftTests >&2; then
+	Sources Tests >&2; then
 	echo 'These macros need Xcode; use @ViewState for @State, and plain Swift for the rest.' >&2
 	exit 1
 fi
@@ -42,6 +42,8 @@ if grep -rnE --include='*.swift' \
 	echo 'MenubarCore stays free of AppKit and SwiftUI; move this code to MenubarUI or MenubarMonitor.' >&2
 	exit 1
 fi
+# The repository is public: the company's name stays out of every file it commits.
+scripts/check-names.sh
 
 swift build -c "$config" --product menubar-monitor
 bin=$(swift build -c "$config" --show-bin-path)
@@ -54,10 +56,20 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/menubar-monitor" "$app/Contents/MacOS/"
 cp icons/menubar.png icons/happy.png icons/sad.png icons/gitlab.png "$app/Contents/Resources/"
+# The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
+for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa; do
+	if [[ -f icons/$egg.png ]]; then
+		cp "icons/$egg.png" "$app/Contents/Resources/"
+	fi
+done
 # With Xcode, the layered Icon Composer icon, which macOS draws in Liquid Glass and in the dark, clear and tinted
-# styles; with only the CLT, which have no actool, a flat icon.
-if ! xcrun actool icons/AppIcon.icon --compile "$app/Contents/Resources" --platform macosx \
-	--minimum-deployment-target 26.0 --app-icon AppIcon --output-partial-info-plist "$work/icon.plist" >/dev/null 2>&1; then
+# styles; with only the CLT, which have no actool, a flat icon. A build that pins DEVELOPER_DIR to the CLT still borrows
+# the actool of the Xcode that xcode-select names, if there is one: only the icon needs it, the code doesn't.
+compile_icon() {
+	xcrun actool icons/AppIcon.icon --compile "$app/Contents/Resources" --platform macosx \
+		--minimum-deployment-target 26.0 --app-icon AppIcon --output-partial-info-plist "$work/icon.plist" >/dev/null 2>&1
+}
+if ! compile_icon && ! (unset DEVELOPER_DIR && compile_icon); then
 	mkdir "$work/AppIcon.iconset"
 	for size in 16 32 128 256 512; do
 		sips -z $size $size icons/app.png --out "$work/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null

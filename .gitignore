@@ -1,8 +1,11 @@
-config/team.conf
-config/settings
-notifier/Jenkins Watch.app/
 .DS_Store
 *.zip
 .build/
 build/
-docs/design/shots/
+.claude/
+docs/FEATURES.md
+docs/decisions.md
+docs/design/
+docs/spikes/
+docs/easter-eggs.md
+.playwright-mcp/

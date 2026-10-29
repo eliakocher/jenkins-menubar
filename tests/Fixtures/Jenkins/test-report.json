@@ -1,0 +1,67 @@
+{
+  "_class": "hudson.tasks.junit.TestResult",
+  "suites": [
+    {
+      "cases": [
+        {
+          "className": "com.example.cart.CartServiceTest",
+          "errorDetails": null,
+          "name": "addsAnItem",
+          "status": "PASSED"
+        },
+        {
+          "className": "com.example.cart.CartServiceTest",
+          "errorDetails": "expected: <2> but was: <1>",
+          "name": "removesAnItem",
+          "status": "FAILED"
+        },
+        {
+          "className": "com.example.cart.CartServiceTest",
+          "errorDetails": "\n  java.lang.AssertionError: Expecting size of:\n\n   [\"Lamp\", \"Desk\"]\nto be 3 but was 2\n\tat com.example.cart.CartServiceTest.countsTheItems(CartServiceTest.java:41)",
+          "name": "countsTheItems()",
+          "status": "REGRESSION"
+        },
+        {
+          "className": "com.example.cart.CartServiceTest",
+          "errorDetails": null,
+          "name": "keepsTheOrder",
+          "status": "SKIPPED"
+        }
+      ],
+      "duration": 0.42,
+      "name": "com.example.cart.CartServiceTest"
+    },
+    {
+      "cases": [
+        {
+          "className": "com.example.checkout.PaymentFormTest",
+          "errorDetails": null,
+          "name": "rejectsAnExpiredCard",
+          "status": "FAILED"
+        },
+        {
+          "className": "com.example.checkout.PaymentFormTest",
+          "errorDetails": null,
+          "name": "masksTheCardNumber",
+          "status": "FIXED"
+        },
+        {
+          "className": "",
+          "errorDetails": "Timed out after 30 seconds",
+          "name": "loadsTheStartPage",
+          "status": "FAILED"
+        },
+        {
+          "className": "com.example.checkout.PaymentFormTest",
+          "name": "withoutAStatus"
+        }
+      ],
+      "duration": 1.7,
+      "name": "com.example.checkout.PaymentFormTest"
+    },
+    {
+      "duration": 0.0,
+      "name": "com.example.empty.NoCasesTest"
+    }
+  ]
+}

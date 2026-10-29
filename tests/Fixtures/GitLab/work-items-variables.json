@@ -1,0 +1,29 @@
+{
+  "assignee": [
+    "alex.doe"
+  ],
+  "author": null,
+  "types": null,
+  "state": "opened",
+  "sort": "UPDATED_DESC",
+  "withCommitted": true,
+  "committedLabels": [
+    "cLevelOfCommitment::Committed"
+  ],
+  "committedOr": null,
+  "committedNot": {
+    "labelName": [
+      "uStatus::InVerification"
+    ]
+  },
+  "withOthers": true,
+  "otherLabels": null,
+  "otherOr": null,
+  "otherNot": {
+    "labelName": [
+      "cLevelOfCommitment::Committed",
+      "uStatus::InVerification"
+    ]
+  },
+  "first": 20
+}

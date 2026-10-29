@@ -1,0 +1,2 @@
+#!/bin/bash
+# A stand-in for the old jenkins-watch: the import only follows the ~/bin link to it.

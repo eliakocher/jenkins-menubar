@@ -1,0 +1,82 @@
+{
+  "data": {
+    "currentUser": {
+      "username": "alex.doe",
+      "authored": {
+        "nodes": []
+      },
+      "assigned": {
+        "nodes": []
+      },
+      "reviewing": {
+        "nodes": [
+          {
+            "iid": "12437",
+            "title": "Draft: #18889 add the made-up reference shapes and their checks",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/12437",
+            "draft": true,
+            "reference": "acme/main/server/server!12437",
+            "updatedAt": "2026-10-28T10:35:14Z",
+            "detailedMergeStatus": "DRAFT_STATUS",
+            "author": {
+              "username": "robin.muster",
+              "name": "Robin Müster"
+            },
+            "headPipeline": {
+              "status": "RUNNING"
+            },
+            "diffStatsSummary": {
+              "additions": 1895,
+              "deletions": 0,
+              "fileCount": 34
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "sam.reviewer",
+                  "name": "Sam Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                },
+                {
+                  "username": "kim.reviewer",
+                  "name": "Kim Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                },
+                {
+                  "username": "lee.reviewer",
+                  "name": "Lee Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                },
+                {
+                  "username": "alex.doe",
+                  "name": "Alex Doe",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                },
+                {
+                  "username": "max.reviewer",
+                  "name": "Max Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

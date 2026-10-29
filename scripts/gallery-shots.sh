@@ -4,7 +4,7 @@
 #   scripts/gallery-shots.sh <screen or id>... [--appearance light|dark|light-hc|dark-hc]... [-- <gallery options>]
 #   scripts/gallery-shots.sh all
 #
-# Builds the debug app (which has the gallery), then for each appearance (all four unless some are given) opens the
+# Builds the debug app (which has the gallery), then for each appearance (light and dark unless some are given) opens the
 # gallery, reads build/gallery/manifest.json, which maps each entry id to its window number, captures each window with
 # `screencapture -l`, and quits the gallery. Only the gallery's own windows are captured, never the screen. The gallery
 # stays in the background and doesn't take the keyboard focus. Options after -- go to the gallery as they are, such as
@@ -50,21 +50,47 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 if [[ ${#appearances[@]} -eq 0 ]]; then
-	appearances=(light dark light-hc dark-hc)
+	appearances=(light dark)
 fi
 
-"$root/build.sh" --debug >/dev/null
-mkdir -p "$shots"
-
+# Several lanes may take screenshots at the same time. The runs take turns, because they share the debug app, the
+# manifest and the gallery's windows; a lock whose owner is gone is taken over.
+lock=$root/build/gallery.lock
+mkdir -p "$root/build"
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+	owner=$(cat "$lock/pid" 2>/dev/null || true)
+	if [[ -n $owner ]] && ! kill -0 "$owner" 2>/dev/null; then
+		rm -rf "$lock"
+		continue
+	fi
+	((waited == 0)) && echo "another gallery run is going (pid ${owner:-?}); waiting for it" >&2
+	if ((waited >= 1800)); then
+		echo "still locked after 30 minutes: $lock" >&2
+		exit 1
+	fi
+	sleep 1
+	waited=$((waited + 1))
+done
+echo $$ >"$lock/pid"
 gallery=
-trap '[[ -n $gallery ]] && kill "$gallery" 2>/dev/null; true' EXIT
+trap '[[ -n $gallery ]] && kill "$gallery" 2>/dev/null; rm -rf "$lock"; true' EXIT
+
+"$root/build.sh" --debug >/dev/null
+# The run starts a copy of its own, so that a release build another lane starts meanwhile can't swap the app.
+gallery_app=$root/build/gallery/menubar-monitor.app
+rm -rf "$gallery_app"
+mkdir -p "$(dirname "$gallery_app")" "$shots"
+ditto "$app" "$gallery_app"
+
 for appearance in "${appearances[@]}"; do
 	rm -f "$manifest"
 	# Bash 3.2, which macOS ships, treats an empty array as unset under set -u.
-	"$app/Contents/MacOS/menubar-monitor" --gallery --appearance "$appearance" --manifest "$manifest" \
+	"$gallery_app/Contents/MacOS/menubar-monitor" --gallery --appearance "$appearance" --manifest "$manifest" \
 		${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} >/dev/null &
 	gallery=$!
-	for _ in $(seq 100); do
+	# A run of a few hundred entries opens as many windows before it writes the manifest.
+	for _ in $(seq 600); do
 		[[ -f $manifest ]] && break
 		if ! kill -0 "$gallery" 2>/dev/null; then
 			wait "$gallery" || true
@@ -74,7 +100,7 @@ for appearance in "${appearances[@]}"; do
 		sleep 0.1
 	done
 	if [[ ! -f $manifest ]]; then
-		echo "no $manifest after 10 seconds" >&2
+		echo "no $manifest after 60 seconds" >&2
 		exit 1
 	fi
 	/usr/bin/jq -r 'to_entries[] | "\(.key) \(.value)"' "$manifest" | while read -r id window; do

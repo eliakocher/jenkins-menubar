@@ -34,10 +34,19 @@ public struct GalleryEntry: Identifiable, Sendable {
 
 /// Every gallery entry. Each UI milestone adds an entry for every state in its screen's design spec.
 public enum GalleryCatalog {
+    @MainActor
     public static let entries: [GalleryEntry] = [
         GalleryEntry(screen: "placeholder", state: "environment", size: CGSize(width: 420, height: 360)) { _ in
             GalleryPlaceholderView()
         },
-    ]
+    ] + statusIconEntries + menuPaneEntries + panelEntries + alertEntries + watchSheetEntries
+        + welcomeEntries
+        + mainWindowEntries + pipelinesEntries
+        + mergeRequestsEntries
+        + mergeRequestDetailsEntries
+        + workItemsEntries
+        + activityEntries
+        + workspacesEntries
+        + settingsEntries + updateRowEntries
 }
 #endif

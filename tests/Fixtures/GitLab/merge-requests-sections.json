@@ -1,0 +1,201 @@
+{
+  "data": {
+    "currentUser": {
+      "username": "alex.doe",
+      "authored": {
+        "nodes": [
+          {
+            "iid": "1",
+            "title": "My change",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/1",
+            "draft": false,
+            "reference": "acme/main/server/server!1",
+            "updatedAt": "2026-10-28T10:00:00Z",
+            "detailedMergeStatus": "NOT_APPROVED",
+            "author": {
+              "username": "alex.doe",
+              "name": "Alex Doe"
+            },
+            "headPipeline": {
+              "status": "SUCCESS"
+            },
+            "diffStatsSummary": {
+              "additions": 10,
+              "deletions": 2,
+              "fileCount": 3
+            },
+            "reviewers": {
+              "nodes": []
+            }
+          }
+        ]
+      },
+      "assigned": {
+        "nodes": [
+          {
+            "iid": "1",
+            "title": "My change",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/1",
+            "draft": false,
+            "reference": "acme/main/server/server!1",
+            "updatedAt": "2026-10-28T10:00:00Z",
+            "detailedMergeStatus": "NOT_APPROVED",
+            "author": {
+              "username": "alex.doe",
+              "name": "Alex Doe"
+            },
+            "headPipeline": {
+              "status": "SUCCESS"
+            },
+            "diffStatsSummary": {
+              "additions": 10,
+              "deletions": 2,
+              "fileCount": 3
+            },
+            "reviewers": {
+              "nodes": []
+            }
+          },
+          {
+            "iid": "3",
+            "title": "Assigned to me",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/3",
+            "draft": false,
+            "reference": "acme/main/server/server!3",
+            "updatedAt": "2026-10-28T11:00:00.123Z",
+            "detailedMergeStatus": "CI_STILL_RUNNING",
+            "author": {
+              "username": "robin.muster",
+              "name": "Robin Müster"
+            },
+            "headPipeline": {
+              "status": "RUNNING"
+            },
+            "diffStatsSummary": {
+              "additions": 1,
+              "deletions": 0,
+              "fileCount": 1
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "sam.reviewer",
+                  "name": "Sam Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "reviewing": {
+        "nodes": [
+          {
+            "iid": "2",
+            "title": "Their change",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/2",
+            "draft": false,
+            "reference": "acme/main/server/server!2",
+            "updatedAt": "2026-10-27T09:00:00Z",
+            "detailedMergeStatus": "MERGEABLE",
+            "author": {
+              "username": "kim.reviewer",
+              "name": "Kim Reviewer"
+            },
+            "headPipeline": null,
+            "diffStatsSummary": null,
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "alex.doe",
+                  "name": "Alex Doe",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "iid": "4",
+            "title": "Approved by me",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/4",
+            "draft": false,
+            "reference": "acme/main/server/server!4",
+            "updatedAt": "2026-10-28T08:00:00Z",
+            "detailedMergeStatus": "NOT_APPROVED",
+            "author": {
+              "username": "lee.reviewer",
+              "name": "Lee Reviewer"
+            },
+            "headPipeline": {
+              "status": "FAILED"
+            },
+            "diffStatsSummary": {
+              "additions": 5,
+              "deletions": 5,
+              "fileCount": 2
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "alex.doe",
+                  "name": "Alex Doe",
+                  "mergeRequestInteraction": {
+                    "reviewState": "APPROVED",
+                    "approved": true
+                  }
+                },
+                {
+                  "username": "sam.reviewer",
+                  "name": "Sam Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "UNREVIEWED",
+                    "approved": false
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "iid": "5",
+            "title": "Not among the reviewers",
+            "webUrl": "https://gitlab.example.com/acme/web/client/-/merge_requests/5",
+            "draft": false,
+            "reference": "acme/web/client!5",
+            "updatedAt": "2026-10-27T12:00:00Z",
+            "detailedMergeStatus": "UNCHECKED",
+            "author": {
+              "username": "max.reviewer",
+              "name": "Max Reviewer"
+            },
+            "headPipeline": {
+              "status": "SUCCESS"
+            },
+            "diffStatsSummary": {
+              "additions": 0,
+              "deletions": 7,
+              "fileCount": 1
+            },
+            "reviewers": {
+              "nodes": [
+                {
+                  "username": "sam.reviewer",
+                  "name": "Sam Reviewer",
+                  "mergeRequestInteraction": {
+                    "reviewState": "REVIEWED",
+                    "approved": false
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

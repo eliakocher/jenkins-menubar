@@ -1,0 +1,33 @@
+{
+  "data": {
+    "project": {
+      "issue": {
+        "relatedMergeRequests": {
+          "nodes": [
+            {
+              "iid": "12346",
+              "state": "merged",
+              "title": "Keep the reconnect from dropping typed messages",
+              "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/12346",
+              "reference": "acme/main/server/server!12346"
+            },
+            {
+              "iid": "12436",
+              "state": "opened",
+              "title": "[cascade] release/8.44 into develop",
+              "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/12436",
+              "reference": "acme/main/server/server!12436"
+            },
+            {
+              "iid": "12301",
+              "state": "closed",
+              "title": "Try another reconnect strategy",
+              "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/12301",
+              "reference": "acme/main/server/server!12301"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

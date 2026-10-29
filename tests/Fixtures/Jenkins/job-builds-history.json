@@ -1,0 +1,133 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+  "builds": [
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 12,
+      "result": null,
+      "building": true,
+      "actions": [
+        {},
+        {
+          "_class": "hudson.plugins.git.util.BuildData",
+          "buildsByBranchName": {
+            "origin/MR-12": {
+              "_class": "hudson.plugins.git.util.Build",
+              "buildNumber": 12,
+              "marked": { "SHA1": "cccccccccccccccccccccccccccccccccccccccc" }
+            }
+          },
+          "lastBuiltRevision": { "SHA1": "dddddddddddddddddddddddddddddddddddddddd" },
+          "remoteUrls": ["git@gitlab.example.com:team/product.git"]
+        }
+      ]
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 11,
+      "result": "FAILURE",
+      "building": false,
+      "actions": [
+        {},
+        null,
+        {
+          "_class": "hudson.plugins.git.util.BuildData",
+          "buildsByBranchName": {
+            "origin/main": {
+              "_class": "hudson.plugins.git.util.Build",
+              "buildNumber": 11,
+              "marked": { "SHA1": "9999999999999999999999999999999999999999" }
+            }
+          },
+          "lastBuiltRevision": { "SHA1": "8888888888888888888888888888888888888888" },
+          "remoteUrls": ["https://gitlab.example.com/team/shared-pipeline-library.git"]
+        },
+        {
+          "_class": "hudson.plugins.git.util.BuildData",
+          "buildsByBranchName": {
+            "origin/MR-12": {
+              "_class": "hudson.plugins.git.util.Build",
+              "buildNumber": 11,
+              "marked": { "SHA1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+            },
+            "refs/merge-requests/12/head": {
+              "_class": "hudson.plugins.git.util.Build",
+              "buildNumber": 11,
+              "marked": { "SHA1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+            }
+          },
+          "lastBuiltRevision": { "SHA1": "1111111111111111111111111111111111111111" },
+          "remoteUrls": ["git@gitlab.example.com:team/product.git"]
+        }
+      ]
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 10,
+      "result": "SUCCESS",
+      "building": false,
+      "actions": [
+        {
+          "_class": "hudson.plugins.git.util.BuildData",
+          "buildsByBranchName": {
+            "origin/MR-12": {
+              "_class": "hudson.plugins.git.util.Build",
+              "buildNumber": 10,
+              "marked": { "SHA1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+            }
+          },
+          "lastBuiltRevision": { "SHA1": "2222222222222222222222222222222222222222" },
+          "remoteUrls": ["git@gitlab.example.com:team/product.git"]
+        }
+      ]
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 9,
+      "result": "ABORTED",
+      "building": false,
+      "actions": []
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 8,
+      "result": "UNSTABLE",
+      "building": false,
+      "actions": [
+        {
+          "_class": "hudson.plugins.git.util.BuildData",
+          "buildsByBranchName": {
+            "origin/MR-12": {
+              "_class": "hudson.plugins.git.util.Build",
+              "buildNumber": 8,
+              "marked": { "SHA1": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+            }
+          },
+          "lastBuiltRevision": { "SHA1": "3333333333333333333333333333333333333333" },
+          "remoteUrls": ["git@gitlab.example.com:team/product.git"]
+        }
+      ]
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 7,
+      "result": "SUCCESS",
+      "building": false,
+      "actions": [
+        {
+          "_class": "hudson.plugins.git.util.BuildData",
+          "buildsByBranchName": {},
+          "lastBuiltRevision": { "SHA1": "4444444444444444444444444444444444444444" },
+          "remoteUrls": ["git@gitlab.example.com:team/product.git"]
+        }
+      ]
+    },
+    {
+      "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+      "number": 6,
+      "result": "FAILURE",
+      "building": false,
+      "actions": [{ "_class": "hudson.model.CauseAction" }, { "buildsByBranchName": ["not", "a", "map"] }]
+    }
+  ]
+}

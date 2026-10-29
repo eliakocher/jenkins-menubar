@@ -1,0 +1,14 @@
+{
+  "data": {
+    "project": {
+      "labels": {
+        "nodes": [
+          {
+            "title": "uStatus::InVerification",
+            "color": "#808080"
+          }
+        ]
+      }
+    }
+  }
+}

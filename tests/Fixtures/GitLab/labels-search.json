@@ -1,0 +1,13 @@
+{
+  "data": {
+    "project": {
+      "labels": {
+        "nodes": [
+          { "title": "uIssueType::Bug", "color": "#ed9121" },
+          { "title": "Triage", "color": "#808080" },
+          { "title": "bugfix::backport", "color": "#F0F0F0" }
+        ]
+      }
+    }
+  }
+}
