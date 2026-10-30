@@ -66,7 +66,7 @@ public final class PipelinesStore {
         didSet { now = services.now() }
     }
 
-    /// which builds may alert; a change applies at the next check (ALERT-08)
+    /// which builds may alert; a change applies at the next check (ALERT-09)
     public var notifications = NotificationPolicy()
 
     /// the rebuilds started from the app, per job, until the new build shows or the rebuild failed (PIPE-09)

@@ -1,7 +1,7 @@
 import MenubarCore
 import SwiftUI
 
-/// What a build row and the detail know of a job's notifications (ALERT-08): its own setting, and whether its group
+/// What a build row and the detail know of a job's notifications (ALERT-09): its own setting, and whether its group
 /// alerts, which the "Default" entry names.
 struct JobNotifications: Hashable, Sendable {
     /// the job key, which the setting is stored under

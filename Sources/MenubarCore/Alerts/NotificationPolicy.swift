@@ -1,6 +1,6 @@
 import Foundation
 
-/// Which builds may alert: a switch for My Builds, one for Watching, and a setting per job that beats both (ALERT-08).
+/// Which builds may alert: a switch for My Builds, one for Watching, and a setting per job that beats both (ALERT-09).
 ///
 /// It only mutes the glass alert and the banners. The list, the status icon's counts and the pane never look at it.
 /// The global preferences stay where they were: the announcer still skips a stage banner while Stage Alerts is off, so

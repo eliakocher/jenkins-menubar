@@ -50,7 +50,7 @@ public struct PanelData: Sendable {
         public var projects: [ProjectID: ProjectInfo] = [:]
         /// the name of the project the problem is of, while there are several; `nil` for a problem of all of them
         public var problemProject: String?
-        /// which builds may alert; the rows mark the muted jobs and the menus set them (ALERT-08)
+        /// which builds may alert; the rows mark the muted jobs and the menus set them (ALERT-09)
         public var notifications = NotificationPolicy()
 
         /// What a build row needs of its project.

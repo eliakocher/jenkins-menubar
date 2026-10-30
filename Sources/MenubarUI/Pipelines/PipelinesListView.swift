@@ -148,7 +148,7 @@ struct PipelinesListContent: View {
         }
     }
 
-    /// A section header with the bell that turns the group's notifications on or off (ALERT-08).
+    /// A section header with the bell that turns the group's notifications on or off (ALERT-09).
     private func header(_ title: String, group: NotificationPolicy.Group, subject: String) -> some View {
         HStack {
             Text(title)

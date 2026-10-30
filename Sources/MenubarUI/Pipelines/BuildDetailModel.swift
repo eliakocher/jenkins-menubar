@@ -98,7 +98,7 @@ struct BuildDetailModel: Hashable, Sendable {
     var tests: TestCounts?
     /// the failed stages' names, which the chip shows when the stages themselves aren't known
     var failedStageNames: [String]
-    /// the job's notifications, for the ⋯ menu's "Notifications for This Job" (ALERT-08)
+    /// the job's notifications, for the ⋯ menu's "Notifications for This Job" (ALERT-09)
     var notifications = JobNotifications()
 
     /// the Stages notes (`pipelines.md`, Stage notes)

@@ -849,6 +849,49 @@ struct PipelinesStoreTests {
         #expect(await harness.effects.alertWindows.map(\.build.number) == [8])
     }
 
+    @Test("ALERT-09 the alert path asks the policy: a muted job stays quiet, the list and the hide don't change")
+    func mutedJobsStayQuiet() async throws {
+        let harness = try Harness(userState: Harness.watched("MR-2", "MR-3"))
+        harness.answerJobs(["MR-1", "MR-4"])
+        for job in ["MR-1", "MR-2", "MR-3", "MR-4"] {
+            harness.answer(job, number: 7, result: nil, startedAgo: 600)
+        }
+        let store = harness.store
+        // Watching is off; MR-1 is mine but never, MR-3 is watched but always.
+        store.notifications = NotificationPolicy(watching: false, jobs: ["MR-1": .never, "MR-3": .always])
+        try await harness.check()
+        store.hide(try #require(store.myBuilds.first { $0.job == "MR-4" }))
+
+        harness.time.wait(60)
+        for job in ["MR-1", "MR-2", "MR-3", "MR-4"] {
+            harness.answer(job, number: 7, result: "FAILURE", startedAgo: 660)
+        }
+        try await harness.check()
+
+        #expect(Set(await harness.effects.alertWindows.map(\.build.job)) == ["MR-3", "MR-4"])
+        #expect(store.myBuilds.map(\.job) == ["MR-1"])
+        #expect(store.watchedBuilds.map(\.job).sorted() == ["MR-2", "MR-3"])
+    }
+
+    @Test("ALERT-09 a muted job gets no stage banner either, and a job that isn't muted does")
+    func mutedJobsGetNoStageBanner() async throws {
+        let harness = try Harness()
+        harness.answerJobs(["MR-1", "MR-4"])
+        for job in ["MR-1", "MR-4"] {
+            harness.answer(job, number: 7, result: nil, startedAgo: 600)
+        }
+        harness.store.notifications = NotificationPolicy(jobs: ["MR-1": .never])
+        try await harness.check()
+
+        harness.time.wait(60)
+        for job in ["MR-1", "MR-4"] {
+            harness.answerStages(job, 7, failed: ["tests"])
+        }
+        try await harness.check()
+
+        #expect(await harness.effects.banners.map(\.build.job) == ["MR-4"])
+    }
+
     @Test("OD-05 offline shows as the problem, over the check's own")
     func offlineIsTheProblem() async throws {
         let harness = try Harness(jenkinsToken: nil)

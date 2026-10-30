@@ -23,7 +23,7 @@ public final class ProjectsPipelines {
         didSet { stores.forEach { $0.preferences = preferences } }
     }
 
-    /// which builds may alert, for every store (ALERT-08)
+    /// which builds may alert, for every store (ALERT-09)
     public var notifications = NotificationPolicy() {
         didSet { stores.forEach { $0.notifications = notifications } }
     }

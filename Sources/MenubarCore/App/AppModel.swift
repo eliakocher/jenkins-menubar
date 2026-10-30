@@ -303,7 +303,7 @@ public final class AppModel {
         onScheduler { await $0.setCheckInterval(.seconds(preferences.checkIntervalSeconds)) }
     }
 
-    /// Switches the alerts of My Builds or Watching on or off (ALERT-08). The builds stay in the list, the counts and
+    /// Switches the alerts of My Builds or Watching on or off (ALERT-09). The builds stay in the list, the counts and
     /// the pane; only the alert window and the banners stay quiet.
     ///
     /// - Parameters:
@@ -318,7 +318,7 @@ public final class AppModel {
         saveNotifications(policy, "Notifications for \(group == .mine ? "My Builds" : "Watching"): \(isOn ? "on" : "off")")
     }
 
-    /// Sets the alerts of one job, for every build it gets from now on (ALERT-08).
+    /// Sets the alerts of one job, for every build it gets from now on (ALERT-09).
     ///
     /// - Parameters:
     ///   - setting: always, never, or `nil` to follow the group again

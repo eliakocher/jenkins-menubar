@@ -41,9 +41,9 @@ public struct PanelActions {
     /// opens GitLab's new issue page for a New Work Item entry point (NEW-01); `nil` where the surface has none or the
     /// team values can't make a link, so the menus don't offer it
     public var newWorkItem: (@MainActor (NewWorkItemSource) -> Void)?
-    /// sets a job's notifications by its job key: always, never, or `nil` for its group's switch (ALERT-08)
+    /// sets a job's notifications by its job key: always, never, or `nil` for its group's switch (ALERT-09)
     public var setJobNotifications: @MainActor (String, NotificationPolicy.JobSetting?) -> Void
-    /// switches the notifications of My Builds or Watching on or off (ALERT-08)
+    /// switches the notifications of My Builds or Watching on or off (ALERT-09)
     public var setGroupNotifications: @MainActor (NotificationPolicy.Group, Bool) -> Void
 
     public init(

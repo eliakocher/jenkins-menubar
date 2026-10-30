@@ -143,6 +143,9 @@ struct BuildDetailContent: View {
                     // The checkout the build lives in; a click shows it in Workspaces (WS-07).
                     WorkspaceTag(subject: .build(row.build))
                 }
+                if model.notifications.isMuted {
+                    MutedMark()
+                }
                 Spacer(minLength: 8)
                 moreMenu(model)
             }
@@ -287,44 +290,42 @@ struct BuildDetailContent: View {
     /// The other actions and the links the header doesn't show as chips.
     @ViewBuilder
     private func moreMenu(_ model: BuildDetailModel) -> some View {
-        // Notifications for This Job is always there, so the menu is too (ALERT-08).
-        do {
-            Menu {
-                if let primary = model.primary {
-                    Button(primary.title) { actions.open(primary.url) }
-                }
-                ForEach(model.links) { link in
-                    Button(link.title) { if link.kind == .mergeRequest { actions.follow(link.url) } else { actions.open(link.url) } }
-                }
-                // Jenkins's own page, where the parameters change before the build (PIPE-09).
-                if let url = model.rebuildWithChanges {
-                    Button("Rebuild with Changes…") { actions.open(url) }
-                }
-                if let primary = model.primary, case .build = model.item {
-                    Divider()
-                    Button("Copy Link") { actions.copy(primary.url) }
-                }
-                Divider()
-                JobNotificationsMenu(notifications: model.notifications) {
-                    actions.setJobNotifications(model.item.id, $0)
-                }
-                if model.canReportBug, let newWorkItem = actions.newWorkItem, case .build(let row) = model.item {
-                    Button("New Bug from This Build") { newWorkItem(.bugFromBuild(row.build, row.buildPage?.url)) }
-                }
-                if model.canHide, case .build(let row) = model.item {
-                    Button("Hide Until the Next Build") { actions.hide(row.build) }
-                }
-                if model.canStopWatching {
-                    Button("Stop Watching") { actions.stopWatching(model.item.id) }
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .imageScale(.large)
+        // Notifications for This Job is always there, so the menu is too (ALERT-09).
+        Menu {
+            if let primary = model.primary {
+                Button(primary.title) { actions.open(primary.url) }
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("More")
+            ForEach(model.links) { link in
+                Button(link.title) { if link.kind == .mergeRequest { actions.follow(link.url) } else { actions.open(link.url) } }
+            }
+            // Jenkins's own page, where the parameters change before the build (PIPE-09).
+            if let url = model.rebuildWithChanges {
+                Button("Rebuild with Changes…") { actions.open(url) }
+            }
+            if let primary = model.primary, case .build = model.item {
+                Divider()
+                Button("Copy Link") { actions.copy(primary.url) }
+            }
+            Divider()
+            JobNotificationsMenu(notifications: model.notifications) {
+                actions.setJobNotifications(model.item.id, $0)
+            }
+            if model.canReportBug, let newWorkItem = actions.newWorkItem, case .build(let row) = model.item {
+                Button("New Bug from This Build") { newWorkItem(.bugFromBuild(row.build, row.buildPage?.url)) }
+            }
+            if model.canHide, case .build(let row) = model.item {
+                Button("Hide Until the Next Build") { actions.hide(row.build) }
+            }
+            if model.canStopWatching {
+                Button("Stop Watching") { actions.stopWatching(model.item.id) }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .imageScale(.large)
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
     }
 }

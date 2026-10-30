@@ -133,7 +133,7 @@ public struct PipelinesCheck: Sendable {
         public var merged: [Int]
         public var gitLabUser: GitLabUser?
         public var preferences: Preferences
-        /// which builds may alert (ALERT-08)
+        /// which builds may alert (ALERT-09)
         public var notifications: NotificationPolicy
         /// whether to look my jobs up even when the last lookup is recent (PIPE-07)
         public var lookUpJobs: Bool
@@ -226,7 +226,7 @@ public struct PipelinesCheck: Sendable {
             alerts = AlertPolicy(jobURL: jobURL).alerts(
                 previous: input.alertStates, current: result.builds,
                 lastCheck: input.alertsArmed ? result.previousCheck : nil, preferences: input.preferences)
-            // A muted job stays followed, so its alert state moves on; only the glass alert and the banners go (ALERT-08).
+            // A muted job stays followed, so its alert state moves on; only the glass alert and the banners go (ALERT-09).
             alerts = input.notifications.filter(alerts)
         }
         let alertStates = AlertPolicy.states(after: result.builds, previous: input.alertStates)

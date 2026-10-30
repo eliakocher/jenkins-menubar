@@ -30,7 +30,7 @@ public struct PreferencesStore: @unchecked Sendable {
     /// the UserDefaults key of ``notificationPolicy``
     static let notificationPolicyKey = "notificationPolicy"
 
-    /// Which builds may alert (ALERT-08), kept as JSON in one key. It isn't one of the ``Preferences``: the pipeline's
+    /// Which builds may alert (ALERT-09), kept as JSON in one key. It isn't one of the ``Preferences``: the pipeline's
     /// views change it from the lists, and Settings neither shows nor logs it. Text that doesn't decode reads as the
     /// default, which notifies for everything.
     public var notificationPolicy: NotificationPolicy {

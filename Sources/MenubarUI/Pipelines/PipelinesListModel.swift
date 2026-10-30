@@ -104,7 +104,7 @@ struct PipelinesListModel: Sendable {
     var query: String
     /// the team's Jenkins multibranch job, for the waiting jobs' pages
     var jobURL: URL?
-    /// which builds may alert, for the section headers' bells and the waiting jobs' menus (ALERT-08)
+    /// which builds may alert, for the section headers' bells and the waiting jobs' menus (ALERT-09)
     var notifications = NotificationPolicy()
 
     /// Returns the page a row opens: the build's, or a waiting job's job page.
