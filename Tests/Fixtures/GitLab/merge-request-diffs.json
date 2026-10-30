@@ -1,0 +1,81 @@
+[
+  {
+    "old_path": "Sources/Export/ExportJob.swift",
+    "new_path": "Sources/Export/ExportJob.swift",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "@@ -10,4 +10,5 @@ final class ExportJob {\n     func run() {\n-        try upload()\n+        try retry(times: 3) {\n+            try upload()\n+        }\n     }\n@@ -40 +41 @@ extension ExportJob {\n-let limit = 2\n\\ No newline at end of file\n+let limit = 3\n\\ No newline at end of file\n",
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": false,
+    "generated_file": false,
+    "collapsed": false,
+    "too_large": false
+  },
+  {
+    "old_path": "Sources/Export/RetryPolicy.swift",
+    "new_path": "Sources/Export/RetryPolicy.swift",
+    "a_mode": "0",
+    "b_mode": "100644",
+    "diff": "@@ -0,0 +1,2 @@\n+struct RetryPolicy {\n+}\n",
+    "new_file": true,
+    "renamed_file": false,
+    "deleted_file": false
+  },
+  {
+    "old_path": "Sources/Export/Old.swift",
+    "new_path": "Sources/Export/Old.swift",
+    "a_mode": "100644",
+    "b_mode": "0",
+    "diff": "@@ -1 +0,0 @@\n-// gone\n",
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": true
+  },
+  {
+    "old_path": "Sources/Export/Upload.swift",
+    "new_path": "Sources/Export/Uploader.swift",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "",
+    "new_file": false,
+    "renamed_file": true,
+    "deleted_file": false
+  },
+  {
+    "old_path": "Resources/icon.png",
+    "new_path": "Resources/icon.png",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "Binary files a/Resources/icon.png and b/Resources/icon.png differ\n",
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": false
+  },
+  {
+    "old_path": "package-lock.json",
+    "new_path": "package-lock.json",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "",
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": false,
+    "generated_file": false,
+    "collapsed": true,
+    "too_large": false
+  },
+  {
+    "old_path": "Data/huge.csv",
+    "new_path": "Data/huge.csv",
+    "a_mode": "100644",
+    "b_mode": "100644",
+    "diff": "",
+    "new_file": false,
+    "renamed_file": false,
+    "deleted_file": false,
+    "generated_file": true,
+    "collapsed": false,
+    "too_large": true
+  }
+]

@@ -14,7 +14,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-app=$root/build/menubar-monitor.app
+app=$root/build/MegaMonitor.app
 manifest=$root/build/gallery/manifest.json
 shots=$root/docs/design/shots
 
@@ -78,7 +78,7 @@ trap '[[ -n $gallery ]] && kill "$gallery" 2>/dev/null; rm -rf "$lock"; true' EX
 
 "$root/build.sh" --debug >/dev/null
 # The run starts a copy of its own, so that a release build another lane starts meanwhile can't swap the app.
-gallery_app=$root/build/gallery/menubar-monitor.app
+gallery_app=$root/build/gallery/MegaMonitor.app
 rm -rf "$gallery_app"
 mkdir -p "$(dirname "$gallery_app")" "$shots"
 ditto "$app" "$gallery_app"
@@ -86,7 +86,7 @@ ditto "$app" "$gallery_app"
 for appearance in "${appearances[@]}"; do
 	rm -f "$manifest"
 	# Bash 3.2, which macOS ships, treats an empty array as unset under set -u.
-	"$gallery_app/Contents/MacOS/menubar-monitor" --gallery --appearance "$appearance" --manifest "$manifest" \
+	"$gallery_app/Contents/MacOS/MegaMonitor" --gallery --appearance "$appearance" --manifest "$manifest" \
 		${only[@]+"${only[@]}"} ${extra[@]+"${extra[@]}"} >/dev/null &
 	gallery=$!
 	# A run of a few hundred entries opens as many windows before it writes the manifest.

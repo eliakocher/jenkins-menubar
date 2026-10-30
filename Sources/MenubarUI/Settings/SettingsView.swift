@@ -10,12 +10,16 @@ public struct SettingsSystem {
     public var requestNotificationPermission: @MainActor () async -> Void
     /// opens the app's pane in System Settings → Notifications
     public var openNotificationSettings: @MainActor () -> Void
+    /// the opt-in link router behind Settings → General's "Open GitLab and Jenkins Links" switch (APP-09); `nil` hides it
+    public var linkRouting: LinkRouting?
 
     public init(
         notificationPermission: @escaping @MainActor () async -> NotificationPermission,
         requestNotificationPermission: @escaping @MainActor () async -> Void,
-        openNotificationSettings: @escaping @MainActor () -> Void
+        openNotificationSettings: @escaping @MainActor () -> Void,
+        linkRouting: LinkRouting? = nil
     ) {
+        self.linkRouting = linkRouting
         self.notificationPermission = notificationPermission
         self.requestNotificationPermission = requestNotificationPermission
         self.openNotificationSettings = openNotificationSettings

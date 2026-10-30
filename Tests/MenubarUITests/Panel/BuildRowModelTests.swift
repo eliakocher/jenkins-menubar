@@ -148,7 +148,7 @@ struct BuildRowModelTests {
             kind: .watched, phase: .running, startedAt: Self.now)
         let row = BuildRowModel(build: build, now: Self.now, jobURL: Self.jobURL)
         #expect(row.links.map(\.title) == [
-            "Open Merge Request !12", "Open Build #7", "Console Output", "Test Results",
+            "Show Merge Request !12", "Open Build #7 in Jenkins", "Console Output in Jenkins", "Test Results in Jenkins",
         ])
         let page = try #require(row.buildPage)
         #expect(page.url.absoluteString == "https://jenkins.example.com/job/project/job/MR-12/7/")

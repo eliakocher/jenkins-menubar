@@ -27,13 +27,13 @@ public enum GitLabLinks {
         ])
     }
 
-    /// Returns the page that creates a GitLab token named menubar-monitor with the `api` scope (MR-04, MR-09).
+    /// Returns the page that creates a GitLab token named MegaMonitor with the `api` scope (MR-04, MR-09).
     ///
     /// - Parameter gitLab: the GitLab instance
     /// - Returns: the link
     public static func newToken(gitLab: URL) -> URL {
         gitLab.appending(path: "-/user_settings/personal_access_tokens").appending(queryItems: [
-            URLQueryItem(name: "name", value: AppIdentity.name),
+            URLQueryItem(name: "name", value: AppIdentity.displayName),
             URLQueryItem(name: "scopes", value: "api"),
         ])
     }

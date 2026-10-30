@@ -1,11 +1,16 @@
 import MenubarCore
 import SwiftUI
 
-/// What the panel's rows and footer do. ``PanelView`` closes the panel after each action that opens something, since
-/// opening a window doesn't close it (`docs/decisions.md`, Task 0.10); the gallery passes ``none``.
+/// What the rows of the menu pane, its flyouts and the main window's lists do. The pane closes after each action that
+/// opens something, since opening a window doesn't close it (`docs/decisions.md`, Task 0.10); the gallery passes ``none``.
 public struct PanelActions {
-    /// opens a web page: a build, an MR, a work item, a link row
+    /// opens a web page in the real browser, for the buttons that say so: "Open in GitLab", "Open Build in Jenkins", a link
+    /// row. Anything that stays in the app goes through ``follow(_:)``.
     public var open: @MainActor (URL) -> Void
+    /// follows a link inside the app (WIN-06): a build, merge request or work item shows in its section or under
+    /// "Opened"; ⌥ held, a GitLab pipeline and any other page go to ``open``. `nil` where the surface has no window to
+    /// show it in, as the gallery.
+    public var followLink: (@MainActor (URL) -> Void)?
     /// opens Settings at a pane
     public var openSettings: @MainActor (SettingsPane) -> Void
     public var openWindow: @MainActor () -> Void
@@ -36,6 +41,10 @@ public struct PanelActions {
     /// opens GitLab's new issue page for a New Work Item entry point (NEW-01); `nil` where the surface has none or the
     /// team values can't make a link, so the menus don't offer it
     public var newWorkItem: (@MainActor (NewWorkItemSource) -> Void)?
+    /// sets a job's notifications by its job key: always, never, or `nil` for its group's switch (ALERT-08)
+    public var setJobNotifications: @MainActor (String, NotificationPolicy.JobSetting?) -> Void
+    /// switches the notifications of My Builds or Watching on or off (ALERT-08)
+    public var setGroupNotifications: @MainActor (NotificationPolicy.Group, Bool) -> Void
 
     public init(
         open: @escaping @MainActor (URL) -> Void, openSettings: @escaping @MainActor (SettingsPane) -> Void,
@@ -48,8 +57,14 @@ public struct PanelActions {
         cancelRebuild: @escaping @MainActor (String) -> Void = { _ in },
         watchBuilds: @escaping @MainActor (MergeRequest) -> Void = { _ in },
         openSection: @escaping @MainActor (MainWindowSection) -> Void = { _ in },
-        newWorkItem: (@MainActor (NewWorkItemSource) -> Void)? = nil
+        newWorkItem: (@MainActor (NewWorkItemSource) -> Void)? = nil,
+        followLink: (@MainActor (URL) -> Void)? = nil,
+        setJobNotifications: @escaping @MainActor (String, NotificationPolicy.JobSetting?) -> Void = { _, _ in },
+        setGroupNotifications: @escaping @MainActor (NotificationPolicy.Group, Bool) -> Void = { _, _ in }
     ) {
+        self.setJobNotifications = setJobNotifications
+        self.setGroupNotifications = setGroupNotifications
+        self.followLink = followLink
         self.open = open
         self.openSettings = openSettings
         self.openWindow = openWindow
@@ -69,31 +84,20 @@ public struct PanelActions {
         self.newWorkItem = newWorkItem
     }
 
+    /// Follows a link inside the app: a build, merge request or work item shows in the main window, and anything the app
+    /// has no page for goes to the browser (the user, 2026-10-30).
+    ///
+    /// - Parameter url: the link
+    @MainActor
+    public func follow(_ url: URL) {
+        (followLink ?? open)(url)
+    }
+
     /// actions that do nothing, for the gallery
     public static var none: PanelActions {
         PanelActions(
         open: { _ in }, openSettings: { _ in }, openWindow: {}, watchBuild: {}, checkNow: {}, showHidden: {},
             rebuild: {}, quit: {}, hide: { _ in }, stopWatching: { _ in }, copy: { _ in }, close: {})
-    }
-}
-
-/// A build: the state's symbol, the title, the facts in three parts, then the progress bar or the failures
-/// (PIPE-02, PIPE-03), or the rebuild (PIPE-09). A click opens the build; its context menu has the links, Copy Link,
-/// Rebuild, Hide and Stop Watching.
-struct BuildRow: View {
-    let model: BuildRowModel
-    let actions: PanelActions
-
-    var body: some View {
-        Button {
-            if let page = model.buildPage {
-                actions.open(page.url)
-            }
-        } label: {
-            BuildRowContent(model: model) { actions.cancelRebuild(model.build.jobKey) }
-        }
-        .buttonStyle(PanelRowButtonStyle(highlightID: "build:\(model.id)"))
-        .contextMenu { BuildRowMenu(model: model, actions: actions) }
     }
 }
 
@@ -117,6 +121,9 @@ struct BuildRowContent: View {
                     .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                     .help(model.title)
                 Spacer(minLength: 0)
+                if model.notifications.isMuted {
+                    MutedMark()
+                }
                 // The checkout the build lives in (WS-07).
                 WorkspaceTag(subject: .build(model.build))
             }
@@ -300,7 +307,8 @@ struct BuildRowMenu: View {
 
     @ViewBuilder private var menu: some View {
         ForEach(model.links) { link in
-            Button(link.title) { actions.open(link.url) }
+            // The merge request shows in the app; Jenkins and the branch open in the browser.
+            Button(link.title) { if link.kind == .mergeRequest { actions.follow(link.url) } else { actions.open(link.url) } }
         }
         if let page = model.buildPage {
             Divider()
@@ -323,192 +331,12 @@ struct BuildRowMenu: View {
             Button("New Bug from This Build") { newWorkItem(.bugFromBuild(model.build, model.buildPage?.url)) }
         }
         Divider()
+        JobNotificationsMenu(notifications: model.notifications) {
+            actions.setJobNotifications(model.build.jobKey, $0)
+        }
         Button("Hide Until the Next Build") { actions.hide(model.build) }
         if model.build.kind == .watched {
             Button("Stop Watching") { actions.stopWatching(model.build.jobKey) }
         }
-    }
-}
-
-/// A GitLab section's summary: the logo, the title, what the section holds in a few words and a chevron. A click opens
-/// the main window at the section, where the lists, the filters and the problem rows are.
-struct SummaryRow: View {
-    let item: PanelModel.Summary
-    let actions: PanelActions
-
-    var body: some View {
-        Button {
-            actions.openSection(item.section)
-        } label: {
-            HStack(spacing: 6) {
-                Image(nsImage: AppImages.gitLab)
-                    .frame(width: PanelMetrics.symbolColumn)
-                    .accessibilityHidden(true)
-                Text(verbatim: item.title)
-                Spacer(minLength: 8)
-                DelayedSpinner(isActive: item.isLoading)
-                if item.problem != nil {
-                    Image(systemName: Marker.problem)
-                        .foregroundStyle(.red)
-                }
-                if let text = item.text {
-                    if item.isCommitted {
-                        CommitmentPill(text: text, color: item.tint)
-                    } else {
-                        Text(verbatim: text)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .buttonStyle(PanelRowButtonStyle(highlightID: "summary:\(item.section.rawValue)"))
-        .help(item.help)
-    }
-}
-
-/// "2 committed" as a small pill in the commitment label's GitLab color, so it stands out from the other summaries:
-/// the text black or white by WI-06's rule. Without a known color, the secondary fill, as ``LabelPill`` has it.
-struct CommitmentPill: View {
-    let text: String
-    let color: String?
-
-    var body: some View {
-        let fill = color.map { Color(nsColor: NSColor(hex: $0)) }
-        Text(verbatim: text)
-            .font(.subheadline)
-            .lineLimit(1)
-            .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 1)
-            .background { Capsule().fill(fill.map { AnyShapeStyle($0) } ?? AnyShapeStyle(.fill.secondary)) }
-            .overlay { Capsule().strokeBorder(.separator, lineWidth: 0.5) }
-    }
-
-    private var foreground: Color {
-        guard let color else {
-            return .primary
-        }
-        return Label.textColor(onBackground: color) == "#000000" ? .black : .white
-    }
-}
-
-/// A problem: the red marker and the text in the label color, for contrast; a button to its Settings pane when a
-/// setting fixes it.
-struct ProblemRow: View {
-    let item: PanelModel.ProblemItem
-    let actions: PanelActions
-
-    var body: some View {
-        if let pane = item.pane {
-            Button {
-                actions.openSettings(pane)
-            } label: {
-                content
-            }
-            .buttonStyle(PanelRowButtonStyle(highlightID: "problem:\(item.text)"))
-            .help(item.help ?? "")
-        } else {
-            content
-                .panelRowPadding()
-        }
-    }
-
-    private var content: some View {
-        PanelRowLayout {
-            Image(systemName: Marker.problem)
-                .foregroundStyle(.red)
-        } lines: {
-            Text(verbatim: item.text)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-/// A text that isn't clickable: an empty section or a note (PIPE-06, MR-01, MR-04).
-struct NoteRow: View {
-    let text: String
-
-    var body: some View {
-        PanelRowLayout {
-            EmptySymbol()
-        } lines: {
-            Text(verbatim: text)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .panelRowPadding()
-    }
-}
-
-/// Two rows standing in for a section that never loaded (OD-01): placeholders, without shimmer.
-struct PlaceholderRows: View {
-    var body: some View {
-        ForEach(0..<2, id: \.self) { index in
-            PanelRowLayout {
-                Image(systemName: "circle.fill")
-            } lines: {
-                Text(verbatim: index == 0 ? "A placeholder for a title" : "Another placeholder title")
-                Text(verbatim: "!00 #0 · 0h00m elapsed")
-                    .font(.subheadline)
-            }
-            .panelRowPadding()
-        }
-        .redacted(reason: .placeholder)
-    }
-}
-
-/// A link into Jenkins or GitLab, with the time of the section's last load trailing.
-struct LinkRow: View {
-    let title: String
-    let url: URL
-    var lastChecked: String?
-    let actions: PanelActions
-
-    var body: some View {
-        Button {
-            actions.open(url)
-        } label: {
-            PanelRowLayout {
-                EmptySymbol()
-            } lines: {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(title)
-                    Spacer(minLength: 8)
-                    if let lastChecked {
-                        Text(verbatim: lastChecked)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .buttonStyle(PanelRowButtonStyle(highlightID: "link:\(title)"))
-    }
-}
-
-/// A section's header, like "My Builds", with its counts after it.
-struct SectionHeader: View {
-    let title: String
-    var counts: String?
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title)
-                .font(.headline)
-            if let counts {
-                Text(verbatim: counts)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, PanelMetrics.margin)
-        .padding(.top, 8)
-        .padding(.bottom, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

@@ -1,7 +1,7 @@
 #if DEBUG
 import SwiftUI
 
-/// One screen in one state, as `menubar-monitor --gallery` shows it: the design reviews screenshot every entry.
+/// One screen in one state, as `MegaMonitor --gallery` shows it: the design reviews screenshot every entry.
 public struct GalleryEntry: Identifiable, Sendable {
     /// the screen's slug, as in `docs/design/<screen>.md`
     public let screen: String
@@ -39,7 +39,7 @@ public enum GalleryCatalog {
         GalleryEntry(screen: "placeholder", state: "environment", size: CGSize(width: 420, height: 360)) { _ in
             GalleryPlaceholderView()
         },
-    ] + statusIconEntries + menuPaneEntries + panelEntries + alertEntries + watchSheetEntries
+    ] + statusIconEntries + menuPaneEntries + alertEntries + watchSheetEntries
         + welcomeEntries
         + mainWindowEntries + pipelinesEntries
         + mergeRequestsEntries
@@ -47,6 +47,7 @@ public enum GalleryCatalog {
         + workItemsEntries
         + activityEntries
         + workspacesEntries
+        + slotsEntries
         + settingsEntries + updateRowEntries
 }
 #endif

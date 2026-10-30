@@ -36,6 +36,39 @@ struct WorkItemsModelTests {
         #expect(detail.relatedFooters == (prefix.isEmpty ? [] : [footer]))
     }
 
+    @Test("SLOT-03 the work item detail shows each merge request's build, the item's flags and its slot's next date")
+    func detailReality() throws {
+        let f = Self.fixtures
+        let w = f.workItemsScreen
+        let slot = WorkItemDetailGalleryView.slotLabel(now: f.now)
+        let item = w.item(31, "Rework the color tokens", labels: ["workflow::committed", slot])
+        let related = [item.reference: [w.related(14, "Rework the color tokens", .opened), w.related(11, "Move the values", .merged)]]
+        let lists = WorkItemLists(committed: WorkItemList(count: 1, items: [item]))
+        let data = w.data(lists, related: related).data
+        let red = BuildReality(signal: .red, url: URL(string: "https://jenkins.example.com/job/project/job/MR-14/7/"), label: "#7")
+        let reality = try #require(
+            SlotPlan.make(
+                workItems: [item], mergeRequests: { related[$0.reference] }, build: { $0.iid == 14 ? red : nil },
+                team: f.team, today: f.now
+            ).slots.flatMap(\.items).first)
+        let detail = try #require(WorkItemDetailModel(data, selection: item.id, reality: reality))
+        guard case .rows(let rows) = detail.related else {
+            Issue.record("no related rows: \(detail.related)")
+            return
+        }
+        #expect(rows.map(\.build) == [red, nil])
+        #expect(detail.flags.map(\.kind) == [.redPipeline])
+        #expect(detail.countedMergeRequests.count == 2)
+        // The release is five weeks ahead: the code freeze comes first, and nothing is overdue.
+        #expect(detail.slot?.countdown.hasPrefix("Code freeze") == true)
+        #expect(detail.slot?.isOverdue == false)
+        // Another item's reality is never shown.
+        var other = reality
+        other.workItem = w.item40
+        let unrelated = try #require(WorkItemDetailModel(data, selection: item.id, reality: other))
+        #expect(unrelated.flags.isEmpty)
+    }
+
     @Test(
         "WIN-02 related MR that is in Merge Requests offers Show in Merge Requests",
         arguments: [

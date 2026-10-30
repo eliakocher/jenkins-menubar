@@ -17,7 +17,7 @@ public enum NotificationPermission: Hashable, Sendable {
 public struct NotificationNotice: Hashable, Sendable {
     /// ``NotificationPermission/off`` or ``NotificationPermission/notAsked``
     public var permission: NotificationPermission
-    /// what doesn't show, like "Notifications are off for menubar-monitor: stage banners don't show"
+    /// what doesn't show, like "Notifications are off for MegaMonitor: stage banners don't show"
     public var text: String
 
     /// a problem while notifications are off, a note while macOS never asked
@@ -49,7 +49,7 @@ public struct NotificationNotice: Hashable, Sendable {
         if banners {
             parts.append("banners show as the alert window")
         }
-        let start = off ? "Notifications are off for menubar-monitor" : "Notifications aren't set up yet"
+        let start = off ? "Notifications are off for MegaMonitor" : "Notifications aren't set up yet"
         return NotificationNotice(permission: permission, text: "\(start): \(parts.joined(separator: ", and "))")
     }
 }
@@ -122,6 +122,25 @@ public struct OpenAtLoginRows: View {
     }
 }
 
+/// The "Open GitLab and Jenkins Links in MegaMonitor" switch and what it shows (APP-09).
+public struct LinkRoutingSwitch {
+    /// the switch; setting it asks macOS, which may refuse
+    public var isOn: Binding<Bool>
+    /// the browser that gets every other link: the remembered one
+    public var browserName: String
+    /// the quiet note after a refusal; `nil` for none
+    public var note: String?
+    /// whether macOS is being asked, which disables the switch
+    public var isChanging: Bool
+
+    public init(isOn: Binding<Bool>, browserName: String, note: String?, isChanging: Bool) {
+        self.isOn = isOn
+        self.browserName = browserName
+        self.note = note
+        self.isChanging = isChanging
+    }
+}
+
 /// Settings → General's form (`docs/design/settings-general.md`): open at login, the menu bar item and its icon, the
 /// alert style, stage banners, the notification row and the previews. It draws only what it is given.
 public struct GeneralSettingsForm: View {
@@ -134,6 +153,7 @@ public struct GeneralSettingsForm: View {
     private let hotkey: HotkeyStatus
     private let isRecordingShortcut: Bool
     private let actions: GeneralSettingsActions
+    private let linkRouting: LinkRoutingSwitch?
 
     /// - Parameters:
     ///   - preferences: the preferences; a change saves at once
@@ -145,11 +165,14 @@ public struct GeneralSettingsForm: View {
     ///   - hotkey: whether the global hotkey works, or why it doesn't (APP-08)
     ///   - isRecordingShortcut: whether the shortcut recorder looks as if it records, for the gallery
     ///   - actions: what the buttons do
+    ///   - linkRouting: the link router's switch; `nil` leaves the section out
     public init(
         preferences: Binding<Preferences>, openAtLogin: Binding<Bool>, loginStatus: LoginItemStatus, loginError: String?,
         notification: NotificationNotice?, canPreview: Bool, hotkey: HotkeyStatus = .off,
-        isRecordingShortcut: Bool = false, actions: GeneralSettingsActions
+        isRecordingShortcut: Bool = false, actions: GeneralSettingsActions,
+        linkRouting: LinkRoutingSwitch? = nil
     ) {
+        self.linkRouting = linkRouting
         _preferences = preferences
         self.openAtLogin = openAtLogin
         self.loginStatus = loginStatus
@@ -183,8 +206,8 @@ public struct GeneralSettingsForm: View {
                 }
             } footer: {
                 SettingsFooter(
-                    "Open at login starts menubar-monitor when you log in. Checks and alerts go on while the menu bar icon "
-                        + "is hidden; open menubar-monitor again to get to its window. The shortcut opens the window from "
+                    "Open at login starts MegaMonitor when you log in. Checks and alerts go on while the menu bar icon "
+                        + "is hidden; open MegaMonitor again to get to its window. The shortcut opens the window from "
                         + "any app and hides it again when it is in front; it needs ⌘, ⌃ or ⌥. Esc cancels a recording, "
                         + "⌫ clears the shortcut.")
             }
@@ -229,6 +252,15 @@ public struct GeneralSettingsForm: View {
                         + "Notification Center." + (canPreview ? "" : " Preview needs the team values."))
             }
             Section {
+                ContentWidthRows()
+            } header: {
+                Text("Layout")
+            } footer: {
+                SettingsFooter(
+                    "Limits how wide the cards of a merge request, work item or build detail get on a big window; the "
+                        + "content stays centered. Lists, the sidebar and the toolbar keep their width.")
+            }
+            Section {
                 Toggle("Warn before a slot's code freeze", isOn: $preferences.slotAlerts)
                     .settingsSwitch()
             } header: {
@@ -246,7 +278,23 @@ public struct GeneralSettingsForm: View {
             } footer: {
                 SettingsFooter(
                     "When Watch a Build… opens with an empty field, it fills in a copied link or merge request number. "
-                        + "macOS may ask whether menubar-monitor can paste, again after the app is rebuilt.")
+                        + "macOS may ask whether MegaMonitor can paste, again after the app is rebuilt.")
+            }
+            if let linkRouting {
+                Section {
+                    Toggle("Open GitLab and Jenkins Links in MegaMonitor", isOn: linkRouting.isOn)
+                        .settingsSwitch()
+                        .disabled(linkRouting.isChanging)
+                    if let note = linkRouting.note {
+                        StatusLine(.note, note)
+                    }
+                } header: {
+                    Text("Links")
+                } footer: {
+                    SettingsFooter(
+                        "MegaMonitor becomes your default browser and passes every other link on to "
+                            + "\(linkRouting.browserName); hold ⌥ to open any link in the browser.")
+                }
             }
             // Claude, only while claude is installed (AI-01).
             AISettingsSection()
@@ -254,7 +302,7 @@ public struct GeneralSettingsForm: View {
                 Toggle("Easter eggs", isOn: $preferences.easterEggs)
                     .settingsSwitch()
             } footer: {
-                SettingsFooter("The butler sometimes has something to say. Off, menubar-monitor says only what it needs to.")
+                SettingsFooter("The butler sometimes has something to say. Off, MegaMonitor says only what it needs to.")
             }
         }
         .formStyle(.grouped)
@@ -278,7 +326,8 @@ struct GeneralPane: View {
                 set: { on in Task { await settings.setOpenAtLogin(on) } }),
             loginStatus: settings.openAtLogin, loginError: settings.openAtLoginError,
             notification: NotificationNotice.of(permission, preferences: settings.preferences),
-            canPreview: settings.missingTeamValues.isEmpty, hotkey: model.hotkey.status, actions: actions)
+            canPreview: settings.missingTeamValues.isEmpty, hotkey: model.hotkey.status, actions: actions,
+            linkRouting: system.linkRouting.map(linkRoutingSwitch))
             .task {
                 await refresh()
             }
@@ -310,7 +359,14 @@ struct GeneralPane: View {
             })
     }
 
+    private func linkRoutingSwitch(_ routing: LinkRouting) -> LinkRoutingSwitch {
+        LinkRoutingSwitch(
+            isOn: Binding(get: { routing.isOn }, set: { on in Task { await routing.setEnabled(on) } }),
+            browserName: routing.browserName, note: routing.note, isChanging: routing.isChanging)
+    }
+
     private func refresh() async {
+        system.linkRouting?.refresh()
         settings.refreshOpenAtLogin()
         permission = await system.notificationPermission()
     }

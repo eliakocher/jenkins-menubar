@@ -263,9 +263,23 @@ public final class WorkspacesStore {
     ///
     /// - Parameter checkout: the checkout
     public func openInIDE(_ checkout: Checkout) async {
+        await openInIDE(checkout, target: checkout.path)
+    }
+
+    /// Opens a file of the checkout with the user's Open in IDE command, its `{path}` the file's full path, as the
+    /// merge request detail's changed files do (MR-11): `idea {path}` and `code {path}` open the file.
+    ///
+    /// - Parameters:
+    ///   - checkout: the checkout
+    ///   - file: the file's path in the repository
+    public func openInIDE(_ checkout: Checkout, file: String) async {
+        await openInIDE(checkout, target: checkout.url.appending(path: file).path(percentEncoded: false))
+    }
+
+    private func openInIDE(_ checkout: Checkout, target: String) async {
         actionProblems[checkout.id] = nil
         actionNotes[checkout.id] = nil
-        guard let command = LaunchCommand.make(settings.ideCommand, name: checkout.name, path: checkout.path) else {
+        guard let command = LaunchCommand.make(settings.ideCommand, name: checkout.name, path: target) else {
             actionProblems[checkout.id] = "Set the Open in IDE command in Settings → Repositories"
             return
         }

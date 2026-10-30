@@ -13,11 +13,11 @@ public enum EggRules {
     ///   - memory: what the eggs remember
     ///   - now: the time
     ///   - calendar: the calendar, which says what the local date is
-    /// - Returns: the Santa hat from December 24 to 26, which wins over the party hat; the party hat from the third green
+    /// - Returns: the Santa hat all of December, which wins over the party hat; the party hat from the third green
     ///   build of a day until the next red one; otherwise `nil`
     public static func hat(memory: EggMemory, now: Date, calendar: Calendar = .current) -> ButlerHat? {
-        let parts = calendar.dateComponents([.month, .day], from: now)
-        if parts.month == 12, let day = parts.day, (24...26).contains(day) {
+        let parts = calendar.dateComponents([.month], from: now)
+        if parts.month == 12 {
             return .santa
         }
         return memory.partyHat ? .party : nil

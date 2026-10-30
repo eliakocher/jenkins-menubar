@@ -77,10 +77,8 @@ struct ActivityDetailContent: View {
                 ActivityTextBox(text: item.fullText())
             }
         } else {
-            // The store is reading the request: a spinner in the parts' place, never over the whole pane (OD-01).
-            ProgressView()
-                .controlSize(.small)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // The store is reading the request: bars in the parts' place, under the entry's own header (OD-01).
+            SkeletonLines(count: 7, lastFraction: 0.5)
         }
     }
 

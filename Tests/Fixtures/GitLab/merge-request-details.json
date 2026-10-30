@@ -17,12 +17,25 @@
           "pageInfo": { "hasNextPage": false },
           "nodes": [
             { "id": "gid://gitlab/Discussion/a1", "resolvable": true, "resolved": false,
-              "notes": { "nodes": [ {
+              "notes": { "pageInfo": { "hasNextPage": true }, "nodes": [ {
                 "id": "gid://gitlab/DiffNote/501",
                 "url": "https://gitlab.example.com/group/project/-/merge_requests/16#note_501",
                 "body": "## Question\n\nWhy not retry on the **caller's** side? See [the docs](https://docs.example.com/retry) and `RetryPolicy`.\n\n```swift\nlet x = 1\n```",
+                "createdAt": "2026-10-28T09:00:00Z", "system": false,
                 "author": { "username": "slee", "name": "Sam Lee" },
                 "position": { "filePath": "Sources/Export/ExportJob.swift", "oldPath": "Sources/Export/ExportJob.swift", "newPath": "Sources/Export/ExportJob.swift", "oldLine": null, "newLine": 42 }
+              }, {
+                "id": "gid://gitlab/DiffNote/505", "url": null, "body": "It does, but the retry belongs next to the timeout.",
+                "createdAt": "2026-10-28T10:30:00.250Z", "system": false,
+                "author": { "username": "akim", "name": "Alex Kim" }, "position": null
+              }, {
+                "id": "gid://gitlab/DiffNote/506", "url": "https://gitlab.example.com/group/project/-/merge_requests/16#note_506", "body": "Fair, I will move it.",
+                "createdAt": "2026-10-28T11:00:00Z", "system": false,
+                "author": null, "position": null
+              }, {
+                "id": "gid://gitlab/Note/507", "url": null, "body": "changed this line in version 2 of the diff",
+                "createdAt": "2026-10-28T12:00:00Z", "system": true,
+                "author": { "username": "slee", "name": "Sam Lee" }, "position": null
               } ] } },
             { "id": "gid://gitlab/Discussion/a2", "resolvable": true, "resolved": true,
               "notes": { "nodes": [ { "id": "gid://gitlab/DiffNote/502", "url": "https://gitlab.example.com/group/project/-/merge_requests/16#note_502", "body": "Done.", "author": { "username": "akim", "name": "Alex Kim" }, "position": null } ] } },

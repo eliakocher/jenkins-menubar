@@ -65,6 +65,31 @@ struct WorkItemsFixtures {
         item(40, "Update the onboarding checklist", labels: ["frontend", "docs"], updatedMinutesAgo: 1440)
     }
 
+    /// #31's discussion (WIN-02): a question with four replies (folded to the last two), a comment with one reply and a
+    /// lone comment, by made-up people
+    var discussion31: WorkItemDiscussion {
+        let page = "https://gitlab.example.com/group/subgroup/project/-/issues/31#note_"
+        func note(_ id: Int, _ username: String, _ name: String, _ minutesAgo: Double, _ body: String) -> ThreadNote {
+            ThreadNote(
+                id: "gid://gitlab/Note/\(id)", author: .init(username: username, name: name), body: body,
+                createdAt: f.now.addingTimeInterval(-minutesAgo * 60), url: URL(string: page + "\(id)"))
+        }
+        return WorkItemDiscussion(threads: [
+            CommentThread(
+                id: "d1", first: note(901, "slee", "Sam Lee", 4300, "Do we need the **dark variants** to match the badge in the list, or only the detail?"),
+                replies: [
+                    note(902, "akim", "Alex Kim", 4000, "Both, I think. The list is where people notice the drift."),
+                    note(903, "jdoe", "Jane Doe", 2900, "Agreed. I'll start with the shared color table."),
+                    note(904, "slee", "Sam Lee", 1500, "Please keep the old names as aliases for one release, see `BadgeColors`."),
+                    note(905, "akim", "Alex Kim", 35, "Done in the first commit, a look would be nice."),
+                ]),
+            CommentThread(
+                id: "d2", first: note(906, "cnovak", "Chris Novak", 1200, "Is there a design for the high contrast case?"),
+                replies: [note(907, "jdoe", "Jane Doe", 600, "Not yet, I asked the design team.")]),
+            CommentThread(id: "d3", first: note(908, "akim", "Alex Kim", 5, "Moving this to the next slot.")),
+        ])
+    }
+
     /// #31's description (WIN-02), a made-up work item template: `###` sections, an image, nested bullets, check boxes,
     /// a table, a code block, a quote, links and raw HTML
     var description31: String {

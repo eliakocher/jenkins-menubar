@@ -11,16 +11,6 @@ enum PanelMetrics {
     static let symbolColumn: CGFloat = 16
     /// the least height of a row
     static let rowHeight: CGFloat = 24
-    /// the most the content scrolls in before it scrolls: about ten rows
-    static let cap: CGFloat = 480
-    /// what stays free of the screen's visible height, so the footer stays on screen
-    static let screenMargin: CGFloat = 40
-}
-
-/// The ids of rows whose hover look the gallery forces, since its inactive windows show no real hover
-/// (`panel.highlighted-row`). Empty in the app.
-struct PanelForcedHighlightsKey: EnvironmentKey {
-    static let defaultValue: Set<String> = []
 }
 
 /// How long a load runs before its spinner shows: 1 s in the app (`docs/design/panel.md`, Sections), none in the
@@ -30,11 +20,6 @@ struct PanelSpinnerDelayKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-    var panelForcedHighlights: Set<String> {
-        get { self[PanelForcedHighlightsKey.self] }
-        set { self[PanelForcedHighlightsKey.self] = newValue }
-    }
-
     var panelSpinnerDelay: Duration {
         get { self[PanelSpinnerDelayKey.self] }
         set { self[PanelSpinnerDelayKey.self] = newValue }
@@ -44,19 +29,14 @@ extension EnvironmentValues {
 /// A clickable row of the panel: full width, and on hover and press a system fill in a concentric shape, inset 6 pt
 /// from the edges (`docs/design/panel.md`, Departures 2: no system menu-item row fits).
 struct PanelRowButtonStyle: ButtonStyle {
-    /// the row's id for the gallery's forced hover look
-    var highlightID: String?
-
     func makeBody(configuration: Configuration) -> some View {
-        PanelRowButtonBody(configuration: configuration, highlightID: highlightID)
+        PanelRowButtonBody(configuration: configuration)
     }
 }
 
 private struct PanelRowButtonBody: View {
     let configuration: ButtonStyleConfiguration
-    let highlightID: String?
     @ViewState private var isHovered = false
-    @Environment(\.panelForcedHighlights) private var forced
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
@@ -78,44 +58,7 @@ private struct PanelRowButtonBody: View {
         guard isEnabled else {
             return false
         }
-        return isHovered || configuration.isPressed || highlightID.map(forced.contains) == true
-    }
-}
-
-/// A button inside a line of buttons, like the footer's commands: text with a system fill in a rounded shape on hover
-/// and press. It takes the width its parent gives it.
-struct PanelChipButtonStyle: ButtonStyle {
-    /// the button's id for the gallery's forced hover look
-    var highlightID: String?
-
-    func makeBody(configuration: Configuration) -> some View {
-        PanelChipButtonBody(configuration: configuration, highlightID: highlightID)
-    }
-}
-
-private struct PanelChipButtonBody: View {
-    let configuration: ButtonStyleConfiguration
-    let highlightID: String?
-    @ViewState private var isHovered = false
-    @Environment(\.panelForcedHighlights) private var forced
-
-    var body: some View {
-        configuration.label
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-            .foregroundStyle(.primary)
-            .background {
-                if isHighlighted {
-                    ConcentricRectangle(corners: .concentric(minimum: .fixed(6)), isUniform: true)
-                        .fill(.fill.tertiary)
-                }
-            }
-            .onHover { isHovered = $0 }
-    }
-
-    private var isHighlighted: Bool {
-        configuration.isPressed || isHovered || highlightID.map(forced.contains) == true
+        return isHovered || configuration.isPressed
     }
 }
 
@@ -235,13 +178,6 @@ extension View {
     /// - Returns: the part, with its cap
     func panelLineCap(_ share: CGFloat) -> some View {
         layoutValue(key: PanelLineCapKey.self, value: share)
-    }
-}
-
-/// The empty symbol column: a text, so it has a baseline to align on.
-struct EmptySymbol: View {
-    var body: some View {
-        Text(verbatim: " ")
     }
 }
 

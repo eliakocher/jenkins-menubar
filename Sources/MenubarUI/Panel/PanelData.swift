@@ -50,6 +50,8 @@ public struct PanelData: Sendable {
         public var projects: [ProjectID: ProjectInfo] = [:]
         /// the name of the project the problem is of, while there are several; `nil` for a problem of all of them
         public var problemProject: String?
+        /// which builds may alert; the rows mark the muted jobs and the menus set them (ALERT-08)
+        public var notifications = NotificationPolicy()
 
         /// What a build row needs of its project.
         public struct ProjectInfo: Hashable, Sendable {
@@ -88,9 +90,11 @@ public struct PanelData: Sendable {
         /// - Returns: the row
         func row(_ build: Build, now: Date, jobURL: URL?) -> BuildRowModel {
             let project = projects[build.project]
-            return BuildRowModel(
+            var row = BuildRowModel(
                 build: build, now: now, jobURL: project?.jobURL ?? jobURL, rebuild: rebuilds[build.jobKey],
                 project: project?.name)
+            row.notifications = JobNotifications(notifications, job: build.jobKey, group: .init(build))
+            return row
         }
 
         /// the problem's row, with the project's name in front while there are several

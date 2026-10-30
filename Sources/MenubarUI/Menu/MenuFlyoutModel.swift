@@ -241,6 +241,14 @@ enum MenuSelection: Hashable, Sendable {
     }
 }
 
+/// Where a click on a flyout entry goes (the user, 2026-10-30): into the main window, or with ⌥ to the browser.
+enum MenuEntryDestination: Hashable, Sendable {
+    /// the main window's section with the entry selected
+    case window(MenuSelection)
+    /// Jenkins or GitLab in the browser
+    case browser(URL)
+}
+
 /// One entry of a flyout: the colored status symbol, the title (cut by width), the grey line that tells entries apart,
 /// and for a running build its progress; a work item's slot as its pill before the grey line.
 struct MenuEntry: Hashable, Sendable, Identifiable {
@@ -263,7 +271,7 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
     var progress: BuildRowModel.Progress?
     /// a work item's slot, its value as a pill (WI-04)
     var pill: LabelPillModel?
-    /// what a click opens: the build in Jenkins, the MR or the work item in GitLab; `nil` opens nothing
+    /// the page ⌥-click and "Open …" open: the build in Jenkins, the MR or the work item in GitLab; `nil` has none
     var url: URL?
     /// the context menu's first item, "Open Build #7", "Open Merge Request !21"
     var openTitle: String
@@ -335,6 +343,17 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
         selection = .workItem(item.id)
         problem = nil
         id = "wi:\(item.id)"
+    }
+
+    /// Returns where a click or Return on the entry goes: the app's own window, or with ⌥ the page in the browser.
+    /// An entry without a page has no browser to go to, so ⌥ shows it in the window too.
+    ///
+    /// - Parameter option: whether ⌥ is held
+    func destination(option: Bool) -> MenuEntryDestination {
+        if option, let url {
+            return .browser(url)
+        }
+        return .window(selection)
     }
 
     /// Returns a build's grey line: the reference (with "by Sam Lee" for a watched build), then while it runs the

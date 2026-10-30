@@ -23,7 +23,7 @@ public struct Rebuilder: Sendable {
 
     /// the app `build.sh --install` installs, unless its output names another one
     public var defaultInstalledApp: URL {
-        home.appending(path: "Applications/\(AppIdentity.name).app", directoryHint: .isDirectory)
+        home.appending(path: "Applications/\(AppIdentity.bundleFileName)", directoryHint: .isDirectory)
     }
 
     /// Runs `build.sh --install` to its end. A rebuild takes from a few seconds to about a minute.

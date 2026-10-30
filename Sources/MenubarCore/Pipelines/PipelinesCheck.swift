@@ -133,6 +133,8 @@ public struct PipelinesCheck: Sendable {
         public var merged: [Int]
         public var gitLabUser: GitLabUser?
         public var preferences: Preferences
+        /// which builds may alert (ALERT-08)
+        public var notifications: NotificationPolicy
         /// whether to look my jobs up even when the last lookup is recent (PIPE-07)
         public var lookUpJobs: Bool
         /// whether a round since the launch was answered by Jenkins; until then, no alert fires (ALERT-01)
@@ -152,8 +154,10 @@ public struct PipelinesCheck: Sendable {
             lookUpJobs: Bool,
             alertsArmed: Bool,
             eggs: EggMemory = EggMemory(),
-            project: ProjectID? = nil
+            project: ProjectID? = nil,
+            notifications: NotificationPolicy = NotificationPolicy()
         ) {
+            self.notifications = notifications
             self.project = project
             self.userState = userState
             self.state = state
@@ -222,6 +226,8 @@ public struct PipelinesCheck: Sendable {
             alerts = AlertPolicy(jobURL: jobURL).alerts(
                 previous: input.alertStates, current: result.builds,
                 lastCheck: input.alertsArmed ? result.previousCheck : nil, preferences: input.preferences)
+            // A muted job stays followed, so its alert state moves on; only the glass alert and the banners go (ALERT-08).
+            alerts = input.notifications.filter(alerts)
         }
         let alertStates = AlertPolicy.states(after: result.builds, previous: input.alertStates)
         // The easter eggs add a line to the finished builds' alerts, and keep their streaks (EGG-11).

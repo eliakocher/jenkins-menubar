@@ -59,7 +59,7 @@ enum AppImages {
     /// The sad butler of every other alert, `icons/sad.png`.
     static let sad: NSImage = load("sad") ?? symbol("cloud.rain")
 
-    /// The GitLab tanuki, `icons/gitlab.png`, in full color, for the panel's summary rows. The file is 32 px; the size
+    /// The GitLab tanuki, `icons/gitlab.png`, in full color, for the menu pane's summary rows. The file is 32 px; the size
     /// is set to the row's 14 pt so it stays sharp on a Retina screen.
     static let gitLab: NSImage = {
         let image = load("gitlab") ?? symbol("shippingbox")
@@ -103,7 +103,7 @@ enum AppImages {
 extension MergeRequestStatus.Color {
     /// GitLab's color for the light and the dark appearance, picked by the view's appearance (MR-02). With Increase
     /// Contrast, the light color is darker and the dark one lighter, since GitLab's orange stays below 3:1 on the
-    /// panel's light background (`panel.md`, Departures 4; review PANEL-05).
+    /// menu's light background (review PANEL-05).
     var swiftUI: Color {
         let light = NSColor(hex: self.light)
         let dark = NSColor(hex: self.dark)

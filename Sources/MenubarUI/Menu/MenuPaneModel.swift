@@ -143,7 +143,8 @@ struct MenuPaneModel: Sendable {
         return area
     }
 
-    /// Work Items: the commitment first, the slot's value as its pill and "2 committed", then the rest: "20 open".
+    /// Work Items: the commitment first, the slot's value as its pill with its next date and "2 committed", then the rest:
+    /// "2026.45 Code freeze in 3 days · 2 committed · 20 open".
     /// Its count is the committed items, or every item without a committed label (WIN-01's badge).
     static func workItems(_ data: PanelData, offline: Bool) -> MenuArea {
         let state = data.workItems
@@ -176,6 +177,9 @@ struct MenuPaneModel: Sendable {
         if committed > 0 {
             if let slot = slot(of: lists.committed?.items ?? [], prefix: team.slotLabelPrefix, colors: state.labelColors) {
                 area.summary.append(.pill(slot))
+                if let countdown = countdown(of: slot, team: team, now: data.now) {
+                    area.summary.append(.note(countdown))
+                }
             }
             area.summary.append(.count(symbol: nil, tint: nil, text: "\(committed) committed"))
         }
@@ -187,6 +191,16 @@ struct MenuPaneModel: Sendable {
         }
         area.count = committed > 0 ? committed : nil
         return area
+    }
+
+    /// Returns the next date of the committed slot, the Slots section's countdown: "Code freeze in 3 days".
+    ///
+    /// - Returns: the text; `nil` when the label isn't a slot name with dates
+    static func countdown(of slot: LabelPillModel, team: TeamValues, now: Date, calendar: Calendar = .current) -> String? {
+        guard let name = SlotName(label: slot.title, prefix: team.slotLabelPrefix),
+            let dates = SlotRules(team: team).dates(of: name, calendar: calendar)
+        else { return nil }
+        return dates.countdown(from: now, calendar: calendar)
     }
 
     /// Returns the slot of the commitment: the slot label most committed items have, the first one on a tie (WI-04).

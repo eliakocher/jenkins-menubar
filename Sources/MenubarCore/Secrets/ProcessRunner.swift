@@ -82,19 +82,26 @@ public struct SystemProcessRunner: ProcessRunner {
         _ executable: URL, arguments: [String], input: Data?, lineHandler: (@Sendable (String) -> Void)?,
         timeout: Duration? = nil
     ) async throws -> ProcessOutput {
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(with: Result {
-                    try Self.runToEnd(
-                        executable, arguments: arguments, input: input, lineHandler: lineHandler, timeout: timeout)
-                })
+        // Cancelling the calling task ends the tool, so Stop on a Claude answer really stops `claude`.
+        let handle = ProcessHandle()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    continuation.resume(with: Result {
+                        try Self.runToEnd(
+                            executable, arguments: arguments, input: input, lineHandler: lineHandler, timeout: timeout,
+                            handle: handle)
+                    })
+                }
             }
+        } onCancel: {
+            handle.cancel()
         }
     }
 
     private static func runToEnd(
         _ executable: URL, arguments: [String], input: Data?, lineHandler: (@Sendable (String) -> Void)?,
-        timeout: Duration?
+        timeout: Duration?, handle: ProcessHandle
     ) throws -> ProcessOutput {
         let process = Process()
         process.executableURL = executable
@@ -106,6 +113,7 @@ public struct SystemProcessRunner: ProcessRunner {
         process.standardOutput = stdout
         process.standardError = stderr
         try process.run()
+        handle.started(process)
         // Ending the tool closes its end of the pipes, so the reads below finish too.
         let limit = timeout.map { ProcessLimit(process, after: $0) }
         defer { limit?.cancel() }
@@ -162,6 +170,33 @@ public struct SystemProcessRunner: ProcessRunner {
             text.removeLast()
         }
         return text
+    }
+}
+
+/// Lets a cancelled task end the process it waits for: the cancellation may come before the process starts or after.
+private final class ProcessHandle: @unchecked Sendable {
+    private let lock = NSLock()
+    // Guarded by `lock`.
+    private var process: Process?
+    private var isCancelled = false
+
+    /// Remembers the running process, and ends it at once when the task was cancelled before it started.
+    func started(_ process: Process) {
+        lock.withLock {
+            self.process = process
+            if isCancelled, process.isRunning {
+                process.terminate()
+            }
+        }
+    }
+
+    func cancel() {
+        lock.withLock {
+            isCancelled = true
+            if let process, process.isRunning {
+                process.terminate()
+            }
+        }
     }
 }
 

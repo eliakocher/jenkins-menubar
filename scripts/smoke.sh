@@ -3,11 +3,11 @@
 #
 #   scripts/smoke.sh [--no-build]
 #
-#   --no-build  uses build/menubar-monitor.app as it is, instead of running ./build.sh first
+#   --no-build  uses build/MegaMonitor.app as it is, instead of running ./build.sh first
 #
 # 1. It builds the bundle and starts a python3 stub server on 127.0.0.1, which answers with the fixtures that
 #    Tests/Fixtures/Smoke/routes.json names, and records each request.
-# 2. It runs `menubar-monitor --smoke`, which runs the launch steps, one Jenkins check and one GitLab load, then exits.
+# 2. It runs `MegaMonitor --smoke`, which runs the launch steps, one Jenkins check and one GitLab load, then exits.
 # 3. It checks the exit code, the Activity entries, the requests and the cache files.
 #
 # Nothing touches the user's data or screen: the files go into a temporary MENUBAR_MONITOR_DATA_DIR, the preferences
@@ -31,8 +31,8 @@ cd "$root"
 if $build; then
 	./build.sh
 fi
-app=$root/build/menubar-monitor.app
-if [[ ! -x $app/Contents/MacOS/menubar-monitor ]]; then
+app=$root/build/MegaMonitor.app
+if [[ ! -x $app/Contents/MacOS/MegaMonitor ]]; then
 	echo "no app at $app: run ./build.sh first" >&2
 	exit 2
 fi
@@ -115,7 +115,7 @@ fi
 port=$(cat "$work/port")
 
 status=0
-MENUBAR_MONITOR_DATA_DIR=$work/data "$app/Contents/MacOS/menubar-monitor" --smoke --stub "http://127.0.0.1:$port" \
+MENUBAR_MONITOR_DATA_DIR=$work/data "$app/Contents/MacOS/MegaMonitor" --smoke --stub "http://127.0.0.1:$port" \
 	>"$work/smoke.out" 2>&1 || status=$?
 sed 's/^/  /' "$work/smoke.out"
 

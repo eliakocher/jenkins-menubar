@@ -69,11 +69,27 @@ public final class WindowRouter {
     /// UserDefaults, so it comes back when the window opens again and after a restart (WIN-05).
     public var section: MainWindowSection = .pipelines {
         didSet {
+            // Choosing a section, also the one shown, leaves the item opened under "Opened" (WIN-06).
+            opened = nil
             if section != oldValue {
                 defaults?.set(section.rawValue, forKey: MainWindowSelection.sectionKey)
             }
+            noteNavigation()
         }
     }
+
+    /// the item selected under "Opened" in the sidebar; `nil` while a section is shown. It isn't kept across a restart,
+    /// as the items are (WIN-06).
+    public var opened: OpenedItem.ID? {
+        didSet {
+            if opened != oldValue {
+                noteNavigation()
+            }
+        }
+    }
+
+    /// whether "Open by Link…" shows (⌘⇧O, WIN-06), as a sheet on the main window
+    public var isOpeningByLink = false
 
     /// each section's selected rows, by their stable ids; the main window's columns bind to them. Kept in UserDefaults
     /// with the section (WIN-05).
@@ -82,6 +98,9 @@ public final class WindowRouter {
             if selection != oldValue, let defaults {
                 selection.save(to: defaults)
             }
+            if selection != oldValue {
+                noteNavigation()
+            }
         }
     }
 
@@ -89,12 +108,30 @@ public final class WindowRouter {
     /// button, or Hide and Stop Watching in a detail (`main-window.md`, Keyboard)
     public private(set) var listFocusRequest = 0
 
+    /// grows by one whenever a row is revealed from outside the window (the menu bar pane's flyouts): the window clears
+    /// its search, so a filter never hides the row, and the list scrolls to the selection
+    public internal(set) var revealRequest = 0
+
     /// grows by one whenever the window's search field should take the keyboard focus: Edit › Find… (⌘F)
     public private(set) var searchFocusRequest = 0
 
     /// Opens the rebuilt app and quits, after "Update Ready — Rebuild" installed it (APP-05). The app sets it; until
     /// then the new app is installed but not opened.
     @ObservationIgnored public var onRebuilt: (@MainActor (URL) -> Void)?
+
+    /// Opens a page in the real browser, also while the app is the Mac's default browser: a link back through macOS
+    /// would come here again. The app sets it; "Open in GitLab" of an item under "Opened" uses it (WIN-06).
+    @ObservationIgnored public var openInBrowser: (@MainActor (URL) -> Void)?
+
+    /// where the window has been: Back and Forward's stacks (WIN-08). Every change of the section, of the selection in the
+    /// shown section and of the item under "Opened" is noted, see ``noteNavigation()``.
+    public internal(set) var history = NavigationHistory(start: NavigationLocation(section: .pipelines))
+
+    /// whether Back or Forward is setting the section and selections: that is no navigation to note
+    @ObservationIgnored var isRestoringNavigation = false
+
+    /// the app-wide listener for the mouse's back and forward buttons and ⌘← ⌘→, see ``startNavigationInput(model:)``
+    @ObservationIgnored let navigationInput = NavigationInput()
 
     @ObservationIgnored private let opener: @MainActor (WindowRoute) -> Void
     /// where the section and the selections are kept; `nil` keeps them in memory only
@@ -118,6 +155,7 @@ public final class WindowRouter {
                 ?? .pipelines
             selection = MainWindowSelection(defaults: defaults)
         }
+        history = NavigationHistory(start: navigationLocation)
     }
 
     /// Opens a route. For ``WindowRoute/watch(_:)``, it stores the request first, so the main window shows the sheet
@@ -137,6 +175,58 @@ public final class WindowRouter {
     /// - Parameter section: the section to show
     public func open(_ section: MainWindowSection) {
         self.section = section
+        open(.main)
+    }
+
+    /// Opens the main window at a section whose selection is set already, and asks the list to show it: it clears the
+    /// search and scrolls to the selected row, also when the window shows that section already.
+    ///
+    /// - Parameter section: the section to show
+    public func reveal(section: MainWindowSection) {
+        revealRequest += 1
+        open(section)
+        focusList()
+    }
+
+    /// Shows a build, merge request or work item where the app has it: in its list, or under "Opened" (WIN-06). Opens the
+    /// main window.
+    ///
+    /// - Parameter destination: what ``AppModel/destination(for:link:)`` found
+    public func show(_ destination: InAppDestination) {
+        switch destination {
+        case .pipelines(let job):
+            selection.pipelines = job
+            reveal(section: .pipelines)
+        case .mergeRequests(let id):
+            selection.mergeRequests = id
+            reveal(section: .mergeRequests)
+        case .workItems(let id):
+            selection.workItems = id
+            reveal(section: .workItems)
+        case .opened(let id):
+            opened = id
+            open(.main)
+        }
+    }
+
+    /// Closes an item under "Opened". When it was shown, the next one takes its place, else the one above, else the
+    /// section is shown again.
+    ///
+    /// - Parameters:
+    ///   - id: the item
+    ///   - store: the opened items
+    public func close(opened id: OpenedItem.ID, in store: OpenedItemsStore) {
+        let index = store.items.firstIndex { $0.id == id }
+        store.close(id)
+        guard opened == id else {
+            return
+        }
+        opened = index.flatMap { store.items.indices.contains($0) ? $0 : store.items.indices.last }.map { store.items[$0].id }
+    }
+
+    /// Opens the main window with the "Open by Link…" sheet (⌘⇧O).
+    public func promptOpenByLink() {
+        isOpeningByLink = true
         open(.main)
     }
 

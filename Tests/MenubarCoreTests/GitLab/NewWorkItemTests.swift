@@ -150,6 +150,23 @@ struct NewWorkItemTests {
         #expect(NewWorkItemSource.blank(.improvement).draft(failedTests: nil).isBlank)
     }
 
+    @Test("NEW-04 a follow-up of a work item is a task related to it, an epic's only linked")
+    func followUpOfWorkItem() throws {
+        let item = WorkItem(
+            reference: "group/subgroup/project#31", title: "[ABC-31] Rework the color tokens",
+            webURL: URL(string: "https://gitlab.example.com/group/subgroup/project/-/issues/31")!, updatedAt: Date())
+        let draft = NewWorkItemSource.followUpOfWorkItem(item).draft(failedTests: nil)
+        #expect(draft.kind == .task)
+        #expect(draft.title == "Follow-up: Rework the color tokens")
+        let url = NewWorkItem.link(for: draft, team: Self.team)
+        let description = try #require(Self.query(url)["issue[description]"])
+        #expect(description.contains("group/subgroup/project#31 (https://gitlab.example.com/group/subgroup/project/-/issues/31)"))
+        #expect(description.hasSuffix("/relate group/subgroup/project#31\n\n/assign me\n/label ~\"type::Task\""))
+        var epic = item
+        epic.reference = "group/subgroup&12"
+        #expect(!NewWorkItem.followUp(of: epic).body.contains("/relate"))
+    }
+
     @Test("NEW-01 a link holds no token and the team file keeps the type label prefix")
     func holdsNoSecret() throws {
         let url = try #require(NewWorkItem.link(for: NewWorkItemSource.followUp(Self.mergeRequest).draft(failedTests: nil), team: Self.team))

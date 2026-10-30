@@ -8,6 +8,8 @@
           "webUrl": "https://gitlab.example.com/acme/main/server/server/-/work_items/19017",
           "reference": "acme/main/server/server#19017",
           "updatedAt": "2026-10-26T08:39:25Z",
+          "author": { "username": "sam.lee", "name": "Sam Lee" },
+          "assignees": { "nodes": [{ "username": "alex.doe", "name": "Alex Doe" }, { "username": "jkim", "name": null }] },
           "labels": {
             "nodes": [
               {

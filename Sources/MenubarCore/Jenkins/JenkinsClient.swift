@@ -96,6 +96,22 @@ public struct JenkinsClient: Sendable {
             lastBuild: answer.lastBuild.flatMap(Self.lastBuild))
     }
 
+    /// Returns one build of a job, which need not be its last: the one a link points to, opened under "Opened" (WIN-06).
+    ///
+    /// - Parameters:
+    ///   - job: the job's name as in Jenkins URLs
+    ///   - number: the build number
+    /// - Returns: the build; running until Jenkins has its result, as for the last build
+    public func build(job: String, number: Int) async throws -> JenkinsJobStatus.LastBuild {
+        let answer: LastBuildAnswer = try await get(
+            "/job/\(Self.safe(job))/\(number)/api/json?tree=number,building,result,timestamp,estimatedDuration,duration",
+            timeout: timeouts.jenkins, notFound: .gone, timedOut: .unreachable(.jenkins))
+        guard let build = Self.lastBuild(answer) else {
+            throw JenkinsError(.gone)
+        }
+        return build
+    }
+
     /// Returns the stages of a build, from `wfapi/describe` (PIPE-02, PIPE-04).
     ///
     /// - Parameters:

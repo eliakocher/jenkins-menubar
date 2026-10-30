@@ -26,6 +26,14 @@ struct SlotsListModel: Hashable, Sendable {
     var project: String
     /// how many work items have no slot label and don't show
     var withoutSlot: Int
+    /// why only the slots of the work items and the remembered labels show: GitLab's slot labels didn't load
+    var labelsNote: String?
+    /// the status label prefix, whose value the rows show
+    var statusPrefix: String
+    /// how many issues of the slot group loaded; 0 without a slot group
+    var groupItems: Int
+    /// whether the slot group's issues are loading
+    var isLoadingGroup: Bool
 
     /// - Parameters:
     ///   - plan: the slots
@@ -33,7 +41,17 @@ struct SlotsListModel: Hashable, Sendable {
     ///   - hasLoaded: whether the work items loaded once
     ///   - needsToken: whether GitLab has no token
     ///   - query: the window's search text
-    init(plan: SlotPlan, team: TeamValues, hasLoaded: Bool, needsToken: Bool, query: String) {
+    ///   - labelsProblem: why GitLab's slot labels or the group's issues didn't load; `nil` when they did
+    ///   - groupItems: how many issues of the slot group loaded
+    ///   - isLoadingGroup: whether they are loading
+    init(
+        plan: SlotPlan, team: TeamValues, hasLoaded: Bool, needsToken: Bool, query: String, labelsProblem: String? = nil,
+        groupItems: Int = 0, isLoadingGroup: Bool = false
+    ) {
+        labelsNote = labelsProblem
+        statusPrefix = team.statusLabelPrefix
+        self.groupItems = groupItems
+        self.isLoadingGroup = isLoadingGroup
         planningURL = team.slotPlanning
         project = team.gitLabProject
         withoutSlot = plan.withoutSlot
@@ -59,9 +77,13 @@ struct SlotsListModel: Hashable, Sendable {
             return slot
         }
         var matching = slot
-        matching.items = slot.items.filter {
-            $0.workItem.title.localizedCaseInsensitiveContains(text) || $0.workItem.reference.localizedCaseInsensitiveContains(text)
+        let matches = { (item: SlotItem) in
+            item.workItem.title.localizedCaseInsensitiveContains(text) || item.workItem.reference.localizedCaseInsensitiveContains(text)
+                || (item.workItem.epic?.title.localizedCaseInsensitiveContains(text) ?? false)
+                || (item.workItem.assignees ?? []).contains { $0.displayName.localizedCaseInsensitiveContains(text) }
         }
-        return matching.items.isEmpty ? nil : matching
+        matching.items = slot.items.filter(matches)
+        matching.planned = slot.planned.filter(matches)
+        return matching.items.isEmpty && matching.planned.isEmpty ? nil : matching
     }
 }

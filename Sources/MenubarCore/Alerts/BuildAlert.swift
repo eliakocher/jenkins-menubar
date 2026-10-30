@@ -118,8 +118,8 @@ public struct AlertContent: Codable, Hashable, Sendable {
         return [defaultAction] + others
     }
 
-    /// the actions the alert window keeps in its More menu to keep the buttons calm: Open Console and Hide Until the
-    /// Next Build, for a live alert only (HIDE-01, ALERT-03)
+    /// the actions the alert window keeps in the context menu of its background to keep the buttons calm: Open Console
+    /// and Hide Until the Next Build, for a live alert only (HIDE-01, ALERT-03)
     public var moreActions: [Action] {
         isLive ? [.openConsole, .hide] : []
     }
@@ -227,13 +227,19 @@ public struct AlertContent: Codable, Hashable, Sendable {
         case hide
         case dismiss
 
+        /// whether the action shows its link in the app: the build and the merge request do (the user, 2026-10-30), while
+        /// Jenkins' console output has no page there and opens in the browser
+        public var showsInApp: Bool {
+            self == .openBuild || self == .openMergeRequest
+        }
+
         /// the button's or the banner action's title
         public var title: String {
             switch self {
-            case .openBuild: "Open Build"
-            case .openMergeRequest: "Open MR"
+            case .openBuild: "Show Build"
+            case .openMergeRequest: "Show MR"
             case .rebuild: "Rebuild"
-            case .openConsole: "Open Console"
+            case .openConsole: "Open Console in Jenkins"
             case .hide: "Hide Until the Next Build"
             case .dismiss: "Dismiss"
             }

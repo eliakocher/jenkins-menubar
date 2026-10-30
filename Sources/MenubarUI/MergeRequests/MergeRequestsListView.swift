@@ -23,10 +23,20 @@ public struct MergeRequestsListView: View {
 
     public var body: some View {
         TimelineView(.periodic(from: .now, by: 10)) { context in
+            let list = MergeRequestsListModel(MergeRequestsData(model, now: context.date), query: searchText)
             MergeRequestsListContent(
-                model: MergeRequestsListModel(MergeRequestsData(model, now: context.date), query: searchText),
+                model: list,
                 selection: $selection,
-                actions: .live(model: model, router: router, openURL: openURL))
+                actions: .live(model: model, router: router, openURL: openURL),
+                search: list.showsGitLabSearch
+                    ? GitLabSearchRows.make(
+                        kind: .mergeRequest, text: searchText, shown: list.sections.flatMap(\.rows).map(\.mergeRequest.reference),
+                        model: model, now: context.date)
+                    : .hidden)
+        }
+        // "In GitLab" follows the search field (WIN-07).
+        .onChange(of: searchText, initial: true) {
+            model.gitLabSearch.update(kind: .mergeRequest, text: searchText)
         }
         .workspaceTagsClickable()
         .onAppear {
@@ -47,10 +57,28 @@ struct MergeRequestsListContent: View {
     let model: MergeRequestsListModel
     @Binding var selection: MergeRequest.ID?
     let actions: GitLabSectionActions
+    /// the "In GitLab" section while the search has text (WIN-07)
+    var search = GitLabSearchRows.hidden
+    /// the "In GitLab" row that the arrow keys are on; the list's own selection stays, so the detail doesn't change
+    @ViewState private var highlighted: URL?
+
+    /// the list's selection with the "In GitLab" rows in it: the arrow keys reach them, and they open on a click or Return
+    private var listSelection: Binding<MergeRequest.ID?> {
+        Binding(
+            get: { search.row(url: highlighted) != nil ? highlighted : selection },
+            set: { newValue in
+                if search.row(url: newValue) != nil {
+                    highlighted = newValue
+                } else {
+                    highlighted = nil
+                    selection = newValue
+                }
+            })
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(selection: $selection) {
+            List(selection: listSelection) {
                 MainWindowProblemRows(model.problems, openSettings: actions.openSettings)
                 if let setup = model.setup {
                     setupRows(setup)
@@ -66,6 +94,7 @@ struct MergeRequestsListContent: View {
                         }
                     }
                 }
+                GitLabSearchSection(search: search, tag: \.url) { actions.follow($0.url) }
                 if let link = model.link {
                     Section {
                         Link("All Merge Requests in GitLab", destination: link)
@@ -75,7 +104,11 @@ struct MergeRequestsListContent: View {
                 }
             }
             .contextMenu(forSelectionType: MergeRequest.ID.self) { ids in
-                if let row = model.row(ids.first) {
+                if let found = search.row(url: ids.first) {
+                    Button(found.openTitle) { actions.open(found.url) }
+                    Divider()
+                    Button("Copy Link") { actions.copy(found.url) }
+                } else if let row = model.row(ids.first) {
                     Button(row.openTitle) { actions.open(row.id) }
                     Divider()
                     Button("Copy Link") { actions.copy(row.id) }
@@ -85,15 +118,22 @@ struct MergeRequestsListContent: View {
                     }
                 }
             } primaryAction: { ids in
-                if let row = model.row(ids.first) {
-                    actions.open(row.id)
+                // It shows in the detail already; ⌥ opens it in GitLab (the user, 2026-10-30).
+                if let found = search.row(url: ids.first) {
+                    actions.follow(found.url)
+                } else if let row = model.row(ids.first) {
+                    actions.follow(row.id)
                 }
             }
             .onKeyPress(.return) {
+                if let found = search.row(url: highlighted) {
+                    actions.follow(found.url)
+                    return .handled
+                }
                 guard let row = model.row(selection) else {
                     return .ignored
                 }
-                actions.open(row.id)
+                actions.follow(row.id)
                 return .handled
             }
             .overlay {
@@ -105,7 +145,7 @@ struct MergeRequestsListContent: View {
                             Link("All Merge Requests in GitLab", destination: link)
                         }
                     }
-                } else if model.findsNothing {
+                } else if model.findsNothing, !search.isShown {
                     ContentUnavailableView.search(text: model.query)
                 }
             }

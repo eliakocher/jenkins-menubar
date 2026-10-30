@@ -1,11 +1,12 @@
 #!/bin/bash
-# Builds build/menubar-monitor.app with only the Command Line Tools (or with Xcode, if it is the active developer
+# Builds build/MegaMonitor.app with only the Command Line Tools (or with Xcode, if it is the active developer
 # directory).
 #
 #   ./build.sh [--debug] [--install]
 #
-#   --debug    a debug build, which has the design gallery (menubar-monitor --gallery)
-#   --install  also copies the app to ~/Applications/menubar-monitor.app and registers it there
+#   --debug    a debug build, which has the design gallery (MegaMonitor --gallery)
+#   --install  also copies the app to ~/Applications/MegaMonitor.app and registers it there; an old
+#              ~/Applications/menubar-monitor.app is removed first (scripts/migrate-old-bundle.sh)
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")" && pwd)
@@ -45,16 +46,25 @@ fi
 # The repository is public: the company's name stays out of every file it commits.
 scripts/check-names.sh
 
+# The SwiftPM product keeps its name; the executable in the bundle is called MegaMonitor.
 swift build -c "$config" --product menubar-monitor
 bin=$(swift build -c "$config" --show-bin-path)
 
-app=$root/build/menubar-monitor.app
+app=$root/build/MegaMonitor.app
+lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
+# The build folder's bundles of the old name leave Launch Services too, so only one app answers to the bundle id.
+for stale in "$root/build/menubar-monitor.app" "$root/build/gallery/menubar-monitor.app"; do
+	if [[ -d $stale ]]; then
+		"$lsregister" -u "$stale" 2>/dev/null || true
+		rm -rf "$stale"
+	fi
+done
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$bin/menubar-monitor" "$app/Contents/MacOS/"
+cp "$bin/menubar-monitor" "$app/Contents/MacOS/MegaMonitor"
 cp icons/menubar.png icons/happy.png icons/sad.png icons/gitlab.png "$app/Contents/Resources/"
 # The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
 for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa; do
@@ -89,10 +99,12 @@ cat >"$app/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The visible name is MegaMonitor; the identity stays menubar-monitor (the bundle id, the URL scheme, the keychain
+	     service and the folders), for the user's settings and tokens. -->
 	<key>CFBundleIdentifier</key><string>local.menubar-monitor</string>
-	<key>CFBundleName</key><string>menubar-monitor</string>
-	<key>CFBundleDisplayName</key><string>menubar-monitor</string>
-	<key>CFBundleExecutable</key><string>menubar-monitor</string>
+	<key>CFBundleName</key><string>MegaMonitor</string>
+	<key>CFBundleDisplayName</key><string>MegaMonitor</string>
+	<key>CFBundleExecutable</key><string>MegaMonitor</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>1.0</string>
@@ -104,6 +116,24 @@ cat >"$app/Contents/Info.plist" <<PLIST
 		<dict>
 			<key>CFBundleURLName</key><string>local.menubar-monitor</string>
 			<key>CFBundleURLSchemes</key><array><string>menubar-monitor</string></array>
+		</dict>
+		<!-- http and https, so the app can be the default browser when the user turns on "Open GitLab and Jenkins Links in
+		     MegaMonitor" (APP-09). Nothing changes while that setting is off: macOS lists the app as a candidate
+		     and sends it no link until it is chosen. -->
+		<dict>
+			<key>CFBundleURLName</key><string>Web links</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>CFBundleURLSchemes</key><array><string>http</string><string>https</string></array>
+		</dict>
+	</array>
+	<!-- What System Settings' list of browsers looks for besides the schemes: a Viewer for HTML. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key><string>HTML document</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Alternate</string>
+			<key>LSItemContentTypes</key><array><string>public.html</string><string>public.xhtml</string></array>
 		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
@@ -120,11 +150,12 @@ if [[ -f $app/Contents/Resources/Assets.car ]]; then
 fi
 plutil -lint -s "$app/Contents/Info.plist"
 
-lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 codesign --force --sign - "$app"
 if $install; then
-	installed=$HOME/Applications/menubar-monitor.app
+	installed=$HOME/Applications/MegaMonitor.app
 	mkdir -p "$HOME/Applications"
+	# The app was called menubar-monitor before: take that bundle away, and open at login with it.
+	"$root/scripts/migrate-old-bundle.sh"
 	rm -rf "$installed"
 	ditto "$app" "$installed"
 	# One registered copy, so menubar-monitor:// links always reach the installed app.

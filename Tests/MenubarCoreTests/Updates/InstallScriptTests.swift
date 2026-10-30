@@ -21,8 +21,9 @@ struct InstallScriptTests {
 
         #expect(run.status == 0, "\(run.output)")
         #expect(run.output.contains("would run: \(world.checkout.path)/build.sh --install"))
-        #expect(run.output.contains("would run: open \(world.home.path)/Applications/menubar-monitor.app"))
+        #expect(run.output.contains("would run: open \(world.home.path)/Applications/MegaMonitor.app"))
         #expect(!run.output.contains("pkill"))
+        #expect(!run.output.contains("old menubar-monitor.app"), "no old bundle, so no note")
         #expect(!run.output.contains("--retire-old"), "no old tool, so no hint")
         #expect(run.output.hasSuffix("A dry run: nothing was changed.\n"))
         #expect(run.changes.isEmpty, "\(run.changes)")
@@ -43,6 +44,70 @@ struct InstallScriptTests {
         #expect(quit.upperBound < open.lowerBound)
         #expect(run.output.contains("./install.sh --retire-old"))
         #expect(run.changes.isEmpty, "\(run.changes)")
+    }
+
+    @Test("APP-07 install.sh quits a copy that still runs under the old executable name and notes the old bundle")
+    func quitsTheOldName() async throws {
+        var world = try World()
+        try world.write("<plist/>", to: "Applications/menubar-monitor.app/Contents/Info.plist")
+        world.variables["FAKE_RUNNING"] = "menubar-monitor"
+
+        let run = try await world.run([])
+
+        #expect(run.status == 0, "\(run.output)")
+        #expect(run.output.contains("would run: pkill -x menubar-monitor"))
+        #expect(!run.output.contains("would run: pkill -x MegaMonitor"))
+        #expect(run.output.contains("found the old menubar-monitor.app"))
+        #expect(run.output.contains("would run: open \(world.home.path)/Applications/MegaMonitor.app"))
+        #expect(run.changes.isEmpty, "\(run.changes)")
+    }
+
+    @Test("APP-07 the build moves the old bundle away and marks the login item to register again")
+    func migratesTheOldBundle() async throws {
+        let folder = try TemporaryFolder()
+        let home = folder.file("home")
+        let fakes = folder.file("fakes")
+        try FileManager.default.createDirectory(at: fakes, withIntermediateDirectories: true)
+        let oldApp = home.appending(path: "Applications/menubar-monitor.app/Contents", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: oldApp, withIntermediateDirectories: true)
+        let script = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appending(path: "scripts/migrate-old-bundle.sh")
+        let btm = fakes.appending(path: "btm.txt")
+        try Data("#!/bin/bash\ncat '\(btm.path)'\n".utf8).write(to: fakes.appending(path: "sfltool"))
+        try Data("#!/bin/bash\necho \"$@\" >>'\(fakes.path)/lsregister.log'\n".utf8).write(to: fakes.appending(path: "lsregister"))
+        for tool in ["sfltool", "lsregister"] {
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakes.appending(path: tool).path)
+        }
+        let marker = home.appending(path: "Library/Application Support/menubar-monitor/refresh-login-item")
+
+        func migrate(login: String) async throws -> String {
+            try Data(login.utf8).write(to: btm)
+            try FileManager.default.createDirectory(at: oldApp, withIntermediateDirectories: true)
+            let output = try await SystemProcessRunner().run(
+                URL(filePath: "/usr/bin/env"),
+                arguments: ["-i", "HOME=\(home.path)", "PATH=\(fakes.path):/usr/bin:/bin", "LSREGISTER=\(fakes.path)/lsregister",
+                    "/bin/bash", script.path],
+                input: nil)
+            #expect(output.status == 0)
+            return String(decoding: output.standardOutput, as: UTF8.self)
+        }
+        let on = """
+             Disposition: [enabled, allowed, not notified] (0x3)
+              Identifier: 2.local.menubar-monitor
+                     URL: /Users/501/Applications/menubar-monitor.app
+            """
+        let off = on.replacingOccurrences(of: "enabled", with: "disabled")
+
+        // Not a login item: the old bundle goes, Launch Services forgets it and no marker is left.
+        _ = try await migrate(login: off)
+        #expect(!FileManager.default.fileExists(atPath: home.appending(path: "Applications/menubar-monitor.app").path))
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
+        #expect(try folder.read("fakes/lsregister.log").contains("-u \(home.path)/Applications/menubar-monitor.app"))
+
+        // A login item: the marker tells the new app to register it again.
+        let output = try await migrate(login: on)
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        #expect(output.contains("registers it again"))
     }
 
     @Test("APP-07 install.sh stops without the Command Line Tools or macOS 26")
@@ -174,7 +239,7 @@ struct InstallScriptTests {
             "would run: security delete-generic-password -s jenkins-menubar -a JENKINS_MCP_BASIC_AUTH",
             "would run: defaults delete local.jenkins-menubar.notifier",
         ])
-        #expect(yes.output.contains("keeps the keychain item jenkins-menubar GITLAB_TOKEN: menubar-monitor has no copy of it yet"))
+        #expect(yes.output.contains("keeps the keychain item jenkins-menubar GITLAB_TOKEN: MegaMonitor has no copy of it yet"))
         #expect(no.changes.isEmpty && nothing.changes.isEmpty && yes.changes.isEmpty)
     }
 
@@ -185,7 +250,7 @@ struct InstallScriptTests {
         let run = try await world.run(["--retire-old"])
 
         #expect(run.status == 1)
-        #expect(run.output.contains("menubar-monitor isn't installed: run ./install.sh first"))
+        #expect(run.output.contains("MegaMonitor isn't installed: run ./install.sh first"))
         #expect(run.changes.isEmpty, "\(run.changes)")
     }
 
@@ -245,7 +310,7 @@ struct InstallScriptTests {
 
         /// Creates the installed app, which `--retire-old` asks for.
         func installApp() throws {
-            try write("<plist/>", to: "Applications/menubar-monitor.app/Contents/Info.plist")
+            try write("<plist/>", to: "Applications/MegaMonitor.app/Contents/Info.plist")
         }
 
         func write(_ text: String, to pathInHome: String) throws {

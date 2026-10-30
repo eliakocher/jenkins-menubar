@@ -100,6 +100,20 @@ struct MenuPaneModelTests {
         #expect(single.count == 45)
     }
 
+    @Test("APP-06 the committed slot's pill is followed by the Slots section's countdown to its next date")
+    func slotCountdown() {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let team = TeamValues(slotLabelPrefix: "slot::")
+        // 2026.45 releases on Monday 2 Nov, its code freeze was Friday 9 Oct, early access Monday 19 Oct
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 30, hour: 9))!
+        let slot = LabelPillModel(Label(title: "slot::2026.45"))
+        #expect(MenuPaneModel.countdown(of: slot, team: team, now: now, calendar: calendar) == "Release in 3 days")
+        // a label that is no slot name with dates says nothing
+        #expect(MenuPaneModel.countdown(of: LabelPillModel(Label(title: "slot::Q1")), team: team, now: now, calendar: calendar) == nil)
+        #expect(MenuPaneModel.countdown(of: LabelPillModel(Label(title: "slot::2027.53")), team: team, now: now, calendar: calendar) == nil)
+    }
+
     @Test("APP-06 the summaries read quietly while loading, without a token and offline")
     func quietStates() {
         let f = Self.fixtures

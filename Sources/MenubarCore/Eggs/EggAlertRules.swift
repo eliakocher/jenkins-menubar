@@ -9,8 +9,7 @@ extension EggRules {
     ///   banner's body too.
     /// - A stage banner and a preview stay as they are, and so does everything with the eggs off; the memory is kept up
     ///   either way, so switching them on finds the streaks as they are.
-    /// - The hat of a happy alert is the party hat during a green streak; of every alert, the Santa hat from December 24
-    ///   to 26.
+    /// - The hat of a happy alert is the party hat during a green streak; of every alert, the Santa hat all of December.
     ///
     /// - Parameters:
     ///   - alerts: the alerts of one check, in order

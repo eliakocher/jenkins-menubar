@@ -9,6 +9,8 @@ public struct MergeRequestDetails: Hashable, Sendable {
     public var threads: [ReviewThread]
     /// how many resolvable threads are resolved, among the same discussions
     public var resolvedThreadCount: Int
+    /// the resolved threads themselves, oldest first, which the Discussion card folds to one line each
+    public var resolvedThreads: [ReviewThread]
     /// whether GitLab has more discussions than were asked for, so ``threads`` may miss some
     public var hasMoreDiscussions: Bool
     /// the head pipeline; `nil` without one
@@ -18,8 +20,9 @@ public struct MergeRequestDetails: Hashable, Sendable {
 
     public init(
         approvals: Approvals, threads: [ReviewThread] = [], resolvedThreadCount: Int = 0, hasMoreDiscussions: Bool = false,
-        pipeline: Pipeline? = nil, reviews: MergeRequestReviews? = nil
+        resolvedThreads: [ReviewThread] = [], pipeline: Pipeline? = nil, reviews: MergeRequestReviews? = nil
     ) {
+        self.resolvedThreads = resolvedThreads
         self.reviews = reviews
         self.approvals = approvals
         self.threads = threads
@@ -88,7 +91,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
 
     // MARK: - Threads
 
-    /// An unresolved thread: its first note (MR-07).
+    /// An unresolved thread: its first note and the replies to it (MR-07).
     public struct ReviewThread: Hashable, Sendable, Identifiable {
         public var id: String
         /// who started the thread; `nil` for a deleted user
@@ -100,13 +103,39 @@ public struct MergeRequestDetails: Hashable, Sendable {
         public var location: String?
         /// the note's page, which opens it in the browser
         public var url: URL?
+        /// the first note as written, in Markdown; empty when only ``excerpt`` is known
+        public var body: String
+        /// when the first note was written
+        public var createdAt: Date?
+        /// the replies, oldest first, system notes left out
+        public var replies: [ThreadNote]
+        /// whether GitLab has more replies than were asked for
+        public var hasMoreReplies: Bool
 
-        public init(id: String, author: MergeRequest.Person?, excerpt: String, location: String? = nil, url: URL? = nil) {
+        public init(
+            id: String, author: MergeRequest.Person?, excerpt: String, location: String? = nil, url: URL? = nil,
+            body: String = "", createdAt: Date? = nil, replies: [ThreadNote] = [], hasMoreReplies: Bool = false
+        ) {
             self.id = id
             self.author = author
             self.excerpt = excerpt
             self.location = location
             self.url = url
+            self.body = body
+            self.createdAt = createdAt
+            self.replies = replies
+            self.hasMoreReplies = hasMoreReplies
+        }
+
+        /// the thread as the shared thread view draws it
+        public var comment: CommentThread { comment(isResolved: false) }
+
+        /// the thread as the shared thread view draws it, folded when it is resolved
+        public func comment(isResolved: Bool) -> CommentThread {
+            CommentThread(
+                id: id,
+                first: ThreadNote(id: id, author: author, body: body.isEmpty ? excerpt : body, createdAt: createdAt, url: url),
+                replies: replies, hasMoreReplies: hasMoreReplies, location: location, isResolved: isResolved)
         }
     }
 
@@ -212,7 +241,7 @@ enum MergeRequestDetailsLevel: Sendable {
 
 extension GitLabOperation where Value == MergeRequestDetails {
     /// The details of a merge request, in one request, with `first:` limits so a huge merge request stays small: 100
-    /// discussions (a first note each), 20 stages with 50 jobs each (MR-06 to MR-08).
+    /// discussions (up to 50 notes each, for the replies), 20 stages with 50 jobs each (MR-06 to MR-08).
     ///
     /// The query follows GitLab's GraphQL reference (`mergeRequest(iid:)`, `approvalState`, `approvedBy`, `discussions`,
     /// `headPipeline`); it hasn't been run against a real GitLab by the author.
@@ -252,8 +281,12 @@ extension GitLabOperation where Value == MergeRequestDetails {
                           id
                           resolvable
                           resolved
-                          notes(first: 1) {
-                            nodes { id url body author { username name } position { filePath oldPath newPath oldLine newLine } }
+                          notes(first: 50) {
+                            pageInfo { hasNextPage }
+                            nodes {
+                              id url body createdAt system author { username name }
+                              position { filePath oldPath newPath oldLine newLine }
+                            }
                           }
                         }
                       }
@@ -343,12 +376,14 @@ struct MergeRequestDetailsShape: Decodable {
         var id: String
         var resolvable: Bool?
         var resolved: Bool?
-        var notes: Nodes<Note>?
+        var notes: ConnectionPage<Note>?
 
         struct Note: Decodable {
             var id: String?
             var url: String?
             var body: String?
+            var createdAt: Date?
+            var system: Bool?
             var author: User?
             var position: Position?
         }
@@ -401,11 +436,15 @@ extension MergeRequestDetailsShape.Node {
         let threads = (discussions?.nodes.nodes ?? [])
             .filter { $0.resolvable == true && $0.resolved != true }
             .map { $0.thread(base: base) }
+        let resolvedThreads = (discussions?.nodes.nodes ?? [])
+            .filter { $0.resolvable == true && $0.resolved == true }
+            .map { $0.thread(base: base) }
         return MergeRequestDetails(
             approvals: .init(approvedBy: approvedBy, required: required, rules: rules),
             threads: threads,
-            resolvedThreadCount: (discussions?.nodes.nodes ?? []).filter { $0.resolvable == true && $0.resolved == true }.count,
+            resolvedThreadCount: resolvedThreads.count,
             hasMoreDiscussions: discussions?.pageInfo?.hasNextPage ?? false,
+            resolvedThreads: resolvedThreads,
             pipeline: headPipeline.map { pipeline in
                 MergeRequestDetails.Pipeline(
                     status: pipeline.status.map(MergeRequest.PipelineStatus.init(rawValue:)),
@@ -435,21 +474,30 @@ extension MergeRequestDetailsShape.Node {
 }
 
 extension MergeRequestDetailsShape.Discussion {
-    /// Returns the thread: its first note's author and start, the place on the diff and the note's page.
+    /// Returns the thread: its first note's author, text and start, the place on the diff and the note's page, and the
+    /// replies after it.
     func thread(base: URL) -> MergeRequestDetails.ReviewThread {
-        let note = notes?.nodes.first
+        // A resolvable thread starts with a user's note; system notes ("resolved all threads") are no replies.
+        let all = notes?.nodes ?? []
+        let note = all.first
+        let replies = all.dropFirst().compactMap { reply -> ThreadNote? in
+            guard reply.system != true else {
+                return nil
+            }
+            return ThreadNote(
+                id: reply.id ?? UUID().uuidString, author: reply.author?.person, body: reply.body ?? "",
+                createdAt: reply.createdAt, url: NoteShape.noteURL(reply.url, id: reply.id, base: base))
+        }
         var location: String?
         if let position = note?.position, let file = position.filePath ?? position.newPath ?? position.oldPath, !file.isEmpty {
             location = (position.newLine ?? position.oldLine).map { "\(file):\($0)" } ?? file
         }
         // Without a `url`, the page of the merge request jumps to the note by its number.
-        let url = MergeRequestDetailsShape.Node.webURL(note?.url, base: base)
-            ?? note?.id.flatMap { $0.split(separator: "/").last }.flatMap { number in
-                number.allSatisfy(\.isNumber) ? URL(string: base.absoluteString + "#note_" + number) : nil
-            }
+        let url = NoteShape.noteURL(note?.url, id: note?.id, base: base)
         return MergeRequestDetails.ReviewThread(
             id: id, author: note?.author.map { MergeRequest.Person(username: $0.username, name: $0.name ?? "") },
-            excerpt: PlainText.excerpt(of: note?.body ?? ""), location: location, url: url)
+            excerpt: PlainText.excerpt(of: note?.body ?? ""), location: location, url: url, body: note?.body ?? "",
+            createdAt: note?.createdAt, replies: replies, hasMoreReplies: notes?.hasNextPage ?? false)
     }
 }
 

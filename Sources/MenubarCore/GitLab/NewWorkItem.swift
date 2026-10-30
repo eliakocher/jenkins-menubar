@@ -205,6 +205,27 @@ public enum NewWorkItem {
         return NewWorkItemDraft(kind: .task, title: "Follow-up: " + title, body: body.trimmingCharacters(in: .newlines))
     }
 
+    /// Returns the draft of "New Follow-Up Item" on a work item: a task that names the item, carries its link and is
+    /// related to it by the `/relate` quick action, which takes issues and tasks. An epic is named and linked only.
+    ///
+    /// - Parameter workItem: the work item the work follows up
+    /// - Returns: the draft, of type Task
+    public static func followUp(of workItem: WorkItem) -> NewWorkItemDraft {
+        let title = oneLine(workItem.displayTitle)
+        let reference = oneLine(workItem.reference)
+        var body = """
+            ### Follow-up
+
+            Follows up on \(reference) (\(workItem.webURL.absoluteString)): \(title)
+
+            ### What is left to do
+            """
+        if !workItem.isEpic, !reference.contains(" ") {
+            body += "\n\n/relate \(reference)"
+        }
+        return NewWorkItemDraft(kind: .task, title: "Follow-up: " + title, body: body)
+    }
+
     // MARK: - Encoding
 
     /// Returns a text on one line, so no pasted line can start a quick action.
@@ -235,6 +256,8 @@ public enum NewWorkItemSource: Hashable, Sendable {
     case bugFromBuild(Build, URL?)
     /// "New Follow-Up Item" on a merge request
     case followUp(MergeRequest)
+    /// "New Follow-Up Item" on a work item
+    case followUpOfWorkItem(WorkItem)
 
     /// the build whose failed tests the draft lists when they are known
     public var failedTestsBuild: BuildID? {
@@ -250,6 +273,7 @@ public enum NewWorkItemSource: Hashable, Sendable {
         case .blank(let kind): NewWorkItemDraft(kind: kind)
         case .bugFromBuild(let build, let url): NewWorkItem.bugFromBuild(build, buildURL: url, failedTests: failedTests)
         case .followUp(let mergeRequest): NewWorkItem.followUp(of: mergeRequest)
+        case .followUpOfWorkItem(let workItem): NewWorkItem.followUp(of: workItem)
         }
     }
 }

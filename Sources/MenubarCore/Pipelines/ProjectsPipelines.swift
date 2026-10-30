@@ -23,6 +23,11 @@ public final class ProjectsPipelines {
         didSet { stores.forEach { $0.preferences = preferences } }
     }
 
+    /// which builds may alert, for every store (ALERT-08)
+    public var notifications = NotificationPolicy() {
+        didSet { stores.forEach { $0.notifications = notifications } }
+    }
+
     /// Asks for a check at once, as watching does (WATCH-01). ``AppModel`` sets it to the scheduler's Check now.
     @ObservationIgnored public var requestCheck: @MainActor () -> Void = {} {
         didSet { stores.forEach { $0.requestCheck = requestCheck } }
@@ -68,6 +73,7 @@ public final class ProjectsPipelines {
             } else {
                 let store = PipelinesStore(services: services, preferences: preferences, project: project.id)
                 store.requestCheck = requestCheck
+                store.notifications = notifications
                 store.setOffline(isOffline)
                 next.append(store)
             }

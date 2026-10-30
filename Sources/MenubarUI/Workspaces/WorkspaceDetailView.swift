@@ -158,7 +158,11 @@ struct WorkspaceDetailContent: View {
                     LabeledContent {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             if let url = row.task.workItemURL {
-                                Button("Open") { actions.open(url) }
+                                Button("Show") { actions.follow(url) }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .help("Show it in Work Items, or under Opened")
+                                Button("Open in GitLab") { actions.open(url) }
                                     .buttonStyle(.bordered)
                                     .controlSize(.small)
                             }
@@ -184,10 +188,9 @@ struct WorkspaceDetailContent: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                                 .help("Show it in Merge Requests")
-                            Button("Open") { actions.open(mergeRequest.webURL) }
+                            Button("Open in GitLab") { actions.open(mergeRequest.webURL) }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .help("Open it in GitLab")
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {

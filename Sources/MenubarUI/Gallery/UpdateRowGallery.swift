@@ -23,7 +23,7 @@ extension GalleryCatalog {
     /// One entry per state of `docs/design/update-row.md`.
     static var updateRowEntries: [GalleryEntry] {
         func size(_ height: CGFloat) -> CGSize { CGSize(width: PanelMetrics.width, height: height) }
-        let installed = URL(filePath: "/Users/jdoe/Applications/menubar-monitor.app", directoryHint: .isDirectory)
+        let installed = URL(filePath: "/Users/jdoe/Applications/MegaMonitor.app", directoryHint: .isDirectory)
         return [
             GalleryEntry(screen: "update-row", state: "ready", size: size(50)) { _ in
                 UpdateRowGalleryView(state: .updateReady)

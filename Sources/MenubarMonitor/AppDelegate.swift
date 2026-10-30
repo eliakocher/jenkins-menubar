@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         hide: { [weak self] build in
             self?.shell.hide(build)
+        },
+        open: { [weak self] url, inApp in
+            self?.shell.open(url, inApp: inApp)
         })
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -33,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         effects.onHide = { [weak self] build in
             self?.shell.hide(build)
+        }
+        effects.onOpen = { [weak self] url, inApp in
+            self?.shell.open(url, inApp: inApp)
         }
         // No window opens at launch, also while the status item is hidden: the app stays out of the Dock until a
         // second start opens the main window (APP-01, APP-03).
@@ -74,10 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
         guard let link = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let url = URL(string: link), let route = AppRoute(url: url)
+              let url = URL(string: link)
         else {
             return
         }
-        shell.open(route)
+        if let route = AppRoute(url: url) {
+            shell.open(route)
+        } else if ["http", "https"].contains(url.scheme?.lowercased()) {
+            // A web link, which macOS sends to the default browser (APP-09).
+            shell.openLink(url)
+        }
     }
 }

@@ -18,6 +18,8 @@ final class AppShell {
     /// the router every scene gets in its environment
     let router: WindowRouter
     let model: AppModel
+    /// the opt-in link router: web links to Jenkins and GitLab items open in the window (APP-09)
+    let linkRouting: LinkRouting
 
     @ObservationIgnored private let legacySources: LegacySources
     @ObservationIgnored private var launching: Task<Void, Never>?
@@ -53,7 +55,8 @@ final class AppShell {
     /// - Parameters:
     ///   - model: the model, not started yet
     ///   - legacySources: where the import looks
-    init(model: AppModel, legacySources: LegacySources) {
+    ///   - defaultBrowser: macOS's default browser; the throwaway and smoke runs pass one that changes nothing
+    init(model: AppModel, legacySources: LegacySources, defaultBrowser: any DefaultBrowserSystem = NativeDefaultBrowser()) {
         let presenter = WindowPresenter()
         self.presenter = presenter
         // The main window's section and selections are kept with the preferences (WIN-05).
@@ -62,8 +65,14 @@ final class AppShell {
             open: AppShell.opener(presenter: presenter, settings: model.settings))
         self.model = model
         self.legacySources = legacySources
+        let log = model.log
+        // Captures the model, not its TeamStore: a release build can't link a closure that holds that struct.
+        linkRouting = LinkRouting(
+            system: defaultBrowser, defaults: model.dependencies.preferences, projects: { model.team.projects() },
+            log: { message in Task { await log.log(.info, .app, message) } })
         // The panel's "Update Ready — Rebuild" rebuilds through the update store, then hands over here.
         router.onRebuilt = { app in AppShell.relaunch(app) }
+        router.openInBrowser = { [weak self] url in self?.openInBrowser(url) }
         model.hotkey.onPress = { [weak self] in self?.hotkeyPressed() }
     }
 
@@ -247,6 +256,71 @@ final class AppShell {
         }
     }
 
+    /// Handles a web link that macOS gave this app as the default browser (APP-09): a Jenkins build, a GitLab merge request
+    /// or work item opens in the window, in its list or under "Opened" (WIN-06); every other link, ⌥ held, or any link
+    /// while the router is off goes on to the browser the user had. A link is never dropped.
+    ///
+    /// - Parameter url: the link
+    func openLink(_ url: URL) {
+        let route = linkRouting.route(url, optionHeld: NSEvent.modifierFlags.contains(.option))
+        if show(route, link: url) {
+            return
+        }
+        Task {
+            if !(await linkRouting.forward(url)) {
+                AppLog.error("no browser to pass a link to \(url.host(percentEncoded: false) ?? "no host") on")
+            }
+        }
+    }
+
+    /// Opens a link from the alert window or a banner: a build or merge request shows in the app, the console output and
+    /// anything the app can't show opens in the browser (the user, 2026-10-30). Never through macOS, which would hand a
+    /// link back to this app while it is the default browser.
+    ///
+    /// - Parameters:
+    ///   - url: the link
+    ///   - inApp: whether the app should show it, if it can
+    func open(_ url: URL, inApp: Bool) {
+        if inApp, router.openItemLink(url, model: model) {
+            return
+        }
+        openInBrowser(url)
+    }
+
+    /// Shows a link's place in the main window: a build in Pipelines or under "Opened", a merge request or work item in
+    /// its list or under "Opened".
+    ///
+    /// - Parameters:
+    ///   - route: what ``LinkRouter`` made of the link
+    ///   - link: the link, whose host picks the GitLab instance of an item that opens under "Opened"
+    /// - Returns: whether it is shown; `false` leaves the link to the browser
+    private func show(_ route: LinkRoute, link: URL) -> Bool {
+        // The router off sends every link on (`LinkRouting.route`), so a link of the app's own never loops.
+        guard route != .browser,
+            let destination = model.destination(for: route, link: link, optionHeld: NSEvent.modifierFlags.contains(.option))
+        else {
+            return false
+        }
+        router.show(destination)
+        return true
+    }
+
+    /// Opens a page in the real browser, never in this app, also while it is the Mac's default browser: "Open in GitLab"
+    /// of an item under "Opened" must not come back here (WIN-06).
+    ///
+    /// - Parameter url: the page
+    func openInBrowser(_ url: URL) {
+        guard linkRouting.isOn else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        Task {
+            if !(await linkRouting.forward(url)) {
+                AppLog.error("no browser to pass a link to \(url.host(percentEncoded: false) ?? "no host") on")
+            }
+        }
+    }
+
     /// Follows a `menubar-monitor://` link (APP-03), through the ``router``.
     func open(_ route: AppRoute) {
         switch route {
@@ -278,7 +352,7 @@ extension AppShell {
     static let throwawaySuite = "\(AppIdentity.bundleID).throwaway"
 
     /// Returns a shell that runs the whole app on screen without the user's data, for manual checks and the design
-    /// reviews of the real panel and windows (`menubar-monitor --throwaway`). Debug builds only.
+    /// reviews of the real panel and windows (`MegaMonitor --throwaway`). Debug builds only.
     ///
     /// The files go into `MENUBAR_MONITOR_DATA_DIR`, or a new temporary folder; the preferences into a suite of their
     /// own; the tokens stay in memory, and there are none at first, so nothing reaches Jenkins or GitLab. The import
@@ -304,7 +378,8 @@ extension AppShell {
             jenkinsJobURL: "https://jenkins.example.com/job/project", gitLabURL: "https://gitlab.example.com",
             gitLabProject: "group/project")))
         let root = URL(filePath: environment[FileLocations.dataDirectoryVariable]!, directoryHint: .isDirectory)
-        let shell = AppShell(model: AppModel(dependencies: dependencies), legacySources: .none(in: root))
+        let shell = AppShell(
+            model: AppModel(dependencies: dependencies), legacySources: .none(in: root), defaultBrowser: InertDefaultBrowser())
         shell.onStop = {
             UserDefaults.standard.removePersistentDomain(forName: throwawaySuite)
         }

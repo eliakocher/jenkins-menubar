@@ -1,3 +1,4 @@
+import AppKit
 import MenubarCore
 import SwiftUI
 
@@ -20,6 +21,8 @@ public struct MainWindowRoot: View {
     /// whether "Clear all activity?" shows; Activity's toolbar and File › Clear Activity… share the section's one alert
     @ViewState private var isConfirmingClearActivity = false
     @ViewState private var searchText = ""
+    /// changes on each reveal, so that a list in the shown section loads afresh and scrolls to the selection
+    @ViewState private var revealedList = 0
     @ViewState private var isOnScreen = true
     /// which spellcheck demo the search shows, while it shows one (EGG-07)
     @ViewState private var spellcheckDemo: Int?
@@ -29,15 +32,26 @@ public struct MainWindowRoot: View {
     public var body: some View {
         shell
         .focusedSceneValue(\.mainWindowSection, router.section)
+        // The size the user left, also after a restart; the first launch keeps the scene's .defaultSize.
+        .remembersWindowFrame("MainWindow", defaultSize: CGSize(width: 1120, height: 720))
         .background {
             WindowOnScreenReader { onScreen in
                 isOnScreen = onScreen
             }
         }
+        // The mouse's back and forward buttons and ⌘← ⌘→ (WIN-08): the router's one monitor, which learns this window here.
+        .background {
+            NavigationWindowAnchor(input: router.navigationInput)
+        }
         .onChange(of: router.section) {
             // A leftover filter would hide rows of the new section.
             searchText = ""
             reportSurfaces()
+        }
+        .onChange(of: router.revealRequest) {
+            // A row from the menu bar pane: a leftover filter would hide it.
+            searchText = ""
+            revealedList += 1
         }
         .onChange(of: isOnScreen) {
             reportSurfaces()
@@ -47,6 +61,7 @@ public struct MainWindowRoot: View {
             spellcheckDemo = isSpellcheck ? model.pipelines.countSpellcheckDemo() : nil
         }
         .onAppear {
+            router.startNavigationInput(model: model)
             reportSurfaces()
         }
         .onDisappear {
@@ -55,6 +70,11 @@ public struct MainWindowRoot: View {
         .sheet(isPresented: isWatching) {
             WatchSheet()
         }
+        .sheet(isPresented: isOpeningByLink) {
+            OpenByLinkSheet()
+        }
+        // A link to a merge request or work item in a description or a comment opens in the app (WIN-06).
+        .environment(\.openItemLink, OpenItemLink { [model, router] url in router.openItemLink(url, model: model) })
     }
 
     /// The shell, filled from the stores.
@@ -63,13 +83,18 @@ public struct MainWindowRoot: View {
         let model: MainWindowShellModel = MainWindowShellModel(
             PanelView.data(self.model, now: self.model.pipelines.now), section: router.section,
             activitySubtitle: activitySubtitle, workspacesSubtitle: workspacesSubtitle,
-            workspacesBusy: self.model.workspaces.isRefreshing)
+            workspacesBusy: self.model.workspaces.isRefreshing,
+            slotsBusy: self.model.slotLabels.isLoading || self.model.slotItems.isLoading)
         let actions: PanelActions = PanelActions.mainWindow(self.model, router: router, openURL: openURL)
         return MainWindowShell(
             model: model, section: $router.section, searchText: $searchText, columnVisibility: columnVisibility,
-            actions: actions, searchFocusRequest: router.searchFocusRequest, searchNote: eggNote
+            actions: actions, reload: { [model = self.model, router] in
+                MainWindowReload.run(router.section, selection: router.selection, model: model)
+            }, searchFocusRequest: router.searchFocusRequest, searchNote: eggNote, opened: openedSidebar,
+            navigation: navigation
         ) {
             content(selection: $router.selection)
+                .id(revealedList)
                 // Edit › Copy copies the selected row's link; Activity copies its entries itself (LOG-04).
                 .onCopyCommand(perform: copyAction)
         } detail: {
@@ -136,7 +161,15 @@ public struct MainWindowRoot: View {
     /// details in an inspector (LOG-04).
     @ViewBuilder
     private var detail: some View {
-        let selection = router.selection
+        if let opened = router.opened, model.opened.item(opened) != nil {
+            OpenedItemDetailView(id: opened)
+        } else {
+            sectionDetail(router.selection)
+        }
+    }
+
+    @ViewBuilder
+    private func sectionDetail(_ selection: MainWindowSelection) -> some View {
         switch router.section {
         case .pipelines:
             BuildDetailView(selection: selection.pipelines)
@@ -151,6 +184,45 @@ public struct MainWindowRoot: View {
         case .slots:
             EmptyView()
         }
+    }
+
+    /// The toolbar's Back and Forward buttons: the router's history, and the places as the menus list them (WIN-08).
+    private var navigation: NavigationControls {
+        let router = router
+        let model = model
+        let history = router.history
+        func entries(_ places: [NavigationLocation]) -> [NavigationControls.Entry] {
+            let resolver = NavigationResolver(model)
+            return places.filter(resolver.exists).enumerated().map { index, place in
+                NavigationControls.Entry(
+                    id: index, location: place, title: resolver.title(place), systemImage: resolver.systemImage(place))
+            }
+        }
+        return NavigationControls(
+            canGoBack: history.canGoBack, canGoForward: history.canGoForward,
+            backEntries: { entries(history.backEntries) }, forwardEntries: { entries(history.forwardEntries) },
+            goBack: { router.goBack(model: model) }, goForward: { router.goForward(model: model) },
+            jump: { router.jump(to: $0, model: model) })
+    }
+
+    /// The sidebar's "Opened" group, with what its rows do (WIN-06).
+    private var openedSidebar: OpenedSidebar {
+        let store = model.opened
+        let router = router
+        return OpenedSidebar(
+            items: store.items,
+            selection: Binding(get: { router.opened }, set: { router.opened = $0 }),
+            actions: OpenedItemActions(
+                close: { router.close(opened: $0, in: store) },
+                closeAll: {
+                    store.closeAll()
+                    if let id = router.opened, store.item(id) == nil {
+                        router.opened = store.items.first?.id
+                    }
+                },
+                setPinned: { store.setPinned($0, $1) },
+                openInGitLab: { router.browse($0) },
+                copyLink: { MainWindowLinks.copy($0) }))
     }
 
     /// The sidebar shows by default; hiding it is kept with the section (`main-window.md`, Restored).
@@ -187,6 +259,12 @@ public struct MainWindowRoot: View {
         router.report(
             MainWindowSurfaces.shown(section: router.section, isOnScreen: isOnScreen), shownBy: MainWindowSurfaces.host,
             to: model.scheduler)
+    }
+
+    /// "Open by Link…" shows while the router asks for it (WIN-06).
+    private var isOpeningByLink: Binding<Bool> {
+        @Bindable var router = router
+        return $router.isOpeningByLink
     }
 
     /// The sheet shows while there is a watch request; closing it clears the request.

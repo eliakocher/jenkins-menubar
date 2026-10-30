@@ -11,10 +11,16 @@
     "slotCodeFreezeWeekday" : "Friday",
     "slotEarlyAccessNth" : "2",
     "slotEarlyAccessWeekday" : "Monday",
+    "slotGroup" : "group",
     "slotLabelPrefix" : "slot::",
     "slotPlanningURL" : "",
     "slotReleaseWeekday" : "Monday",
+    "slotScheduledLabelPrefix" : "slot-scheduled::",
+    "slotUpcomingShown" : "4",
     "slotWarnDays" : "3",
+    "squadCapacity" : "Alpha: 60, Delta: 120",
+    "squadLabelPrefix" : "squad::",
+    "statusLabelPrefix" : "status::",
     "typeLabelPrefix" : "type::"
   }
 }

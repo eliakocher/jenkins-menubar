@@ -168,16 +168,16 @@ public enum TeamFileError: Error, Hashable, Sendable, LocalizedError {
     case unreadable(String)
     /// the file isn't JSON with a format version and team values
     case notATeamFile
-    /// the file was written by a newer menubar-monitor, with this format version
+    /// the file was written by a newer MegaMonitor, with this format version
     case newerFormat(Int)
 
     /// the text Settings and the welcome flow show
     public var message: String {
         switch self {
         case .unreadable(let reason): "The team file could not be read: \(reason)"
-        case .notATeamFile: "That is not a menubar-monitor team file"
+        case .notATeamFile: "That is not a MegaMonitor team file"
         case .newerFormat(let version):
-            "That team file is from a newer menubar-monitor (format \(version)): update the app first"
+            "That team file is from a newer MegaMonitor (format \(version)): update the app first"
         }
     }
 

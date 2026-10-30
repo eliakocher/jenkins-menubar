@@ -13,7 +13,7 @@ struct GalleryPlaceholderView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Label("menubar-monitor gallery", systemImage: "square.grid.2x2")
+            Label("MegaMonitor gallery", systemImage: "square.grid.2x2")
                 .font(.title2)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 4) {
                 row("Color scheme", "\(colorScheme)")

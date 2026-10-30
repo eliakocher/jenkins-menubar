@@ -20,9 +20,10 @@ final class AlertPanels: NSObject, NSWindowDelegate {
     ///   - notificationsOff: whether it shows because its banner couldn't, which its footnote says
     ///   - rebuild: starts the build's rebuild, for the Rebuild button (PIPE-09)
     ///   - hide: hides the build until its job's next build, for the Hide button (HIDE-01)
+    ///   - open: shows a link in the app (`true`) or opens it in the browser (`false`)
     func show(
         _ alert: BuildAlert, notificationsOff: Bool, rebuild: @escaping @MainActor (BuildID) -> Void,
-        hide: @escaping @MainActor (BuildID) -> Void
+        hide: @escaping @MainActor (BuildID) -> Void, open: @escaping @MainActor (URL, Bool) -> Void
     ) {
         // The system's window lists show the title as it is, so it gets the headline without the emoji (ALERT-03).
         let panel = AlertPanel(title: alert.content.headlineParts?.text ?? alert.content.headline)
@@ -32,7 +33,8 @@ final class AlertPanels: NSObject, NSWindowDelegate {
             } else if action == .hide, let build = alert.content.hide {
                 hide(build)
             } else if let url = alert.content.url(for: action) {
-                NSWorkspace.shared.open(url)
+                // Show Build and Show MR stay in the app; a preview's made-up build has nothing to show there.
+                open(url, action.showsInApp && alert.content.isLive)
             }
             panel?.close()
         }

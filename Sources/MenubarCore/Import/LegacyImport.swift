@@ -3,7 +3,7 @@ import Foundation
 /// The one-time import from jenkins-menubar at first start (IMP-01 to IMP-03, ACC-02).
 ///
 /// It reads the old tool's tokens, `config/settings`, `config/team.conf` and its watched and hidden builds. The old
-/// settings are applied to the preferences; the rest only fills in what menubar-monitor doesn't have yet, so a token,
+/// settings are applied to the preferences; the rest only fills in what MegaMonitor doesn't have yet, so a token,
 /// team values, a watched job or a hidden build already there is kept. The old files and keychain items are left as
 /// they are. A marker file, which holds the report, records the import, so later runs change nothing, even when the
 /// old files changed. Run one import at a time.
@@ -68,7 +68,7 @@ public struct LegacyImport: Sendable {
     /// - Parameters:
     ///   - locations: where the old tool kept its files
     ///   - oldTokens: where the old tool's tokens may be
-    ///   - keychain: menubar-monitor's keychain, which the tokens go to
+    ///   - keychain: MegaMonitor's keychain, which the tokens go to
     ///   - preferences: the preferences the old settings go to
     ///   - teamStore: the projects the old team values go to
     ///   - userState: the state the watched and hidden builds go to

@@ -1,13 +1,14 @@
 import MenubarCore
 import SwiftUI
 
-/// The Slots section (SLOT-02, SLOT-03): each release slot with its dates on a timeline with today, the countdown to its
-/// next date, and its committed work items with their merge requests, builds and flags. It reads the plan from the app,
+/// The Slots section (SLOT-02, SLOT-03): a roadmap of the release slots with today, then each slot with the countdown to
+/// its next date, its dates as steps, and its committed work items with their merge requests, builds and flags. It reads the plan from the app,
 /// refreshed every minute, and fills the window like Activity does.
 public struct SlotsView: View {
     @Environment(AppModel.self) private var model
     @Environment(WindowRouter.self) private var router
     @Environment(\.openURL) private var openURL
+    @ViewState private var chip: SlotChip = .me
     private let searchText: String
 
     /// - Parameter searchText: the window's search text; empty shows everything
@@ -16,12 +17,22 @@ public struct SlotsView: View {
     }
 
     public var body: some View {
+        content
+            .task {
+                await model.slotLabels.load()
+                await model.slotItems.load(slots: model.slotNamesToLoad())
+            }
+    }
+
+    private var content: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
             SlotsContent(
                 model: SlotsListModel(
-                    plan: model.slotPlan(now: context.date), team: model.pipelines.project.team,
+                    plan: model.slotPlan(chip: chip, now: context.date), team: model.pipelines.project.team,
                     hasLoaded: model.workItems.lists != nil, needsToken: model.workItems.problem == .noToken(.gitLab),
-                    query: searchText),
+                    query: searchText, labelsProblem: model.slotLabels.problem ?? model.slotItems.problem,
+                    groupItems: model.slotItems.items.count, isLoadingGroup: model.slotItems.isLoading),
+                chips: model.slotChips, chip: $chip,
                 today: context.date, actions: .live(model: model, router: router, openURL: openURL))
         }
     }
@@ -30,29 +41,48 @@ public struct SlotsView: View {
 /// The Slots section drawn from plain values, for the window and the gallery.
 struct SlotsContent: View {
     let model: SlotsListModel
+    var chips: [SlotChip] = []
+    @Binding var chip: SlotChip
     let today: Date
     let actions: GitLabSectionActions
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                if let url = model.planningURL, model.empty == nil {
-                    Button("Open Slot Planning") { actions.open(url) }
-                        .buttonStyle(.link)
+        ScrollViewReader { scroller in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 12) {
+                    if !chips.isEmpty, model.empty != .noPrefix {
+                        SlotChipBar(chips: chips, chip: $chip, isLoading: model.isLoadingGroup)
+                    }
+                    if let url = model.planningURL, model.empty == nil {
+                        Button("Open Slot Planning") { actions.open(url) }
+                            .buttonStyle(.link)
+                    }
+                    if model.empty == .notLoaded {
+                        // Work Items hasn't answered yet: the roadmap and two slot cards as bars.
+                        SlotsSkeleton()
+                    }
+                    if model.empty == nil, !model.slots.isEmpty {
+                        SlotRoadmap(slots: model.slots, today: today) { name in
+                            withAnimation(.smooth) { scroller.scrollTo(name, anchor: .top) }
+                        }
+                        .padding(.bottom, 4)
+                    }
+                    ForEach(model.slots) { slot in
+                        SlotCard(slot: slot, today: today, project: model.project, statusPrefix: model.statusPrefix, actions: actions)
+                            .id(slot.name)
+                    }
+                    if model.empty == nil {
+                        Text(verbatim: footnote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 4)
+                    }
                 }
-                ForEach(model.slots) { slot in
-                    SlotCard(slot: slot, today: today, project: model.project, actions: actions)
-                }
-                if model.empty == nil {
-                    Text(verbatim: footnote)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                .padding(16)
+                .frame(maxWidth: 760, alignment: .leading)
+                .frame(maxWidth: .infinity)
             }
-            .padding(16)
-            .frame(maxWidth: 760, alignment: .leading)
-            .frame(maxWidth: .infinity)
         }
         .overlay {
             if let empty = model.empty {
@@ -62,9 +92,14 @@ struct SlotsContent: View {
     }
 
     private var footnote: String {
-        var text = "Slots show the work items Work Items loads, so your own by its filter, and the builds the app watches."
+        var text = model.groupItems > 0
+            ? "The slots are every slot label GitLab has. The items in them are the slot group's \(model.groupItems) issues of the shown slots and your work items; merge requests and builds only for yours."
+            : "The slots are every slot label GitLab has. The work items in them are the ones Work Items loads, so your own by its filter, with the builds the app watches."
         if model.withoutSlot > 0 {
             text += " \(model.withoutSlot) without a slot label aren't shown."
+        }
+        if let note = model.labelsNote {
+            text += " \(note)."
         }
         return text
     }
@@ -89,16 +124,13 @@ struct SlotsContent: View {
                 Button("Show Merge Requests") { actions.showSection(.mergeRequests) }
             }
         case .notLoaded:
-            ContentUnavailableView {
-                Label("Loading Work Items", systemImage: "calendar.badge.clock")
-            } description: {
-                Text("Slots appear once GitLab has answered.")
-            }
+            // The skeleton in the page itself.
+            EmptyView()
         case .noSlots:
             ContentUnavailableView {
                 Label("No Slots", systemImage: "calendar.badge.clock")
             } description: {
-                Text("None of the loaded work items has a slot label like \(Text(verbatim: "slot::2026.51")).")
+                Text("GitLab has no slot labels and none of the loaded work items has one like \(Text(verbatim: "slot::2026.51")).")
             } actions: {
                 Button("Filters…") { actions.openSettings(.gitLab) }
             }
@@ -110,27 +142,23 @@ struct SlotsContent: View {
 
 // MARK: - A slot
 
-/// One slot: its label, state and countdown, the timeline, the dates and the committed work items.
+/// One slot: its label, state and countdown, its three dates as steps, and the committed work items.
 struct SlotCard: View {
     let slot: SlotSummary
     let today: Date
     let project: String
+    var statusPrefix = ""
     let actions: GitLabSectionActions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             header
-            SlotTimeline(dates: slot.dates, today: today)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(slot.countdown)
-            datesLine
-            if slot.items.isEmpty {
-                Text(verbatim: "No committed work items loaded")
-                    .foregroundStyle(.secondary)
-            } else {
+            SlotMilestoneRow(dates: slot.dates, today: today, tint: slot.state == .overdue ? .orange : .accentColor)
+            SlotLoadLine(slot: slot)
+            if !slot.items.isEmpty || !slot.planned.isEmpty {
                 Divider()
-                ForEach(slot.items) { item in
-                    SlotItemRow(item: item, project: project, actions: actions)
+                ForEach(slot.epicGroups) { group in
+                    SlotEpicSection(group: group, project: project, statusPrefix: statusPrefix, actions: actions)
                 }
             }
         }
@@ -176,73 +204,6 @@ struct SlotCard: View {
         }
         return parts.joined(separator: " · ")
     }
-
-    private var datesLine: some View {
-        let style = Date.FormatStyle().weekday(.abbreviated).day().month(.abbreviated)
-        return Text(
-            verbatim: SlotDates.Milestone.allCases.sorted { slot.dates.date(of: $0) < slot.dates.date(of: $1) }
-                .map { "\($0.title) \(slot.dates.date(of: $0).formatted(style))" }.joined(separator: " · ")
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-}
-
-/// The slot's dates on a line: a dot for each, today as a marker with its word above.
-struct SlotTimeline: View {
-    let dates: SlotDates
-    let today: Date
-
-    private static let height: CGFloat = 34
-
-    var body: some View {
-        GeometryReader { proxy in
-            track(width: proxy.size.width)
-        }
-        .frame(height: Self.height)
-    }
-
-    private func track(width: CGFloat) -> some View {
-        let range = self.range
-        func x(_ date: Date) -> CGFloat {
-            CGFloat(date.timeIntervalSince(range.lowerBound) / range.upperBound.timeIntervalSince(range.lowerBound)) * width
-        }
-        return ZStack(alignment: .topLeading) {
-                Capsule()
-                    .fill(.quaternary)
-                    .frame(width: width, height: 4)
-                    .offset(y: 24)
-                Capsule()
-                    .fill(Color.accentColor.opacity(0.6))
-                    .frame(width: max(0, min(width, x(today))), height: 4)
-                    .offset(y: 24)
-                ForEach(SlotDates.Milestone.allCases, id: \.self) { milestone in
-                    let passed = dates.date(of: milestone) < today
-                    Circle()
-                        .fill(passed ? Color.accentColor : Color(nsColor: .windowBackgroundColor))
-                        .overlay { Circle().strokeBorder(Color.accentColor, lineWidth: 1.5) }
-                        .frame(width: milestone == .release ? 12 : 9, height: milestone == .release ? 12 : 9)
-                        .offset(x: x(dates.date(of: milestone)) - 5, y: milestone == .release ? 22 : 23)
-                        .help("\(milestone.title) \(dates.date(of: milestone).formatted(.dateTime.day().month(.abbreviated)))")
-                }
-                Text("Today")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.accentColor)
-                    .fixedSize()
-                    .position(x: min(max(x(today), 18), max(18, width - 18)), y: 7)
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Color.accentColor)
-                    .frame(width: 2, height: 14)
-                    .offset(x: x(today) - 1, y: 16)
-        }
-    }
-
-    /// the days the timeline spans: the dates and today, with a day of room on each side
-    private var range: ClosedRange<Date> {
-        let all = [dates.earlyAccess, dates.codeFreeze, dates.release, today]
-        let day: TimeInterval = 86400
-        return (all.min()!.addingTimeInterval(-day))...(all.max()!.addingTimeInterval(day))
-    }
 }
 
 // MARK: - A work item
@@ -251,6 +212,7 @@ struct SlotTimeline: View {
 struct SlotItemRow: View {
     let item: SlotItem
     let project: String
+    var statusPrefix = ""
     let actions: GitLabSectionActions
 
     var body: some View {
@@ -261,7 +223,7 @@ struct SlotItemRow: View {
                 .help(item.isDone ? "Done" : item.isInProgress ? "In progress" : "Open")
             VStack(alignment: .leading, spacing: 4) {
                 Button {
-                    actions.open(item.workItem.webURL)
+                    actions.follow(item.workItem.webURL)
                 } label: {
                     HStack(spacing: 6) {
                         Text(verbatim: item.workItem.title)
@@ -282,6 +244,7 @@ struct SlotItemRow: View {
                 }
             }
             Spacer(minLength: 0)
+            SlotItemFacts(item: item, statusPrefix: statusPrefix)
         }
         .accessibilityElement(children: .contain)
     }
@@ -293,7 +256,7 @@ struct SlotItemRow: View {
     @ViewBuilder
     private var mergeRequests: some View {
         if item.mergeRequests.isEmpty {
-            if item.mergeRequestsLoaded, !item.workItem.isEpic {
+            if item.mergeRequestsLoaded, !item.workItem.isEpic, item.isCommitted {
                 Text(verbatim: "No merge request")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -316,7 +279,7 @@ struct SlotMergeRequestChip: View {
 
     var body: some View {
         Button {
-            actions.open(mergeRequest.mergeRequest.webURL)
+            actions.follow(mergeRequest.mergeRequest.webURL)
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: mergeSymbol)
@@ -373,7 +336,7 @@ struct SlotFlagLine: View {
         HStack(spacing: 6) {
             Image(systemName: flag.kind.symbol)
             Text(verbatim: flag.kind.text)
-            Button(flag.fixTitle) { actions.open(flag.fixURL) }
+            Button(flag.fixTitle) { actions.follow(flag.fixURL) }
                 .buttonStyle(.link)
         }
         .font(.caption.weight(.medium))
@@ -397,5 +360,49 @@ extension BuildState {
         case .red: self = .failed
         case .running: self = .running
         }
+    }
+}
+
+/// The Slots page before Work Items has loaded: the roadmap's rows and two slot cards as bars, in the real ones' chrome
+/// and about their size, so the page doesn't jump when the slots arrive.
+struct SlotsSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // The roadmap: a name and a bar per slot, starting at different dates.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(0..<4, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        SkeletonBlock(width: 46, height: 8, lineHeight: 20)
+                        SkeletonBlock(fraction: [0.5, 0.62, 0.4, 0.55][index], height: 6, lineHeight: 20)
+                    }
+                }
+            }
+            .skeletonShimmer()
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.bottom, 4)
+            ForEach(0..<2, id: \.self) { index in
+                slotCard(index)
+            }
+        }
+    }
+
+    private func slotCard(_ index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                SkeletonBlock(width: 90, height: 18)
+                SkeletonBlock(width: 60, height: 8, lineHeight: 16)
+                Spacer(minLength: 8)
+                SkeletonBlock(width: 110, height: 10, lineHeight: 18)
+            }
+            SkeletonBlock(width: 230, height: 8, lineHeight: 14)
+            SkeletonBlock(height: 8, lineHeight: 28)
+            Divider()
+            SkeletonRows(count: index == 0 ? 3 : 2, leading: .symbol(column: SectionRowMetrics.symbolColumn))
+        }
+        .skeletonShimmer()
+        .padding(14)
+        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
 }

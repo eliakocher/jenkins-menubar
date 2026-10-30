@@ -88,8 +88,6 @@ struct WorkItemsListModel: Sendable {
     var problems: [PanelModel.ProblemItem]
     /// "Needs the GitLab token, see Merge Requests" (MR-04), with "Show Merge Requests"
     var tokenNote: String?
-    /// the filters in one line (WI-02); hidden while searching and in the empty state, whose description it is
-    var summary: String?
     /// two placeholder rows: never loaded (OD-01)
     var isPlaceholder: Bool
     /// the sections that have rows after the search, committed first (WI-01)
@@ -110,6 +108,11 @@ struct WorkItemsListModel: Sendable {
     /// whether a search finds nothing, which shows the system's no-results view
     var findsNothing: Bool {
         !query.isEmpty && tokenNote == nil && !isPlaceholder && sections.isEmpty && empty == nil
+    }
+
+    /// whether the "In GitLab" search may show: GitLab is asked only with the team values and the token (WIN-07)
+    var showsGitLabSearch: Bool {
+        !query.isEmpty && tokenNote == nil
     }
 
     /// Returns the row with an id.
@@ -133,7 +136,6 @@ struct WorkItemsListModel: Sendable {
         self.query = query
         problems = MainWindowProblems.appWide(jenkins: data.jenkinsProblem, update: data.update)
         tokenNote = nil
-        summary = nil
         isPlaceholder = false
         sections = []
         empty = nil
@@ -160,7 +162,6 @@ struct WorkItemsListModel: Sendable {
         let searching = !query.isEmpty
         guard let lists = data.lists else {
             isPlaceholder = data.problem == nil && !offline && !searching
-            summary = searching ? nil : data.filters.summary
             link = searching ? nil : gitLabLink
             return
         }
@@ -176,7 +177,6 @@ struct WorkItemsListModel: Sendable {
         if all.isEmpty {
             empty = searching ? nil : Empty(summary: data.filters.summary, link: gitLabLink)
         } else if !searching {
-            summary = data.filters.summary
             link = gitLabLink
         }
     }
@@ -195,7 +195,7 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
     var slotLabel: LabelPillModel?
     /// "Task · Closed · design"; `nil` when nothing is left
     var secondLine: String?
-    /// "Open Work Item #31"
+    /// "Open Work Item #31 in GitLab"
     var openTitle: String
 
     var id: WorkItem.ID { workItem.id }
@@ -211,7 +211,7 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
         slot = item.slot(prefix: data.team.slotLabelPrefix)
         slotLabel = item.slotLabel(prefix: data.team.slotLabelPrefix).map { LabelPillModel($0, colors: data.labelColors) }
         secondLine = Self.secondLine(of: item, team: data.team, filters: data.filters, sharedLabels: sharedLabels)
-        openTitle = "Open Work Item \(reference)"
+        openTitle = "Open Work Item \(reference) in GitLab"
     }
 
     /// Returns line 2: the type unless it is an issue or the Type filter fixes it, "Closed" under "Open and closed"
@@ -294,12 +294,38 @@ enum WorkItemText {
 }
 
 /// What the Work Items detail shows of the selected item (`docs/design/work-items.md`, Detail): the header, the facts,
-/// the label pills and the related merge requests. Built from the stores' values only, so selecting asks nothing.
+/// the label pills, the slot's dates and the related merge requests with their builds and the flags (SLOT-03). Built
+/// from the stores' values only, so selecting asks nothing.
 struct WorkItemDetailModel: Sendable {
     var workItem: WorkItem
     var marker: RelatedMergeRequestMarker?
-    /// "Open Work Item #31"
+    /// "Open Work Item #31 in GitLab"
     var openTitle: String
+    /// "#31", "web#34", "&12"
+    var shortReference: String
+    /// the project's or the epic's group's name, the last part of its path: "project"
+    var projectName: String
+    /// who opened it; `nil` when GitLab didn't say
+    var author: MergeRequest.Person?
+    /// who it is assigned to; empty for nobody, and before GitLab was asked for them
+    var assignees: [MergeRequest.Person]
+    /// the slot's dates, when the slot label names a week (SLOT-01)
+    var slot: Slot?
+    /// what only the merge requests and builds reveal, each with its fix (SLOT-03); only for committed items of a shown
+    /// slot
+    var flags: [SlotFlag]
+
+    /// The slot the item is planned for, with its dates.
+    struct Slot: Hashable, Sendable {
+        var name: SlotName
+        var dates: SlotDates
+        /// "Code freeze in 3 days", "Released 5 days ago"
+        var countdown: String
+        /// whether the release passed while the item is still open
+        var isOverdue: Bool
+        /// the time the steps count from
+        var today: Date
+    }
     /// the slot label, drawn as GitLab draws it; `nil` when the item has no slot or Team has no slot prefix (WI-04)
     var slotLabel: LabelPillModel?
     /// "Open", "Closed"
@@ -345,16 +371,38 @@ struct WorkItemDetailModel: Sendable {
     /// - Parameters:
     ///   - data: the stores' values
     ///   - selection: the selected work item, by its full reference
+    ///   - reality: the item's merge requests with their builds and its flags, from `AppModel.slotItem(of:)`; `nil`
+    ///     shows no builds and no flags
+    ///   - calendar: the calendar whose days count for the slot's dates
     /// - Returns: the detail; `nil` without a selection, or when the item left the list, which shows a blank
     ///   detail
-    init?(_ data: WorkItemsData, selection: WorkItem.ID?) {
+    init?(_ data: WorkItemsData, selection: WorkItem.ID?, reality: SlotItem? = nil, calendar: Calendar = .current) {
         guard let selection, data.showsWorkItems, let item = data.lists?.all.first(where: { $0.id == selection }) else {
             return nil
         }
+        self.init(data, workItem: item, reality: reality, calendar: calendar)
+    }
+
+    /// Returns the detail of a work item that isn't in the lists, one opened under "Opened" (WIN-06). Its related merge
+    /// requests are the ones in `data.related`, if any.
+    ///
+    /// - Parameters:
+    ///   - data: the stores' values
+    ///   - workItem: the work item, as loaded for itself
+    ///   - reality: the item's merge requests with their builds and its flags; `nil` shows none
+    ///   - calendar: the calendar whose days count for the slot's dates
+    init(_ data: WorkItemsData, workItem item: WorkItem, reality: SlotItem? = nil, calendar: Calendar = .current) {
         let team = data.team
         workItem = item
         marker = data.marker(of: item)
-        openTitle = "Open Work Item \(data.shortReference(of: item))"
+        shortReference = data.shortReference(of: item)
+        openTitle = "Open Work Item \(shortReference) in GitLab"
+        let path = item.reference.split(whereSeparator: { $0 == "#" || $0 == "&" }).first.map(String.init) ?? ""
+        projectName = path.split(separator: "/").last.map(String.init) ?? path
+        author = item.author
+        assignees = item.assignees ?? []
+        flags = reality?.id == item.id ? reality?.flags ?? [] : []
+        slot = Self.slot(of: item, team: team, now: data.now, calendar: calendar)
         slotLabel = item.slotLabel(prefix: team.slotLabelPrefix).map { LabelPillModel($0, colors: data.labelColors) }
         state = WorkItemText.state(item.state)
         type = WorkItemText.type(item.type)
@@ -364,7 +412,12 @@ struct WorkItemDetailModel: Sendable {
         if item.isEpic {
             related = .epic
         } else if let entry = data.related.entries[item.reference] {
-            let rows = RelatedMergeRequestRow.rows(entry.mergeRequests, data: data)
+            let builds = reality?.id == item.id ? reality?.mergeRequests ?? [] : []
+            let rows = RelatedMergeRequestRow.rows(entry.mergeRequests, data: data).map { row in
+                var row = row
+                row.build = builds.first { $0.id == row.id }?.build
+                return row
+            }
             related = rows.isEmpty ? .none : .rows(rows)
             if entry.mergeRequests.count >= Self.relatedLimit {
                 relatedFooters.append(Self.atMostTen)
@@ -375,6 +428,27 @@ struct WorkItemDetailModel: Sendable {
         } else {
             related = data.isLoading ? .loading : .unknown
         }
+    }
+
+    /// Returns the slot of an item whose slot label names a week, with its dates from the team's rules.
+    private static func slot(of item: WorkItem, team: TeamValues, now: Date, calendar: Calendar) -> Slot? {
+        let prefix = team.slotLabelPrefix
+        guard let name = item.labels.lazy.compactMap({ SlotName(label: $0.title, prefix: prefix) }).first,
+            let dates = SlotRules(team: team).dates(of: name, calendar: calendar)
+        else {
+            return nil
+        }
+        let isOverdue = item.state != .closed && dates.release < calendar.startOfDay(for: now)
+        return Slot(
+            name: name, dates: dates, countdown: dates.countdown(from: now, calendar: calendar), isOverdue: isOverdue, today: now)
+    }
+
+    /// the merge requests that count, open first: those of the header's chips
+    var countedMergeRequests: [RelatedMergeRequestRow] {
+        guard case .rows(let rows) = related else {
+            return []
+        }
+        return rows.filter { !$0.isIgnored && $0.mergeRequest.state != .closed }
     }
 }
 
@@ -387,12 +461,14 @@ struct RelatedMergeRequestRow: Hashable, Sendable, Identifiable {
     var isSymbolSecondary: Bool
     /// "!14 · open", "web!8 · merged"
     var reference: String
-    /// "Open Merge Request !14"
+    /// "Show Merge Request !14", which opens in the app
     var openTitle: String
     /// whether its title starts with Team's ignored prefix, like "[cascade] …": listed last, greyed (WI-05)
     var isIgnored: Bool
     /// whether the Merge Requests store's last load has it (same web URL)
     var showsInMergeRequests: Bool
+    /// the build the app knows of it (SLOT-03): Jenkins' `MR-<iid>` job, else GitLab's head pipeline of my MR
+    var build: BuildReality?
 
     var id: URL { mergeRequest.webURL }
 
@@ -415,7 +491,7 @@ struct RelatedMergeRequestRow: Hashable, Sendable, Identifiable {
         let short = GitLabText.shortReference(mergeRequest.reference, project: data.team.gitLabProject)
         let word = mergeRequest.state == .opened ? "open" : mergeRequest.state.rawValue.lowercased()
         reference = "\(short) · \(word)"
-        openTitle = "Open Merge Request \(short)"
+        openTitle = "Show Merge Request \(short)"
         switch mergeRequest.state {
         case .opened: (symbol, isSymbolSecondary) = ("arrow.triangle.pull", false)
         case .merged: (symbol, isSymbolSecondary) = ("arrow.triangle.merge", false)

@@ -78,7 +78,7 @@ struct UpdateStoreTests {
         let log = ActivityLog(folder: folder.file("Logs"))
         let runner = ScriptedBuild(lines: [
             "Building for production...", "[2 / 8] MenubarCore", "Build complete! (20.12 sec)", "/somewhere/.build/release",
-            "installed /Users/someone/Applications/menubar-monitor.app (release)",
+            "installed /Users/someone/Applications/MegaMonitor.app (release)",
         ])
         let store = UpdateStore(stamp: try stamp(of: checkout), runner: runner, log: log, home: folder.file("home"))
         #expect(await store.rebuild() == nil, "nothing to rebuild while the checkout is unchanged")
@@ -87,7 +87,7 @@ struct UpdateStoreTests {
 
         let app = await store.rebuild()
 
-        let installed = URL(filePath: "/Users/someone/Applications/menubar-monitor.app", directoryHint: .isDirectory)
+        let installed = URL(filePath: "/Users/someone/Applications/MegaMonitor.app", directoryHint: .isDirectory)
         #expect(app == installed)
         #expect(store.state == .installed(installed))
         #expect(!store.offersRebuild)
@@ -96,7 +96,7 @@ struct UpdateStoreTests {
         let messages = await log.entries().map(\.message)
         #expect(messages.suffix(2) == [
             "Rebuilding the app from \(checkout.path(percentEncoded: false))",
-            "Installed the update: /Users/someone/Applications/menubar-monitor.app",
+            "Installed the update: /Users/someone/Applications/MegaMonitor.app",
         ])
     }
 
@@ -113,7 +113,7 @@ struct UpdateStoreTests {
 
         let app = try await Rebuilder(checkout: checkout, runner: runner, home: folder.file("home")).rebuild { steps.append($0) }
 
-        #expect(app == folder.file("home").appending(path: "Applications/menubar-monitor.app", directoryHint: .isDirectory))
+        #expect(app == folder.file("home").appending(path: "Applications/MegaMonitor.app", directoryHint: .isDirectory))
         let values = steps.values
         #expect(values.map(\.step) == ["Compiling MenubarCore A.swift", "MenubarCore", "MenubarUI", "Putting the app together"])
         let fractions = values.compactMap(\.fraction)

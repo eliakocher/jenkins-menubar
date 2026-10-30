@@ -161,7 +161,7 @@ struct PipelineRulesTests {
 
         let first = PipelineRules.links(of: build, jobURL: Self.jobURL).first
 
-        #expect(first == BuildLink(kind: .mergeRequest, title: "Open Merge Request !12", url: build.gitLabURL!))
+        #expect(first == BuildLink(kind: .mergeRequest, title: "Show Merge Request !12", url: build.gitLabURL!))
     }
 
     @Test("PIPE-03 branch job links to its branch")
@@ -181,7 +181,7 @@ struct PipelineRulesTests {
     func buildLinks() {
         let links = PipelineRules.links(of: Self.build("MR-12", number: 4), jobURL: Self.jobURL)
 
-        #expect(links.map(\.title) == ["Open Build #4", "Console Output", "Test Results"])
+        #expect(links.map(\.title) == ["Open Build #4 in Jenkins", "Console Output in Jenkins", "Test Results in Jenkins"])
         #expect(links.map(\.url.absoluteString) == [
             "https://jenkins.example.com/job/project/job/MR-12/4/",
             "https://jenkins.example.com/job/project/job/MR-12/4/console",

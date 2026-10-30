@@ -7,7 +7,7 @@ import Testing
 /// real `claude -p` answers to made-up prompts (2026-10-29).
 @Suite("Claude")
 struct AITests {
-    // MARK: - AI-01 The engine, the opt-in and the cap
+    // MARK: - AI-01 The engine and the opt-in
 
     @Test("AI-01 the Claude features are off by default and hidden while claude isn't installed")
     @MainActor
@@ -70,14 +70,13 @@ struct AITests {
         let fake = FakeClaude(answer: try FixtureFiles.data("Claude/explain-build.json"))
         let engine = ClaudeEngine(runner: fake, resolver: fake.resolver(found: true))
         let prompt = ClaudePrompt.explainBuild(Self.failedBuild)
-        let run = try await engine.run(prompt, model: .sonnet, budgetUSD: 0.5)
-        #expect(run.costUSD > 0)
+        _ = try await engine.run(prompt, model: .sonnet)
 
         let call = try #require(await fake.claudeCalls.first)
         #expect(call.executable == "/opt/homebrew/bin/claude")
         #expect(Array(call.arguments.prefix(11)) == [
             "-p", "--output-format", "json", "--model", "claude-sonnet-5-5", "--tools", "", "--safe-mode",
-            "--no-session-persistence", "--max-budget-usd", "0.50",
+            "--no-session-persistence", "--max-budget-usd", "1.00",
         ])
         #expect(call.arguments.contains("--json-schema"))
         #expect(call.input == prompt.text)
@@ -86,20 +85,22 @@ struct AITests {
         for fact in ["expected:<90>", "CartServiceTest", "Apply discount", "MR-42", "BUILD FAILURE"] {
             #expect(!line.contains(fact), "\(fact) is on the command line")
         }
-        // The budget is never below a cent, even when less is left.
-        #expect(ClaudeEngine.arguments(for: prompt, model: .opus, budgetUSD: 0.001).contains("0.01"))
+        // The safety limit is one fixed value, once.
+        #expect(ClaudeEngine.arguments(for: prompt, model: .opus).filter { $0 == "--max-budget-usd" }.count == 1)
+        // A question about code, which reads files and may review a long diff, gets the higher limit.
+        let code = ClaudeEngine.arguments(for: ClaudePrompt(useCase: .askAboutCode, instructions: "i", text: "t"), model: .opus)
+        #expect(code.drop { $0 != "--max-budget-usd" }.dropFirst().first == "5.00")
         // claude is looked for once.
-        _ = try await engine.run(prompt, model: .opus, budgetUSD: 1)
+        _ = try await engine.run(prompt, model: .opus)
         #expect(await fake.shellCalls <= 1)
     }
 
-    @Test("AI-01 parses claude's JSON output: the answer, the structured answer, the tokens, the cost and errors")
+    @Test("AI-01 parses claude's JSON output: the answer, the structured answer, the tokens and errors")
     func parsesOutput() throws {
         let explain = try ClaudeRun.parse(FixtureFiles.data("Claude/explain-build.json"))
         #expect(!explain.isError)
         #expect(explain.model == "claude-opus-5-5")
         #expect(explain.usage == ClaudeUsage(inputTokens: 1407, outputTokens: 275))
-        #expect(abs(explain.costUSD - 0.016748) < 0.000_001)
         #expect(explain.durationMS == 3562)
         let explanation = try #require(explain.decoded(BuildExplanation.self))
         #expect(explanation.verdict == .real)
@@ -114,13 +115,12 @@ struct AITests {
         #expect(digest.text?.contains("Review !40") == true)
         #expect(digest.model == "claude-opus-5-5")
 
-        // An error answer: no result, its cost spent all the same, its message.
+        // An error answer: no result, its message.
         let budget = try ClaudeRun.parse(FixtureFiles.data("Claude/budget-error.json"))
         #expect(budget.isError)
         #expect(budget.subtype == "error_max_budget_usd")
         #expect(budget.text == nil)
-        #expect(budget.costUSD > 0)
-        #expect(budget.errorMessage == "Reached maximum budget ($0.000001)")
+        #expect(budget.errorMessage == "Claude stopped before it finished. Ask again.")
 
         // A structured answer in a code fence, as text only, still reads; a wrong verdict reads as unclear.
         let fenced = ClaudeRun(text: "```json\n{\"cause\":\"c\",\"fix\":\"f\",\"verdict\":\"maybe\"}\n```")
@@ -128,61 +128,30 @@ struct AITests {
         #expect(throws: (any Error).self) { try ClaudeRun.parse(Data("Invalid API key · Please run /login".utf8)) }
     }
 
-    @Test("AI-01 sums the month's reported costs and stops at the monthly cap")
+    @Test("AI-01 an answer stopped by the safety limit reads as a plain failure, and the spend of earlier versions is dropped")
     @MainActor
-    func monthlyCap() async throws {
-        // The rule.
-        let october = AIUsage(month: "2026-10", costUSD: 9.5)
-        #expect(AICostCap.allowance(usage: october, capUSD: 10) == .allowed(budgetUSD: 0.5))
-        #expect(AICostCap.allowance(usage: AIUsage(month: "2026-10", costUSD: 2), capUSD: 10) == .allowed(budgetUSD: 1))
-        #expect(AICostCap.allowance(usage: AIUsage(month: "2026-10", costUSD: 9.995), capUSD: 10) == .reached(spentUSD: 9.995, capUSD: 10))
-        #expect(AICostCap.allowance(usage: AIUsage(month: "2026-10", costUSD: 12), capUSD: 10) == .reached(spentUSD: 12, capUSD: 10))
-        // A new month starts at zero.
-        #expect(october.current(in: "2026-11") == AIUsage(month: "2026-11"))
-        let added = october.adding(costUSD: 0.25, usage: ClaudeUsage(inputTokens: 100, outputTokens: 20), month: "2026-10")
-        #expect(added == AIUsage(month: "2026-10", costUSD: 9.75, answers: 1, inputTokens: 100, outputTokens: 20))
-        #expect(october.adding(costUSD: 0.25, usage: ClaudeUsage(), month: "2026-11").costUSD == 0.25)
-
-        // The store: each answer's cost is summed, an error answer's too, within what the cap leaves.
+    func stoppedAnswer() async throws {
         let defaults = TemporaryDefaults()
-        let now = Date(timeIntervalSince1970: 1_793_000_000)  // 2026-10
-        let month = AIUsage.month(of: now)
-        AIUsage(month: month, costUSD: 9.98).save(to: defaults.defaults)
+        // What an earlier version stored: the monthly cap in the settings and the month's spend.
+        defaults.defaults.set(Data(#"{"isEnabled":true,"monthlyCapUSD":5,"confirmedUseCases":["digest"]}"#.utf8), forKey: AISettings.defaultsKey)
+        defaults.defaults.set(Data(#"{"month":"2026-10","costUSD":99}"#.utf8), forKey: "ai.usage")
         let fake = FakeClaude(answer: try FixtureFiles.data("Claude/budget-error.json"), status: 1)
-        let store = AIStore(
-            defaults: defaults.defaults, runner: fake, now: { now }, resolver: fake.resolver(found: true))
-        store.update(AISettings(isEnabled: true, monthlyCapUSD: 10, confirmedUseCases: [.digest]))
+        let store = AIStore(defaults: defaults.defaults, runner: fake, resolver: fake.resolver(found: true))
+        #expect(defaults.defaults.data(forKey: "ai.usage") == nil)
+        #expect(store.settings.isEnabled)
         store.digestFacts = { Self.someFacts }
         await store.writeDigest()
-        #expect(await fake.claudeCalls.count == 1)
-        #expect(await fake.claudeCalls.first?.arguments.contains("0.02") == true)
+        // Nothing stops a call before it is sent; the call carries the fixed limit.
+        #expect(await fake.claudeCalls.first?.arguments.contains(ClaudeEngine.maxBudgetUSD) == true)
         guard case .failed(let message, _) = store.state(of: .digest) else {
             Issue.record("expected the failure, got \(store.state(of: .digest))")
             return
         }
-        #expect(message == "Claude answered with an error: Reached maximum budget ($0.000001)")
-        #expect(AIUsage.load(from: defaults.defaults, month: month).answers == 1)
-        #expect(AIUsage.load(from: defaults.defaults, month: month).costUSD > 9.98)
-
-        // At the cap: nothing is sent, and the card says why.
-        AIUsage(month: month, costUSD: 10).save(to: defaults.defaults)
-        let capped = AIStore(
-            defaults: defaults.defaults, runner: fake, now: { now }, resolver: fake.resolver(found: true))
-        capped.digestFacts = { Self.someFacts }
-        await capped.writeDigest()
-        #expect(await fake.claudeCalls.count == 1)
-        guard case .failed(let reason, _) = capped.state(of: .digest) else {
-            Issue.record("expected the cap, got \(capped.state(of: .digest))")
-            return
-        }
-        #expect(reason.hasPrefix("This month's Claude answers reached the $10 cap"))
-        // A higher cap lets it through.
-        capped.update(AISettings(isEnabled: true, monthlyCapUSD: 20, confirmedUseCases: [.digest]))
-        await capped.writeDigest()
-        #expect(await fake.claudeCalls.count == 2)
+        #expect(message == "Claude stopped before it finished. Ask again.")
+        #expect(!message.contains("$") && !message.localizedCaseInsensitiveContains("budget"))
     }
 
-    @Test("AI-01 logs only the use case, the model, the tokens, the cost and the exit code")
+    @Test("AI-01 logs only the use case, the model, the tokens and the exit code")
     @MainActor
     func logsOnlyCounts() async throws {
         let defaults = TemporaryDefaults()
@@ -195,7 +164,7 @@ struct AITests {
         await store.writeDigest()
         try await Task.sleep(for: .milliseconds(200))
         let text = await log.entries().map(\.message).joined(separator: "\n")
-        #expect(text.contains("Claude: daily digest, claude-opus-5-5, 942 tokens in, 394 out, $0.015, exit 0"))
+        #expect(text.contains("Claude: daily digest, claude-opus-5-5, 942 tokens in, 394 out, exit 0"))
         for secretive in ["Add cart discount", "Review !40", "group/project!42", "Speed up search"] {
             #expect(!text.contains(secretive), "\(secretive) is in the log")
         }
@@ -408,7 +377,7 @@ struct AITests {
             build, page: URL(string: "https://ci.example.com/job/project/job/MR-42/7/"),
             failedTests: [FailedTest(className: "a.CartTest", name: "applies", status: .failed, message: "expected:<90>\nmore")]
         ).prompt(in: two)
-        #expect(prompt.hasPrefix("Context from menubar-monitor, for this checkout (develop2, base branch origin/develop):"))
+        #expect(prompt.hasPrefix("Context from MegaMonitor, for this checkout (develop2, base branch origin/develop):"))
         #expect(prompt.contains("- Build: https://ci.example.com/job/project/job/MR-42/7/"))
         #expect(prompt.contains("- Failed test: a.CartTest.applies: expected:<90>\n"))
         #expect(ClaudeCodeContext.workItem(item).prompt(in: two).contains("- Link: \(gitLab)/-/issues/1234"))
@@ -424,14 +393,14 @@ struct AITests {
         let fakeClaude = folder.url.appending(path: "claude", directoryHint: .notDirectory)
         try """
             #!/bin/zsh -f
-            print -rn -- "$#|$PWD|$1" > '\(record.path(percentEncoded: false))'
+            print -rn -- "$#|$PWD|$1|$2|$3" > '\(record.path(percentEncoded: false))'
             """.write(to: fakeClaude, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fakeClaude.path(percentEncoded: false))
         let prompt = "Context: \"quoted\" $(touch pwned) `touch pwned2` ; rm -rf ~ && echo $HOME\nsecond line"
 
         let launches = folder.url.appending(path: "launches", directoryHint: .isDirectory)
         let script = try ClaudeCodeLaunch.write(
-            prompt: prompt, directory: checkout.path(percentEncoded: false), claude: fakeClaude, in: launches)
+            prompt: prompt, directory: checkout.path(percentEncoded: false), claude: fakeClaude, model: .sonnet, in: launches)
         #expect(try String(contentsOf: script, encoding: .utf8) == ClaudeCodeLaunch.script)
         #expect(!ClaudeCodeLaunch.script.contains("touch"))
         let mode = try FileManager.default.attributesOfItem(atPath: script.path(percentEncoded: false))[.posixPermissions] as? Int
@@ -441,8 +410,9 @@ struct AITests {
         let output = try await SystemProcessRunner().run(URL(filePath: "/bin/zsh"), arguments: [script.path(percentEncoded: false)], input: nil)
         #expect(output.status == 0)
         let recorded = try String(contentsOf: record, encoding: .utf8)
-        let parts = recorded.split(separator: "|", maxSplits: 2).map(String.init)
-        #expect(parts.first == "1")
+        let parts = recorded.split(separator: "|", maxSplits: 4).map(String.init)
+        #expect(parts.first == "3")
+        #expect(parts[2] == "--model" && parts[3] == "claude-sonnet-5-5")
         #expect(parts.dropFirst().first.map { URL(filePath: $0).resolvingSymlinksInPath().path } == checkout.resolvingSymlinksInPath().path)
         #expect(parts.last == prompt)
         // Nothing in the text ran, and the launch folder is gone.
@@ -529,6 +499,128 @@ struct AITests {
         #expect(store.lastLaunch?.isProblem == false)
     }
 
+    // MARK: - AI-01 The model of a run
+
+    @Test("AI-01 a run's model comes from Settings or the click, appears once on the command line and changes nothing else")
+    @MainActor
+    func modelPerRun() async throws {
+        let prompt = ClaudePrompt.explainBuild(Self.failedBuild)
+        let baseline = ClaudeEngine.arguments(for: prompt, model: .opus)
+        for model in ClaudeModel.allCases {
+            let arguments = ClaudeEngine.arguments(for: prompt, model: model)
+            #expect(arguments.filter { $0 == "--model" }.count == 1)
+            #expect(arguments.filter { $0 == model.rawValue }.count == 1)
+            #expect(arguments.map { $0 == model.rawValue ? "MODEL" : $0 } == baseline.map { $0 == "claude-opus-5-5" ? "MODEL" : $0 })
+            #expect(!arguments.contains { $0.localizedCaseInsensitiveContains("token") || $0.contains("glpat") })
+        }
+        // The effort: none by default, else once with its level, and nothing else changes.
+        #expect(!baseline.contains("--effort"))
+        for effort in ClaudeEffort.allCases.dropFirst() {
+            let arguments = ClaudeEngine.arguments(for: prompt, model: .opus, effort: effort)
+            #expect(arguments.filter { $0 == "--effort" }.count == 1 && arguments.filter { $0 == effort.rawValue }.count == 1)
+            #expect(arguments.filter { $0 != "--effort" && $0 != effort.rawValue } == baseline)
+        }
+
+        // Through the store: Settings' model by default, the click's model for one run, and Ask Again With re-sends the
+        // same facts without gathering them anew.
+        let fake = FakeClaude(answer: try FixtureFiles.data("Claude/digest.json"))
+        let store = AIStore(defaults: TemporaryDefaults().defaults, runner: fake, resolver: fake.resolver(found: true))
+        store.digestFacts = { Self.someFacts }
+        store.update(AISettings(isEnabled: true, model: .sonnet, confirmedUseCases: [.digest]))
+        await store.writeDigest()
+        await store.writeDigest(model: .haiku)
+        await store.askAgain(.digest, model: .opus)
+        let calls = await fake.claudeCalls
+        #expect(!calls.contains { $0.arguments.contains("--effort") })
+        let models = calls.map { call in call.arguments[(call.arguments.firstIndex(of: "--model") ?? 0) + 1] }
+        #expect(models == ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"])
+        #expect(Set(calls.compactMap(\.input)).count == 1)
+
+        // Settings' effort reaches the command line once.
+        store.update(AISettings(isEnabled: true, effort: .high, confirmedUseCases: [.digest]))
+        await store.writeDigest()
+        let withEffort = try #require(await fake.claudeCalls.last)
+        #expect(withEffort.arguments.filter { $0 == "--effort" }.count == 1 && withEffort.arguments.contains("high"))
+
+        // The first send of a use case waits in review; the model chosen with the click is kept for Send.
+        let first = AIStore(defaults: TemporaryDefaults().defaults, runner: fake, resolver: fake.resolver(found: true))
+        first.digestFacts = { Self.someFacts }
+        first.update(AISettings(isEnabled: true))
+        await first.writeDigest(model: .haiku)
+        await first.send(.digest)
+        #expect(await fake.claudeCalls.last?.arguments.contains("claude-haiku-5-5") == true)
+    }
+
+    @Test("AI-01 the default model reads as Opus when none or an unknown one is stored, and a known one is kept")
+    func defaultModel() throws {
+        #expect(AISettings().model == .opus && AISettings().effort == .standard)
+        for stored in [#"{}"#, #"{"model":"gpt-9"}"#, #"{"model":42}"#, #"{"model":null}"#] {
+            #expect(try JSONDecoder().decode(AISettings.self, from: Data(stored.utf8)).model == .opus)
+        }
+        for stored in [#"{}"#, #"{"effort":"ultra"}"#, #"{"effort":3}"#, #"{"effort":null}"#, #"{"effort":"standard"}"#] {
+            #expect(try JSONDecoder().decode(AISettings.self, from: Data(stored.utf8)).effort == .standard)
+        }
+        #expect(try JSONDecoder().decode(AISettings.self, from: Data(#"{"effort":"xhigh"}"#.utf8)).effort == .xhigh)
+        let defaults = TemporaryDefaults()
+        AISettings(model: .haiku, effort: .high).save(to: defaults.defaults)
+        #expect(AISettings.load(from: defaults.defaults).model == .haiku)
+        #expect(AISettings.load(from: defaults.defaults).effort == .high)
+        #expect(AIAnswer(model: "claude-haiku-5-5", prompt: Self.prompt, answeredAt: Date()).modelName == "Haiku 5.5")
+        #expect(AIAnswer(model: "some-model", prompt: Self.prompt, answeredAt: Date()).modelName == "some-model")
+    }
+
+    @Test("AI-05 the launch script passes --model and --effort only for names of the fixed lists, never a value from a file as code")
+    func launchScriptModel() async throws {
+        let folder = try TemporaryFolder()
+        let record = folder.url.appending(path: "arguments.txt", directoryHint: .notDirectory)
+        let fakeClaude = folder.url.appending(path: "claude", directoryHint: .notDirectory)
+        try """
+            #!/bin/zsh -f
+            print -rn -- "$#|${(j:|:)@}" > '\(record.path(percentEncoded: false))'
+            """.write(to: fakeClaude, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fakeClaude.path(percentEncoded: false))
+        let checkout = folder.url.appending(path: "checkout", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: checkout, withIntermediateDirectories: true)
+
+        let none = "1|first prompt"
+        var cases: [(model: String, effort: String, expected: String)] = ClaudeModel.allCases.map {
+            ($0.rawValue, "", "3|--model|\($0.rawValue)|first prompt")
+        }
+        cases += ClaudeEffort.allCases.compactMap(\.level).map { ("", $0, "3|--effort|\($0)|first prompt") }
+        cases += [
+            ("claude-opus-5-5", "high", "5|--model|claude-opus-5-5|--effort|high|first prompt"),
+            ("opus", "", none),
+            ("claude-opus-5-5 $(touch pwned)", "", none),
+            ("claude-opus-5-5; touch pwned", "", none),
+            ("", "", none),
+            ("", "standard", none),
+            ("", "ultra", none),
+            ("", "high $(touch pwned)", none),
+            ("", "high; touch pwned", none),
+            ("", "high --dangerous", none),
+        ]
+        for (model, effort, expected) in cases {
+            let script = try ClaudeCodeLaunch.write(
+                prompt: "first prompt", directory: checkout.path(percentEncoded: false), claude: fakeClaude, model: .opus,
+                in: folder.url.appending(path: "launches", directoryHint: .isDirectory))
+            let launch = script.deletingLastPathComponent()
+            try Data(model.utf8).write(to: launch.appending(path: "model"))
+            try Data(effort.utf8).write(to: launch.appending(path: "effort"))
+            let output = try await SystemProcessRunner().run(URL(filePath: "/bin/zsh"), arguments: [script.path(percentEncoded: false)], input: nil)
+            #expect(output.status == 0)
+            let recorded = try String(contentsOf: record, encoding: .utf8)
+            #expect(recorded == expected, "\(model) / \(effort) ran as \(recorded)")
+            #expect(!FileManager.default.fileExists(atPath: folder.url.appending(path: "pwned").path(percentEncoded: false)))
+            #expect(!FileManager.default.fileExists(atPath: checkout.appending(path: "pwned").path(percentEncoded: false)))
+        }
+        // Written from the settings: the model and the effort, nothing when the effort is Default.
+        let written = try ClaudeCodeLaunch.write(
+            prompt: "p", directory: "/x", claude: fakeClaude, model: .haiku, effort: .xhigh,
+            in: folder.url.appending(path: "launches", directoryHint: .isDirectory)).deletingLastPathComponent()
+        #expect(try String(contentsOf: written.appending(path: "effort"), encoding: .utf8) == "xhigh")
+        #expect(try String(contentsOf: written.appending(path: "model"), encoding: .utf8) == "claude-haiku-5-5")
+    }
+
     // MARK: - Made-up values
 
     static let failedBuild = BuildFailureFacts(
@@ -541,6 +633,8 @@ struct AITests {
         lastGreen: 5,
         log: FailureLog.narrow(
             "[ERROR] Tests run: 120, Failures: 1\n[ERROR] CartServiceTest.appliesDiscount:42 expected:<90> but was:<100>\n[INFO] BUILD FAILURE\n"))
+
+    static let prompt = ClaudePrompt.explainBuild(failedBuild)
 
     static let someFacts = DigestFacts(
         myMergeRequests: ["group/project!42 \"Add cart discount\", pipeline failed"],

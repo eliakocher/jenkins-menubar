@@ -28,8 +28,10 @@ struct LabelPill: View {
 
     let label: LabelPillModel
     var style = Style.full
+    /// the compact font and padding for any style: the detail header's quiet labels
+    var small = false
 
-    private var compact: Bool { style == .compact }
+    private var compact: Bool { style == .compact || small }
 
     var body: some View {
         content

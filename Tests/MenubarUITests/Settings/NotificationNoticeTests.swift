@@ -8,9 +8,9 @@ struct NotificationNoticeTests {
     /// The permission, the alert style and the stage banners, and the row Settings → General shows: nil for none.
     private static let cases: [(NotificationPermission?, Preferences.AlertStyle, Bool, StatusKind?, String?)] = [
         (.off, .banner, true, .problem,
-         "Notifications are off for menubar-monitor: stage banners don't show, and banners show as the alert window"),
-        (.off, .window, true, .problem, "Notifications are off for menubar-monitor: stage banners don't show"),
-        (.off, .banner, false, .problem, "Notifications are off for menubar-monitor: banners show as the alert window"),
+         "Notifications are off for MegaMonitor: stage banners don't show, and banners show as the alert window"),
+        (.off, .window, true, .problem, "Notifications are off for MegaMonitor: stage banners don't show"),
+        (.off, .banner, false, .problem, "Notifications are off for MegaMonitor: banners show as the alert window"),
         (.notAsked, .window, true, .note, "Notifications aren't set up yet: stage banners can't show"),
         (.notAsked, .banner, false, .note, "Notifications aren't set up yet: banners show as the alert window"),
         // Banners not in use, allowed, or not known yet: no row.

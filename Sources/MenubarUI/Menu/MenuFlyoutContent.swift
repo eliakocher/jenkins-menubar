@@ -72,10 +72,10 @@ struct MenuFlyoutContent: View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(verbatim: section.title)
                 .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.menuGrey)
             Text(verbatim: section.count)
                 .monospacedDigit()
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.menuHint)
             Spacer(minLength: 0)
         }
         .font(.subheadline)
@@ -87,7 +87,7 @@ struct MenuFlyoutContent: View {
 
     private func noteRow(_ note: String) -> some View {
         Text(verbatim: note)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.menuGrey)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, MenuMetrics.inset + MenuMetrics.padding)
             .padding(.vertical, 6)
@@ -97,12 +97,12 @@ struct MenuFlyoutContent: View {
     private func commandRow(_ command: MenuFlyout.Command, isHighlighted: Bool) -> some View {
         HStack(spacing: 7) {
             Image(systemName: Self.symbol(of: command))
-                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
                 .frame(width: MenuMetrics.symbolColumn)
             Text(verbatim: command.title)
             Spacer(minLength: 0)
             if command == .watchBuild {
-                MenuSecondaryText("⌘L")
+                MenuSecondaryText("⌘L", isHint: true)
             }
         }
         .menuRow(isHighlighted: isHighlighted, corner: MenuMetrics.flyoutCorner - MenuMetrics.inset)
@@ -126,10 +126,10 @@ struct MenuFlyoutContent: View {
             Divider()
             Button("Show in Window") { actions.showInWindow(entry.selection) }
         case .mergeRequest, .workItem:
+            Button("Show in Window") { actions.showInWindow(entry.selection) }
             if let url = entry.url {
                 Button(entry.openTitle) { actions.panel.open(url) }
             }
-            Button("Show in Window") { actions.showInWindow(entry.selection) }
             if let url = entry.url {
                 Divider()
                 Button("Copy Link") { actions.panel.copy(url) }
@@ -199,31 +199,21 @@ struct MenuEntryRow: View {
         }
         .padding(.vertical, 2)
         .menuRow(isHighlighted: isHighlighted, corner: MenuMetrics.flyoutCorner - MenuMetrics.inset)
-        .help(entry.title)
+        .help(entry.url == nil ? entry.title : "\(entry.title)\n⌥-click to open in the browser")
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Two rows standing in for a list that never loaded (OD-01): placeholders, without shimmer.
+/// Rows of bars standing in for a list that never loaded (OD-01), in the flyout rows' size.
 struct MenuPlaceholderRows: View {
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(0..<2, id: \.self) { index in
-                HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Image(systemName: "circle.fill")
-                        .frame(width: MenuMetrics.symbolColumn)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: index == 0 ? "A placeholder for a title" : "Another placeholder title")
-                        Text(verbatim: "!00 #0 · 0m of ~0m")
-                            .font(.subheadline)
-                    }
-                }
-                .padding(.vertical, 2)
-                .menuRow(isHighlighted: false)
+            ForEach(0..<4, id: \.self) { index in
+                SkeletonRow(index: index, leading: .symbol(column: MenuMetrics.symbolColumn), spacing: 7)
+                    .padding(.vertical, 2)
+                    .menuRow(isHighlighted: false)
             }
         }
-        .redacted(reason: .placeholder)
-        .accessibilityLabel("Loading")
     }
 }
 

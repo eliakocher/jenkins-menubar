@@ -11,7 +11,7 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
     case done
 
     /// the window's title, and page 1's heading
-    public static let windowTitle = "Welcome to menubar-monitor"
+    public static let windowTitle = "Welcome to MegaMonitor"
 
     /// the page's heading; page 6 has two, which ``WelcomeSummary`` chooses
     var heading: String {
@@ -38,16 +38,16 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
             "The Jenkins job and GitLab project your team works on. Ask a colleague for the team file, or fill in the "
                 + "values."
         case .accounts:
-            "menubar-monitor signs in to Jenkins with an API token and to GitLab with a personal access token. Both "
+            "MegaMonitor signs in to Jenkins with an API token and to GitLab with a personal access token. Both "
                 + "stay in your login keychain."
         case .notifications:
             // Pre-alert screens "make it clear that [the one button] opens the system alert" (HIG Privacy).
-            "menubar-monitor shows a banner as soon as a stage fails, and, if you choose banners, when a build "
+            "MegaMonitor shows a banner as soon as a stage fails, and, if you choose banners, when a build "
                 + "finishes."
                 + (Self.asksForNotifications(notifications)
-                    ? " When you continue, macOS asks whether menubar-monitor may show notifications." : "")
+                    ? " When you continue, macOS asks whether MegaMonitor may show notifications." : "")
         case .menuBarAndLogin:
-            "menubar-monitor checks Jenkins in the background and alerts you when builds finish, so it works best in "
+            "MegaMonitor checks Jenkins in the background and alerts you when builds finish, so it works best in "
                 + "the menu bar and when it opens at login."
         case .done:
             nil
@@ -242,8 +242,8 @@ struct WelcomeSummary: Hashable, Sendable {
         return WelcomeSummary(
             heading: tokensReady ? WelcomePage.done.heading : "Almost Ready",
             whereToFind: preferences.showInMenuBar
-                ? "Click the menubar-monitor icon in the menu bar to see your builds."
-                : "Open menubar-monitor again to see your builds in its window.",
+                ? "Click the MegaMonitor icon in the menu bar to see your builds."
+                : "Open MegaMonitor again to see your builds in its window.",
             stillMissing: stillMissing,
             didNotMove: didNotMove.map(\.message),
             eggLine: preferences.easterEggs ? EggRules.welcomeLine : nil)
@@ -264,13 +264,13 @@ struct WelcomeSummary: Hashable, Sendable {
 enum WelcomeNotificationText {
     static let allowed = "Notifications are allowed"
 
-    /// Returns what doesn't show while notifications are off: "Notifications are off for menubar-monitor: stage
+    /// Returns what doesn't show while notifications are off: "Notifications are off for MegaMonitor: stage
     /// banners don't show", with the banner style's part too, as `NotificationNotice` says it.
     ///
     /// - Parameter preferences: the alert style and the stage banners
     /// - Returns: the line
     static func off(_ preferences: Preferences) -> String {
-        NotificationNotice.of(.off, preferences: preferences)?.text ?? "Notifications are off for menubar-monitor"
+        NotificationNotice.of(.off, preferences: preferences)?.text ?? "Notifications are off for MegaMonitor"
     }
 }
 

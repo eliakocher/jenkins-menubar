@@ -66,12 +66,12 @@ struct CheckTimesChartView: View {
     @ViewBuilder
     private func legend(axis: Axis) -> some View {
         if !isLoaded {
-            legendLines(
-                [ActivityEntry.Source.jenkins, .gitlab].map {
-                    CheckTimesChart.Summary(source: $0, checks: 1, averageSeconds: 1, failedRequests: 0)
-                }, axis: axis
-            )
-            .redacted(reason: .placeholder)
+            let layout = axis == .horizontal ? AnyLayout(HStackLayout(spacing: 16)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            layout {
+                SkeletonBlock(width: 190, height: 9, lineHeight: 16)
+                SkeletonBlock(width: 190, height: 9, lineHeight: 16)
+            }
+            .skeletonShimmer(announces: false)
         } else if !chart.isEmpty {
             legendLines(chart.sources.map { chart.summary(of: $0, hour: hoveredHour) }, axis: axis)
         }

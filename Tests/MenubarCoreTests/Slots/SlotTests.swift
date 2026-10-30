@@ -181,6 +181,30 @@ struct SlotTests {
         #expect(states(on: Self.day(2026, 11, 3)) == ["2026.45": .overdue, "2026.48": .current, "2026.51": .upcoming])
     }
 
+    @Test("SLOT-02 the current slot is the earliest of all slot labels not yet released, not only the user's")
+    @MainActor
+    func currentOfAllSlots() {
+        // my only item is in 2026.51, but GitLab has the slots before it: 2026.45 releases on Monday 2 November
+        let labels = ["2026.42", "2026.45", "2026.48", "2026.51"].map { Label(title: "slot::\($0)") }
+        let plan = Self.plan([Self.item(1)], today: Self.day(2026, 10, 30), known: labels)
+        // 2026.42 released on 12 October with nothing open, so it doesn't show
+        #expect(plan.slots.map(\.name.description) == ["2026.45", "2026.48", "2026.51"])
+        #expect(plan.current?.name.description == "2026.45")
+        #expect(plan.slots.map(\.state) == [.current, .upcoming, .upcoming])
+        #expect(plan.slots[0].items.isEmpty)
+        // only the next few upcoming slots show, later ones when they have committed items
+        let years = (3...30).filter { $0 % 3 == 0 }.map { Label(title: String(format: "slot::2027.%02d", $0)) }
+        let far = Self.plan([Self.item(1, slot: "2027.30")], today: Self.day(2026, 10, 30), known: labels + years)
+        // the current one and the next 4 by default, the team's number otherwise
+        #expect(far.slots.map(\.name.description) == ["2026.45", "2026.48", "2026.51", "2027.03", "2027.06", "2027.30"])
+        let two = Self.plan(
+            [Self.item(1, slot: "2027.30")], today: Self.day(2026, 10, 30), team: Self.team(TeamValues(slotUpcomingShown: "2")),
+            known: labels + years)
+        #expect(two.slots.map(\.name.description) == ["2026.45", "2026.48", "2026.51", "2027.30"])
+        #expect(SlotRules(team: TeamValues(slotUpcomingShown: "13")).upcomingShown == 4)
+        #expect(SettingsStore.issue(of: "0", for: .slotUpcomingShown) != nil)
+    }
+
     @Test("SLOT-02 an overdue slot shows only while it has open committed items")
     func overdueSlots() {
         let done = Self.item(1, slot: "2026.45", closed: true)

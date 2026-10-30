@@ -157,6 +157,8 @@ extension GitLabOperation where Value == WorkItemLists {
                   type
                   state
                   labels(first: 30) { nodes { title color } }
+                  author { username name }
+                  assignees(first: 10) { nodes { username name } }
                 }
 
                 query WorkItems($assignee: [String!], $author: String, $types: [IssueType!], $state: IssuableState, $sort: IssueSort,
@@ -415,7 +417,7 @@ private struct RelatedShape: Decodable {
     }
 }
 
-private struct MergeRequestsShape: Decodable {
+struct MergeRequestsShape: Decodable {
     var currentUser: User?
 
     struct User: Decodable {
@@ -504,7 +506,7 @@ private struct MergeRequestsShape: Decodable {
     }
 }
 
-private struct WorkItemsShape: Decodable {
+struct WorkItemsShape: Decodable {
     var committed: List?
     var others: List?
 
@@ -536,6 +538,16 @@ private struct WorkItemsShape: Decodable {
         var type: String?
         var state: String?
         var labels: Nodes<LabelNode>?
+        /// `nil` for a deleted user, and in the old tool's answers, as are the assignees
+        var author: Person?
+        var assignees: Nodes<Person>?
+
+        struct Person: Decodable {
+            var username: String
+            var name: String?
+
+            var person: MergeRequest.Person { MergeRequest.Person(username: username, name: name ?? "") }
+        }
 
         var workItem: WorkItem {
             WorkItem(
@@ -545,7 +557,9 @@ private struct WorkItemsShape: Decodable {
                 type: type.map(WorkItemType.init(rawValue:)) ?? .issue,
                 state: state.map(WorkItemState.init(rawValue:)) ?? .opened,
                 labels: (labels?.nodes ?? []).map(\.label),
-                updatedAt: updatedAt)
+                updatedAt: updatedAt,
+                author: author?.person,
+                assignees: assignees.map { $0.nodes.map(\.person) })
         }
     }
 }

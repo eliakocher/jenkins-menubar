@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// An offered update never changes it (the user, 2026-10-29). It reads `ProjectsPipelines` from the environment (``SwiftUICore/View/appEnvironment(_:router:)``).
 /// No tooltip: `.help` doesn't reach the status item, and the user decided the icon needs none, so the idle tooltip egg
-/// (EGG-05) isn't built. The butler wears a hat during a green streak or from December 24 to 26, and bows for the Konami
+/// (EGG-05) isn't built. The butler wears a hat during a green streak or all of December, and bows for the Konami
 /// code (the easter eggs, `docs/easter-eggs.md`).
 public struct StatusLabel: View {
     @Environment(ProjectsPipelines.self) private var pipelines

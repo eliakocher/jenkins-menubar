@@ -212,18 +212,20 @@ struct EggAlertTests {
         #expect(EggRules.hat(memory: memory, now: day, calendar: Self.calendar) == nil)
     }
 
-    private static let santaCases: [(Int, ButlerHat?)] = [(23, nil), (24, .santa), (25, .santa), (26, .santa), (27, nil)]
+    private static let santaCases: [(Int, Int, Int, ButlerHat?)] = [
+        (2026, 11, 30, nil), (2026, 12, 1, .santa), (2026, 12, 24, .santa), (2026, 12, 31, .santa), (2027, 1, 1, nil),
+    ]
 
-    @Test("EGG-04 the Santa hat from December 24 to 26 wins over the party hat", arguments: santaCases)
-    func santaHat(day: Int, expected: ButlerHat?) {
+    @Test("EGG-04 the Santa hat all of December wins over the party hat", arguments: santaCases)
+    func santaHat(year: Int, month: Int, day: Int, expected: ButlerHat?) {
         let memory = EggMemory(partyHat: false)
-        #expect(EggRules.hat(memory: memory, now: Self.date(2026, 12, day), calendar: Self.calendar) == expected)
+        #expect(EggRules.hat(memory: memory, now: Self.date(year, month, day), calendar: Self.calendar) == expected)
         let streak = EggMemory(partyHat: true)
-        #expect(EggRules.hat(memory: streak, now: Self.date(2026, 12, day), calendar: Self.calendar) == (expected ?? .party))
+        #expect(EggRules.hat(memory: streak, now: Self.date(year, month, day), calendar: Self.calendar) == (expected ?? .party))
         // Both butlers wear the Santa hat in an alert, with the sad one's tissue.
         var forAlert = EggMemory()
         let alerts = EggRules.annotate(
-            [Self.alert("MR-1", 7, .failure)], memory: &forAlert, now: Self.date(2026, 12, day), calendar: Self.calendar,
+            [Self.alert("MR-1", 7, .failure)], memory: &forAlert, now: Self.date(year, month, day), calendar: Self.calendar,
             enabled: true)
         #expect(alerts.first?.content.hat == expected)
     }

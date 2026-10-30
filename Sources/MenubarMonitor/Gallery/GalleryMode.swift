@@ -4,7 +4,7 @@ import MenubarCore
 import MenubarUI
 import SwiftUI
 
-/// `menubar-monitor --gallery`: one window per gallery entry, drawn from fixtures, for the design reviews'
+/// `MegaMonitor --gallery`: one window per gallery entry, drawn from fixtures, for the design reviews'
 /// screenshots. Debug builds only.
 ///
 /// The appearance is set on each window, and the SwiftUI environment values that can be set are set to match; nothing
@@ -18,7 +18,7 @@ import SwiftUI
 @MainActor
 enum GalleryMode {
     static let usage = """
-        usage: menubar-monitor --gallery [--only <screen or id>]... [--appearance light|dark|light-hc|dark-hc]
+        usage: MegaMonitor --gallery [--only <screen or id>]... [--appearance light|dark|light-hc|dark-hc]
                                          [--type-size <\(DynamicTypeSize.allCases.map { "\($0)" }.joined(separator: "|"))>]
                                          [--reduce-transparency] [--reduce-motion] [--activate] [--manifest <path>]
         """

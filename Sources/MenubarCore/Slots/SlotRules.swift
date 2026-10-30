@@ -146,20 +146,25 @@ public struct SlotRules: Hashable, Sendable {
     /// how many days before the code freeze a committed work item without a merge request is flagged and the slot alert
     /// comes
     public var warnDays: Int
+    /// how many upcoming slots show after the current one, 1 to 12
+    public var upcomingShown: Int
 
     public static let defaultReleaseWeekday = 1
     public static let defaultCodeFreeze = Anchor(nth: 4, weekday: 5)
     public static let defaultEarlyAccess = Anchor(nth: 2, weekday: 1)
     public static let defaultWarnDays = 3
+    public static let defaultUpcomingShown = 4
 
     public init(
         releaseWeekday: Int = defaultReleaseWeekday, codeFreeze: Anchor = defaultCodeFreeze,
-        earlyAccess: Anchor = defaultEarlyAccess, warnDays: Int = defaultWarnDays
+        earlyAccess: Anchor = defaultEarlyAccess, warnDays: Int = defaultWarnDays,
+        upcomingShown: Int = defaultUpcomingShown
     ) {
         self.releaseWeekday = releaseWeekday
         self.codeFreeze = codeFreeze
         self.earlyAccess = earlyAccess
         self.warnDays = warnDays
+        self.upcomingShown = upcomingShown
     }
 
     /// Reads the rules from the team values; an empty or invalid value reads as its default.
@@ -172,7 +177,8 @@ public struct SlotRules: Hashable, Sendable {
             earlyAccess: Anchor(
                 nth: Self.nth(of: team.slotEarlyAccessNth) ?? Self.defaultEarlyAccess.nth,
                 weekday: Self.weekday(of: team.slotEarlyAccessWeekday) ?? Self.defaultEarlyAccess.weekday),
-            warnDays: Self.days(of: team.slotWarnDays) ?? Self.defaultWarnDays)
+            warnDays: Self.days(of: team.slotWarnDays) ?? Self.defaultWarnDays,
+            upcomingShown: Self.nth(of: team.slotUpcomingShown) ?? Self.defaultUpcomingShown)
     }
 
     /// Reads a weekday: its English name or its first three letters, or a number from 1 (Monday) to 7.
@@ -199,7 +205,7 @@ public struct SlotRules: Hashable, Sendable {
         return days
     }
 
-    /// Reads which weekday before the release: a number from 1 to 12.
+    /// Reads which weekday before the release, or how many upcoming slots show: a number from 1 to 12.
     ///
     /// - Parameter text: the typed value
     /// - Returns: the number; `nil` for an empty or invalid text

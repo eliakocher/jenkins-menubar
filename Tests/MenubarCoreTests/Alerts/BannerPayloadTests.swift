@@ -101,9 +101,9 @@ struct BannerPayloadTests {
         let build = BuildID(job: "MR-1", number: 7)
         let failure = try Self.roundTrip(BannerPayload(content: try Self.content(.failure)))
         let console = Self.buildURL.appending(path: "console")
-        #expect(failure.intent(forAction: nil) == .open(Self.buildURL))
-        #expect(failure.intent(forAction: "openBuild") == .open(Self.buildURL))
-        #expect(failure.intent(forAction: "openMergeRequest") == .open(Self.mergeRequest))
+        #expect(failure.intent(forAction: nil) == .show(Self.buildURL))
+        #expect(failure.intent(forAction: "openBuild") == .show(Self.buildURL))
+        #expect(failure.intent(forAction: "openMergeRequest") == .show(Self.mergeRequest))
         #expect(failure.intent(forAction: "openConsole") == .open(console))
         #expect(failure.intent(forAction: "rebuild") == .rebuild(build))
         #expect(failure.intent(forAction: "hide") == .hide(build))
@@ -128,6 +128,8 @@ struct BannerPayloadTests {
             for action in ["openConsole", "hide", "rebuild"] {
                 #expect(payload.intent(forAction: action) == nil)
             }
+            // The preview's build is made up: its links open in the browser, never as an item under "Opened".
+            #expect(payload.intent(forAction: "openBuild") == .open(payload.links.build))
         }
     }
 

@@ -73,7 +73,7 @@ struct PipelinesListContent: View {
                     MainWindowProblemRows(model.problems, openSettings: actions.openSettings)
                 }
                 if let myBuilds = model.myBuilds {
-                    Section("My Builds") {
+                    Section {
                         switch myBuilds {
                         case .rows(let rows):
                             ForEach(rows, id: \.build.job) { row in
@@ -87,14 +87,18 @@ struct PipelinesListContent: View {
                                 .foregroundStyle(.secondary)
                                 .selectionDisabled()
                         }
+                    } header: {
+                        header("My Builds", group: .mine, subject: "My Builds")
                     }
                 }
                 if !model.watching.isEmpty {
-                    Section("Watching") {
+                    Section {
                         ForEach(model.watching) { item in
                             row(item)
                                 .tag(item.id)
                         }
+                    } header: {
+                        header("Watching", group: .watching, subject: "Watched Builds")
                     }
                 }
                 if model.allBuilds != nil || model.showHiddenTitle != nil {
@@ -109,8 +113,9 @@ struct PipelinesListContent: View {
                     menu(item)
                 }
             } primaryAction: { jobs in
+                // The build shows in the detail already; ⌥ opens its page in Jenkins (the user, 2026-10-30).
                 if let job = jobs.first, let url = item(job).flatMap(page) {
-                    actions.open(url)
+                    actions.follow(url)
                 }
             }
             .onKeyPress(.return) {
@@ -118,7 +123,7 @@ struct PipelinesListContent: View {
                 guard let selection, let url = item(selection).flatMap(page) else {
                     return .ignored
                 }
-                actions.open(url)
+                actions.follow(url)
                 return .handled
             }
             .overlay {
@@ -143,6 +148,16 @@ struct PipelinesListContent: View {
         }
     }
 
+    /// A section header with the bell that turns the group's notifications on or off (ALERT-08).
+    private func header(_ title: String, group: NotificationPolicy.Group, subject: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 0)
+            let isOn = model.notifications.isOn(group)
+            NotificationsBell(isOn: isOn, subject: subject) { actions.setGroupNotifications(group, !isOn) }
+        }
+    }
+
     @ViewBuilder
     private func row(_ item: PipelinesItem) -> some View {
         switch item {
@@ -153,7 +168,13 @@ struct PipelinesListContent: View {
                 Image(systemName: "clock")
                     .foregroundStyle(.secondary)
             } lines: {
-                Text(verbatim: watched.label)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(verbatim: watched.label)
+                    Spacer(minLength: 0)
+                    if waitingNotifications(watched).isMuted {
+                        MutedMark()
+                    }
+                }
                 Text(verbatim: "WAITING")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -206,8 +227,16 @@ struct PipelinesListContent: View {
                 Button("Copy Link") { actions.copy(url) }
                 Divider()
             }
+            JobNotificationsMenu(notifications: waitingNotifications(watched)) {
+                actions.setJobNotifications(watched.job, $0)
+            }
             Button("Stop Watching") { actions.stopWatching(watched.job) }
         }
+    }
+
+    /// Returns a waiting job's notifications; it is always one of Watching.
+    private func waitingNotifications(_ watched: WatchedJob) -> JobNotifications {
+        JobNotifications(model.notifications, job: watched.job, group: .watching)
     }
 
     /// Returns the row of a job, among the rows the list shows.
@@ -225,19 +254,9 @@ struct PipelinesListContent: View {
     }
 }
 
-/// Two rows standing in for My Builds before the first check (OD-01): placeholders, without shimmer.
+/// Rows of bars standing in for My Builds before the first check (OD-01).
 struct PipelinesPlaceholderRows: View {
     var body: some View {
-        ForEach(0..<2, id: \.self) { index in
-            PanelRowLayout {
-                Image(systemName: "circle.fill")
-            } lines: {
-                Text(verbatim: index == 0 ? "A placeholder for a title" : "Another placeholder title")
-                Text(verbatim: "!00 #0 · 0h00m elapsed")
-                    .font(.subheadline)
-            }
-            .selectionDisabled()
-        }
-        .redacted(reason: .placeholder)
+        SkeletonRows(count: 4, leading: .symbol(column: 16), spacing: 8)
     }
 }

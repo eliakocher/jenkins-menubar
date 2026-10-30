@@ -21,7 +21,7 @@ struct LegacyKeyValues: Sendable {
     }
 }
 
-/// How jenkins-menubar's files map to menubar-monitor's values (IMP-01).
+/// How jenkins-menubar's files map to MegaMonitor's values (IMP-01).
 enum LegacyFormats {
     /// Returns the preferences with the values of an old `config/settings` applied. A missing or invalid value leaves
     /// the current one, which at first start is the default (SET-01); `PreferencesStore` turns a value outside the new

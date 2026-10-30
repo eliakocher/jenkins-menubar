@@ -12,18 +12,39 @@ public struct ClaudePrompt: Hashable, Sendable {
     public var text: String
     /// the answer's JSON Schema: fixed app text; `nil` for a text answer
     public var schema: String?
+    /// the checkout Claude may read with Read, Grep and Glob, absolute; `nil` gives Claude no tool (AI-07)
+    public var readableFolder: String?
+    /// the developer's own question, when the prompt is a chat turn; a question that starts with a slash command goes
+    /// first with the user's setup (``startingWithCommand()``)
+    public var question: String?
 
-    public init(useCase: AIUseCase, instructions: String, text: String, schema: String? = nil) {
+    public init(useCase: AIUseCase, instructions: String, text: String, schema: String? = nil, readableFolder: String? = nil) {
         self.useCase = useCase
         self.instructions = instructions
         self.text = text
         self.schema = schema
+        self.readableFolder = readableFolder
     }
 
     /// Returns the prompt with its facts redacted.
     public func redacted(by redactor: SecretRedactor) -> ClaudePrompt {
         var prompt = self
         prompt.text = redactor.redact(text)
+        prompt.question = question.map(redactor.redact)
+        return prompt
+    }
+
+    /// Returns the prompt with a leading slash command first. Claude Code runs a command or skill only when the whole
+    /// message starts with it (`/name args`); the question comes last in a chat turn, after the facts. With a question
+    /// that starts with a command, the question goes first and the facts follow it, as the command's context.
+    public func startingWithCommand() -> ClaudePrompt {
+        guard let question, SlashCommandCatalog.leadingCommand(in: question) != nil,
+              let range = text.range(of: question, options: .backwards) else {
+            return self
+        }
+        var prompt = self
+        let facts = text.replacingCharacters(in: range, with: "(my message above: the command and its arguments)")
+        prompt.text = question + "\n\n---\nWhat my message above is about, for the command to use:\n\n" + facts
         return prompt
     }
 

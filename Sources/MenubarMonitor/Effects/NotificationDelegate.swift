@@ -13,16 +13,20 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
 
     private let rebuild: @MainActor @Sendable (BuildID) -> Void
     private let hide: @MainActor @Sendable (BuildID) -> Void
+    private let open: @MainActor @Sendable (URL, Bool) -> Void
 
     /// - Parameters:
     ///   - rebuild: starts a build's rebuild, once the app has launched
     ///   - hide: hides a build until its job's next build, once the app has launched
+    ///   - open: shows a link in the app (`true`) or opens it in the browser (`false`), once the app has launched
     init(
         rebuild: @escaping @MainActor @Sendable (BuildID) -> Void,
-        hide: @escaping @MainActor @Sendable (BuildID) -> Void
+        hide: @escaping @MainActor @Sendable (BuildID) -> Void,
+        open: @escaping @MainActor @Sendable (URL, Bool) -> Void
     ) {
         self.rebuild = rebuild
         self.hide = hide
+        self.open = open
     }
 
     func userNotificationCenter(
@@ -49,12 +53,13 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         guard let intent = payload.intent(forAction: clicked) else {
             return
         }
-        let (rebuild, hide) = (rebuild, hide)
+        let (rebuild, hide, open) = (rebuild, hide, open)
         await MainActor.run {
             switch intent {
             case .rebuild(let build): rebuild(build)
             case .hide(let build): hide(build)
-            case .open(let url): _ = NSWorkspace.shared.open(url)
+            case .show(let url): open(url, true)
+            case .open(let url): open(url, false)
             }
         }
     }

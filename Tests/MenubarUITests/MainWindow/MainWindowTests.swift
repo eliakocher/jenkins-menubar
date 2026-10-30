@@ -26,6 +26,26 @@ struct MainWindowTests {
         #expect(router.surfaces([], shownBy: MainWindowSurfaces.host) == PanelView.surfaces)
     }
 
+    @Test(
+        "WIN-04 reload loads only the shown section, and the selected row's detail only with a selection",
+        arguments: [
+            (MainWindowSection.pipelines, false, [MainWindowReload.Step.builds]),
+            (.mergeRequests, false, [.mergeRequestList]),
+            (.mergeRequests, true, [.mergeRequestList, .mergeRequestDetails]),
+            (.workItems, false, [.workItemList]),
+            (.workItems, true, [.workItemList, .workItemDetails]),
+            (.slots, true, [.slots]),
+            (.workspaces, true, [.workspaces]),
+            (.activity, true, []),
+        ] as [(MainWindowSection, Bool, [MainWindowReload.Step])])
+    func reloadsTheShownSection(section: MainWindowSection, selected: Bool, steps: [MainWindowReload.Step]) {
+        let selection = selected
+            ? MainWindowSelection(
+                pipelines: "job", mergeRequests: URL(string: "https://gitlab.example/mr/1"), workItems: "item")
+            : MainWindowSelection()
+        #expect(MainWindowReload.steps(for: section, selection: selection) == steps)
+    }
+
     @Test("OD-02 sidebar badges keep MRs and work items loading while the window is on screen", arguments: MainWindowSection.allCases)
     func badgesKeepLoading(section: MainWindowSection) {
         #expect(MainWindowSurfaces.shown(section: section, isOnScreen: true) == [.mergeRequests, .workItems])

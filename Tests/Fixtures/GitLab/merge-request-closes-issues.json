@@ -1,0 +1,11 @@
+[
+  {
+    "id": 4101,
+    "iid": 19202,
+    "project_id": 7,
+    "title": "Dialog bot answers twice",
+    "state": "opened",
+    "web_url": "https://gitlab.example.com/group/project/-/issues/19202",
+    "author": {"id": 3, "username": "slee", "name": "Sam Lee"}
+  }
+]

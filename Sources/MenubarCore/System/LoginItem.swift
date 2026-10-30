@@ -114,6 +114,31 @@ public struct LaunchAtLogin {
         return after
     }
 
+    /// the file install.sh leaves in the Application Support folder when the app moved to a new bundle path while open at
+    /// login was on (the rename to MegaMonitor.app): macOS still holds the old path, and the new app registers again
+    public static let refreshMarkerName = "refresh-login-item"
+
+    /// Registers the login item again for the app's current place, when install.sh left the marker, and removes the marker.
+    ///
+    /// The marker is removed first, so a failure is tried once and not at every launch. The registration is dropped and
+    /// made again because the status of a login item that macOS holds under the old bundle path already reads as on.
+    ///
+    /// - Parameter folder: the Application Support folder the marker is in
+    public func refreshRegistrationIfMarked(in folder: URL) async {
+        let marker = folder.appending(path: Self.refreshMarkerName, directoryHint: .notDirectory)
+        guard FileManager.default.fileExists(atPath: marker.path(percentEncoded: false)) else {
+            return
+        }
+        try? FileManager.default.removeItem(at: marker)
+        try? item.unregister()
+        do {
+            try item.register()
+            await log?.log(.info, .settings, "\(Self.logKey): registered again for the app's new place")
+        } catch {
+            await log?.log(.warning, .settings, LoginItemError(turningOn: true, reason: error.localizedDescription).message)
+        }
+    }
+
     /// Opens System Settings → General → Login Items.
     public func openSystemSettings() {
         item.openSystemSettings()

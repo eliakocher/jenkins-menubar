@@ -202,11 +202,13 @@ public final class DescriptionsStore {
     /// Without a GitLab token or the team values it asks nothing and fails quietly: the detail doesn't show then.
     /// Cancelling the calling task doesn't cancel the request.
     ///
-    /// - Parameter source: the selected item
-    public func load(_ source: DescriptionSource) async {
+    /// - Parameters:
+    ///   - source: the selected item
+    ///   - force: loads again although the text belongs to the item's last update, as the window's Reload does
+    public func load(_ source: DescriptionSource, force: Bool = false) async {
         let key = source.reference
         var entry = entries[key] ?? Entry()
-        if entry.isLoading || description(of: source).isCurrent {
+        if entry.isLoading || (!force && description(of: source).isCurrent) {
             return
         }
         guard let operation = GitLabOperation.description(of: source) else {

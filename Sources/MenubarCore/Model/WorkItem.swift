@@ -15,6 +15,18 @@ public struct WorkItem: Codable, Hashable, Identifiable, Sendable {
     /// the labels in GitLab's order; their titles are plain text, never interpreted (WI-04)
     public var labels: [Label]
     public var updatedAt: Date
+    /// who opened it; `nil` for a deleted user, and in a cache written before the field was asked for
+    public var author: MergeRequest.Person?
+    /// who it is assigned to, in GitLab's order; `nil` in a cache written before the field was asked for
+    public var assignees: [MergeRequest.Person]?
+    /// the issue's weight; `nil` when it has none, and from every query but the slots' (SLOT-06)
+    public var weight: Int?
+    /// the epic it belongs to; `nil` without one, and from every query but the slots' (SLOT-06)
+    public var epic: WorkItemEpic?
+    /// whether an open item blocks it, by GitLab's links; `nil` from every query but the slots' (SLOT-06)
+    public var isBlocked: Bool?
+    /// the due date as GitLab sends it, `2026-11-02`; `nil` without one (SLOT-06)
+    public var dueDate: String?
 
     public init(
         reference: String,
@@ -23,7 +35,13 @@ public struct WorkItem: Codable, Hashable, Identifiable, Sendable {
         type: WorkItemType = .issue,
         state: WorkItemState = .opened,
         labels: [Label] = [],
-        updatedAt: Date
+        updatedAt: Date,
+        author: MergeRequest.Person? = nil,
+        assignees: [MergeRequest.Person]? = nil,
+        weight: Int? = nil,
+        epic: WorkItemEpic? = nil,
+        isBlocked: Bool? = nil,
+        dueDate: String? = nil
     ) {
         self.reference = reference
         self.title = title
@@ -32,6 +50,12 @@ public struct WorkItem: Codable, Hashable, Identifiable, Sendable {
         self.state = state
         self.labels = labels
         self.updatedAt = updatedAt
+        self.author = author
+        self.assignees = assignees
+        self.weight = weight
+        self.epic = epic
+        self.isBlocked = isBlocked
+        self.dueDate = dueDate
     }
 
     public var id: String { reference }
@@ -85,6 +109,26 @@ public struct WorkItem: Codable, Hashable, Identifiable, Sendable {
         guard !prefix.isEmpty, let label = labels.first(where: { $0.title.hasPrefix(prefix) }) else { return nil }
         return String(label.title.dropFirst(prefix.count))
     }
+}
+
+/// The epic of a slot's issue, as the slots' query takes it from `issue.epic` (SLOT-06).
+public struct WorkItemEpic: Codable, Hashable, Identifiable, Sendable {
+    /// the full reference, like `group&3`
+    public var reference: String
+    public var title: String
+    public var webURL: URL
+    public var state: WorkItemState
+    public var labels: [Label]
+
+    public init(reference: String, title: String, webURL: URL, state: WorkItemState = .opened, labels: [Label] = []) {
+        self.reference = reference
+        self.title = title
+        self.webURL = webURL
+        self.state = state
+        self.labels = labels
+    }
+
+    public var id: String { reference }
 }
 
 /// GitLab's `IssueType`. Others are kept as they come.

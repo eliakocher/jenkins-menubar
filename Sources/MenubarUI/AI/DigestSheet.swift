@@ -43,45 +43,48 @@ struct DigestSheet: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if state == .idle {
-                        Text(
-                            "Claude writes a few lines from your merge requests, the reviews waiting for you, the red "
-                                + "builds and your work items by slot.")
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    AIAnswerRows(
-                        state: state, send: { Task { await model.ai.send(.digest) } },
-                        dismiss: { model.ai.dismiss(.digest) }
-                    ) { answer in
-                        if let text = answer.text {
-                            Text(verbatim: text)
-                                .textSelection(.enabled)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if state == .idle {
+                            Text(
+                                "Claude writes a few lines from your merge requests, the reviews waiting for you, the red "
+                                    + "builds and your work items by slot.")
+                                .foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
-                                .lineSpacing(3)
+                        }
+                        AIAnswerRows(
+                            state: state, subject: .digest, send: { Task { await model.ai.send(.digest) } },
+                            dismiss: { model.ai.dismiss(.digest) }
+                        ) { answer in
+                            if let text = answer.text {
+                                CollapsibleMarkdown(document: MarkdownDocument(parsing: text, base: nil), startsExpanded: false)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // A new question or answer scrolls into view.
+                .onChange(of: model.ai.turns(of: .digest).map(\.status)) {
+                    withAnimation(.snappy) { proxy.scrollTo(ConversationThread.endID, anchor: .bottom) }
+                }
             }
             HStack {
-                Text(verbatim: model.ai.monthLine)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
                 Spacer()
                 Button("Done") { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(state == .idle ? "Write Digest" : "Write Again") {
-                    Task { await model.ai.writeDigest() }
+                ClaudeActionButton(
+                    title: state == .idle ? "Write Digest" : "Write Again", prominent: true,
+                    help: "Write the digest from your merge requests, reviews, builds and work items.",
+                    isDisabled: state.isBusy || isReviewing(state)
+                ) { picked in
+                    Task { await model.ai.writeDigest(model: picked) }
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(state.isBusy || isReviewing(state))
             }
         }
         .padding(20)
-        .frame(width: 520, height: 420)
+        .frame(width: 560, height: 540)
     }
 
     private func isReviewing(_ state: AIAnswerState) -> Bool {

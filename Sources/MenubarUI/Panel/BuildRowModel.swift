@@ -45,6 +45,8 @@ public struct BuildRowModel: Hashable, Sendable, Identifiable {
     public var offersRebuild: Bool
     /// Jenkins's Build with Parameters page of the job, which "Rebuild with Changes…" opens (PIPE-09)
     public var rebuildWithChanges: URL?
+    /// the job's notifications, set by ``PanelData/Jenkins/row(_:now:jobURL:)`` (ALERT-08)
+    var notifications = JobNotifications()
 
     /// the build's page, which a click on the row opens
     public var buildPage: BuildLink? {

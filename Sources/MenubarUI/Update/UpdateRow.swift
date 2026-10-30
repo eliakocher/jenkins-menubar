@@ -23,7 +23,7 @@ struct UpdateRow: View {
                 Text(UpdateText.offer)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(PanelRowButtonStyle(highlightID: "footer:update"))
+            .buttonStyle(PanelRowButtonStyle())
             .help(UpdateText.help)
         case .rebuilding(let progress):
             UpdateProgressRow(title: UpdateText.rebuilding, fraction: progress.fraction, step: progress.step)

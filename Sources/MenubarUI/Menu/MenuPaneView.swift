@@ -43,7 +43,7 @@ public struct MenuPaneView: View {
         }
         .focused($isFocused)
         .onKeyPress(keys: Self.handledKeys) { press in
-            handle(press.key)
+            handle(press.key, option: press.modifiers.contains(.option))
         }
         .onAppear {
             controller.flyout = { [model] area in MenuFlyout(PanelView.data(model, now: .now), area: area) }
@@ -110,7 +110,7 @@ public struct MenuPaneView: View {
         }
     }
 
-    private func handle(_ key: KeyEquivalent) -> SwiftUI.KeyPress.Result {
+    private func handle(_ key: KeyEquivalent, option: Bool = false) -> SwiftUI.KeyPress.Result {
         let eggs = model.pipelines.preferences.easterEggs
         if let konami = Self.konamiKey(key) {
             model.eggs.key(konami, enabled: eggs, reduceMotion: reduceMotion)
@@ -136,7 +136,7 @@ public struct MenuPaneView: View {
         case .activateFlyout(let index):
             if let area = controller.navigation.openArea, let flyout = controller.flyout(area),
                flyout.items.indices.contains(index) {
-                perform(flyout.items[index], in: flyout)
+                perform(flyout.items[index], in: flyout, option: option)
             }
         case .closePane:
             dismiss()
@@ -144,13 +144,16 @@ public struct MenuPaneView: View {
         return .handled
     }
 
-    /// Does what a flyout row does: an entry opens in Jenkins or GitLab, a command does its thing.
-    private func perform(_ item: MenuFlyout.Item, in flyout: MenuFlyout) {
+    /// Does what a flyout row does: an entry shows in the main window, or with ⌥ opens in Jenkins or GitLab; a command
+    /// does its thing.
+    private func perform(_ item: MenuFlyout.Item, in flyout: MenuFlyout, option: Bool) {
         let actions = panelActions
         switch item {
         case .entry(let id):
-            if let url = flyout.entry(id)?.url {
-                actions.open(url)
+            switch flyout.entry(id)?.destination(option: option) {
+            case .window(let selection)?: showInWindow(selection)
+            case .browser(let url)?: actions.open(url)
+            case nil: break
             }
         case .command(.showInWindow):
             actions.openSection(flyout.area)
@@ -172,7 +175,7 @@ public struct MenuPaneView: View {
         case .mergeRequest(let id): router.selection.mergeRequests = id
         case .workItem(let id): router.selection.workItems = id
         }
-        router.open(selection.section)
+        router.reveal(section: selection.section)
         dismiss()
     }
 
@@ -184,7 +187,7 @@ public struct MenuPaneView: View {
             inside: { controller.pointerInFlyout($0) },
             activate: { item in
                 if let area = controller.navigation.openArea, let flyout = controller.flyout(area) {
-                    perform(item, in: flyout)
+                    perform(item, in: flyout, option: NSEvent.modifierFlags.contains(.option))
                 }
             },
             panel: panelActions,
@@ -201,8 +204,9 @@ public struct MenuPaneView: View {
         let dismiss = dismiss
         let openURL = openURL
         return PanelActions(
+            // The real browser: a page opened through macOS comes back to this app while it is the default browser.
             open: { url in
-                openURL(url)
+                router.browse(url, fallback: openURL)
                 dismiss()
             },
             openSettings: { pane in
@@ -239,9 +243,16 @@ public struct MenuPaneView: View {
                 dismiss()
             },
             newWorkItem: NewWorkItemLauncher.action(model: model) { url in
-                openURL(url)
+                router.browse(url, fallback: openURL)
                 dismiss()
-            })
+            },
+            // A build's merge request in its context menu shows in the main window, under "Opened" when it isn't listed.
+            followLink: { url in
+                router.follow(url, model: model, fallback: openURL)
+                dismiss()
+            },
+            setJobNotifications: { model.setNotifications($1, forJob: $0) },
+            setGroupNotifications: { model.setNotifications(for: $0, isOn: $1) })
     }
 }
 

@@ -206,15 +206,15 @@ public enum PipelineRules {
         var links: [BuildLink] = []
         if let gitLab = build.gitLabURL {
             if build.mergeRequestIID != nil {
-                links.append(BuildLink(kind: .mergeRequest, title: "Open Merge Request \(build.label)", url: gitLab))
+                links.append(BuildLink(kind: .mergeRequest, title: "Show Merge Request \(build.label)", url: gitLab))
             } else {
                 links.append(BuildLink(kind: .branch, title: "Open Branch \(build.label) in GitLab", url: gitLab))
             }
         }
         let page = AlertContent.buildURL(job: build.job, number: build.number, jobURL: jobURL)
-        links.append(BuildLink(kind: .build, title: "Open Build #\(build.number)", url: page))
-        links.append(BuildLink(kind: .console, title: "Console Output", url: page.appending(path: "console")))
-        links.append(BuildLink(kind: .testResults, title: "Test Results", url: page.appending(path: "testReport")))
+        links.append(BuildLink(kind: .build, title: "Open Build #\(build.number) in Jenkins", url: page))
+        links.append(BuildLink(kind: .console, title: "Console Output in Jenkins", url: page.appending(path: "console")))
+        links.append(BuildLink(kind: .testResults, title: "Test Results in Jenkins", url: page.appending(path: "testReport")))
         return links
     }
 

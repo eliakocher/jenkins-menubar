@@ -1,9 +1,9 @@
 import MenubarCore
 import SwiftUI
 
-/// The build detail's Failed Tests section (PIPE-03): each failed test as its class and method with the start of its
-/// error message, cut after 10 tests with "Show All (N)". It loads when the build is selected; while it loads, a small
-/// spinner; when it fails, a quiet line with "Try Again". The "Test Results" link of Links opens Jenkins' own page.
+/// The build detail's Failed Tests card (PIPE-03): each failed test as its class and method with the start of its
+/// error message, cut after 10 tests with "Show All (N)". It loads when the build is selected; while it loads,
+/// skeleton rows; when it fails, a quiet line with "Try Again". The "Test Results" link of the ⋯ menu opens Jenkins' own page.
 ///
 /// It takes the tests from `AppModel.failedTests`, or from the gallery's ``FailedTestsFixtures``, so the detail inserts
 /// it as one view: `FailedTestsSection(build: id)`.
@@ -19,13 +19,11 @@ struct FailedTestsSection: View {
 
     var body: some View {
         let state = fixtures?.state(of: build) ?? model?.failedTests.state(of: build) ?? .loading
-        Section {
+        DetailCard("Failed Tests", symbol: "xmark.octagon") {
             switch state {
             case .loading:
-                // A small spinner in the part still loading, never over the pane (OD-01).
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Three tests' worth of lines, in the card's own chrome.
+                SkeletonRows(count: 3, leading: .symbol(column: 16))
             case .failed:
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("The failed tests couldn't be loaded")
@@ -40,8 +38,10 @@ struct FailedTestsSection: View {
                     .foregroundStyle(.secondary)
             case .loaded(let tests):
                 let shown = showsAll || fixtures?.expanded == true ? tests : Array(tests.prefix(Self.cutAfter))
-                ForEach(Array(shown.enumerated()), id: \.offset) { _, test in
-                    FailedTestRow(test: test)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(shown.enumerated()), id: \.offset) { _, test in
+                        FailedTestRow(test: test)
+                    }
                 }
                 if tests.count > Self.cutAfter {
                     Button(showsAll ? "Show Fewer" : "Show All (\(String(tests.count)))") {
@@ -50,13 +50,15 @@ struct FailedTestsSection: View {
                     .buttonStyle(.link)
                 }
             }
-        } header: {
-            Text("Failed Tests")
-                // Once per build shown, not once per state: a failure asks again at the next selection or Try Again.
-                .task(id: build) { await load() }
-                // Another build starts cut again.
-                .onChange(of: build) { showsAll = false }
+        } accessory: {
+            if case .loaded(let tests) = state, !tests.isEmpty {
+                CountBadge(text: "\(String(tests.count)) failed", tint: MergeRequestStatus.Color.red.swiftUI)
+            }
         }
+        // Once per build shown, not once per state: a failure asks again at the next selection or Try Again.
+        .task(id: build) { await load() }
+        // Another build starts cut again.
+        .onChange(of: build) { showsAll = false }
     }
 
     private func load() async {
@@ -67,23 +69,23 @@ struct FailedTestsSection: View {
     }
 }
 
-/// One failed test: a symbol, the class dimmed before the method, and the error message under them.
+/// One failed test: a symbol, the class dimmed before the method, and the error message under them; it lights up on
+/// hover like the merge request detail's rows.
 private struct FailedTestRow: View {
     let test: FailedTest
+    @ViewState private var isHovered = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: BuildState.failed.symbol)
-                .foregroundStyle(BuildState.failed.color.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
+                .foregroundStyle(MergeRequestStatus.Color.red.swiftUI)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     title
                     Spacer(minLength: 8)
                     if test.status == .regression {
                         // Passing in the build before: the likely cause of this build's result.
-                        Text("regression")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                        CountBadge(text: "regression", tint: MergeRequestStatus.Color.orange.swiftUI)
                             .fixedSize()
                     }
                 }
@@ -96,6 +98,10 @@ private struct FailedTestRow: View {
                 }
             }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .background(.fill.quaternary.opacity(isHovered ? 1 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .onHover { isHovered = $0 }
     }
 
     /// "CartServiceTest.addsAnItem", the class secondary

@@ -1,0 +1,38 @@
+{
+  "data": {
+    "namespace": {
+      "workItem": {
+        "widgets": [
+          {},
+          {
+            "discussions": {
+              "pageInfo": { "hasNextPage": true },
+              "nodes": [
+                { "id": "gid://gitlab/Discussion/w2",
+                  "notes": { "pageInfo": { "hasNextPage": false }, "nodes": [
+                    { "id": "gid://gitlab/Note/902", "url": "https://gitlab.example.com/group/project/-/issues/31#note_902", "body": "Is there a design for the **high contrast** case?",
+                      "createdAt": "2026-10-29T08:00:00Z", "system": false, "author": { "username": "cnovak", "name": null } }
+                  ] } },
+                { "id": "gid://gitlab/Discussion/w1",
+                  "notes": { "pageInfo": { "hasNextPage": false }, "nodes": [
+                    { "id": "gid://gitlab/Note/901", "url": null, "body": "Do we need the dark variants in the list too?",
+                      "createdAt": "2026-10-28T08:00:00.123Z", "system": false, "author": { "username": "slee", "name": "Sam Lee" } },
+                    { "id": "gid://gitlab/Note/903", "url": null, "body": "added ~frontend label",
+                      "createdAt": "2026-10-28T08:30:00Z", "system": true, "author": { "username": "slee", "name": "Sam Lee" } },
+                    { "id": "gid://gitlab/Note/904", "url": null, "body": "Both, I think.",
+                      "createdAt": "2026-10-28T09:00:00Z", "system": false, "author": { "username": "akim", "name": "Alex Kim" } },
+                    { "id": "gid://gitlab/Note/905", "url": null, "body": "Agreed.",
+                      "createdAt": "2026-10-28T09:30:00Z", "system": false, "author": null }
+                  ] } },
+                { "id": "gid://gitlab/Discussion/w3",
+                  "notes": { "pageInfo": { "hasNextPage": false }, "nodes": [
+                    { "id": "gid://gitlab/Note/906", "url": null, "body": "marked this as related", "createdAt": "2026-10-28T07:00:00Z", "system": true, "author": null }
+                  ] } }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

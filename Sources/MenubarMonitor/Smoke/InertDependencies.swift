@@ -76,3 +76,21 @@ final class InertHotkeys: HotkeyRegistrar {
 
     func unregister() {}
 }
+
+/// A default browser that lives in memory, so a throwaway or smoke run never changes the Mac's: the router's switch
+/// works for whoever looks at the app, and links open nowhere.
+@MainActor
+final class InertDefaultBrowser: DefaultBrowserSystem {
+    private static let safari = BrowserApp(url: URL(filePath: "/Applications/Safari.app"), bundleID: "com.apple.Safari", name: "Safari")
+    private static let this = BrowserApp(
+        url: URL(filePath: "/Applications/\(AppIdentity.bundleFileName)"), bundleID: AppIdentity.bundleID, name: AppIdentity.displayName)
+
+    private var current: BrowserApp? = InertDefaultBrowser.safari
+
+    var thisApp: BrowserApp? { Self.this }
+    func defaultBrowser() -> BrowserApp? { current }
+    func app(bundleID: String) -> BrowserApp? { bundleID == Self.safari.bundleID ? Self.safari : nil }
+    func exists(_ app: BrowserApp) -> Bool { true }
+    func setDefaultBrowser(_ app: BrowserApp) async throws { current = app }
+    func open(_ url: URL, with app: BrowserApp) async {}
+}

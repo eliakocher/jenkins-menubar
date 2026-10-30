@@ -279,8 +279,8 @@ struct WelcomeContent: View {
                 status: data.login.status, error: data.login.error, openSystemSettings: actions.openLoginItemsSettings)
         } footer: {
             SettingsFooter(
-                "Open at login starts menubar-monitor when you log in. Checks and alerts go on while the menu bar icon "
-                    + "is hidden; open menubar-monitor again to get to its window.")
+                "Open at login starts MegaMonitor when you log in. Checks and alerts go on while the menu bar icon "
+                    + "is hidden; open MegaMonitor again to get to its window.")
         }
     }
 

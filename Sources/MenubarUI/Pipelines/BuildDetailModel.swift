@@ -25,7 +25,20 @@ struct BuildDetailModel: Hashable, Sendable {
         var word: String
         /// "0h04m"; `nil` for a stage that didn't run
         var duration: String?
+        /// "4m" for the dense list and the tooltips; `nil` for a stage that didn't run
+        var shortDuration: String?
+        /// the duration in seconds, which sizes the stage's segment
+        var seconds: TimeInterval
+        /// how the stage ended, which colors its segment
+        var kind: StageKind
         var id: Int { index }
+        /// whether the stage is one of the few the detail lists: failed, unstable, running, aborted or waiting
+        var needsAttention: Bool { kind != .success && kind != .notRun }
+    }
+
+    /// What a stage's status means for the strip and the short list.
+    enum StageKind: Hashable, Sendable {
+        case success, failed, unstable, running, aborted, notRun, other
     }
 
     /// the build, or the waiting job
@@ -37,7 +50,7 @@ struct BuildDetailModel: Hashable, Sendable {
     var title: String
     /// "!16 #3" or "by Sam Lee · !14 #3", or "WAITING"
     var reference: String
-    /// "Open Build #3", or "Open Job in Jenkins" for a waiting job; `nil` without the job URL in Team
+    /// "Open Build #3 in Jenkins", or "Open Job in Jenkins" for a waiting job; `nil` without the job URL in Team
     var primary: BuildLink?
     /// whether "Hide Until the Next Build" shows: for builds only
     var canHide: Bool
@@ -69,6 +82,24 @@ struct BuildDetailModel: Hashable, Sendable {
     var flakyCheck: Build?
     /// the links except the build's own (PIPE-03)
     var links: [BuildLink]
+    /// the merge request of an `MR-<n>` job, for the "!12477" chip (MR-12); set by the view
+    var mergeRequest: LinkedMergeRequest?
+    /// the work items of that merge request, for the "#19202" chip (MR-12); set by the view
+    var workItems: [LinkedWorkItem] = []
+    /// the state's word for the badge: "Failed", "Running", "Waiting"
+    var badge: String
+    /// "12m" for the chip; `nil` while it runs
+    var durationText: String?
+    /// "14h ago"; `nil` while it runs
+    var finishedText: String?
+    /// "10:12", or with the date when it isn't today; `nil` for a waiting job
+    var startedText: String?
+    /// the failed test counts, when the build has them
+    var tests: TestCounts?
+    /// the failed stages' names, which the chip shows when the stages themselves aren't known
+    var failedStageNames: [String]
+    /// the job's notifications, for the ⋯ menu's "Notifications for This Job" (ALERT-08)
+    var notifications = JobNotifications()
 
     /// the Stages notes (`pipelines.md`, Stage notes)
     enum StageNote {
@@ -88,8 +119,10 @@ struct BuildDetailModel: Hashable, Sendable {
         switch data.item(job) {
         case .build(let row)?:
             self.init(row: row, now: data.panel.now)
+            notifications = row.notifications
         case .waiting(let watched)?:
             self.init(waiting: watched, jobURL: data.jobURL)
+            notifications = JobNotifications(data.panel.jenkins.notifications, job: watched.job, group: .watching)
         case nil:
             return nil
         }
@@ -100,6 +133,12 @@ struct BuildDetailModel: Hashable, Sendable {
         symbol = "clock"
         color = .secondary
         title = watched.label
+        badge = "Waiting"
+        durationText = nil
+        finishedText = nil
+        startedText = nil
+        tests = nil
+        failedStageNames = []
         reference = "WAITING"
         primary = jobURL.map {
             BuildLink(kind: .build, title: "Open Job in Jenkins", url: PipelineRules.jobURL(job: watched.job, jobURL: $0))
@@ -121,14 +160,14 @@ struct BuildDetailModel: Hashable, Sendable {
         links = []
     }
 
-    private init(row: BuildRowModel, now: Date) {
+    init(row: BuildRowModel, now: Date) {
         let build = row.build
         item = .build(row)
         symbol = row.state.symbol
         color = row.state.color
         title = row.title
         reference = ([row.byline].compactMap { $0 } + [build.id.label]).joined(separator: " · ")
-        primary = row.buildPage.map { BuildLink(kind: .build, title: "Open Build #\(String(build.number))", url: $0.url) }
+        primary = row.buildPage.map { BuildLink(kind: .build, title: "Open Build #\(String(build.number)) in Jenkins", url: $0.url) }
         canHide = true
         canStopWatching = build.kind == .watched
         canRebuild = row.offersRebuild
@@ -141,8 +180,14 @@ struct BuildDetailModel: Hashable, Sendable {
         flakyCheck = nil
 
         let started = Fact(label: "Started", value: Self.time(build.startedAt, now: now))
+        startedText = started.value
+        tests = build.testCounts
+        failedStageNames = build.failedStages ?? []
+        badge = Self.badgeWord(row.state)
         switch build.phase {
         case .running:
+            durationText = nil
+            finishedText = nil
             progress = row.progress
             timing = row.timing
             facts = [started]
@@ -151,6 +196,8 @@ struct BuildDetailModel: Hashable, Sendable {
         case .finished(let result, let duration):
             progress = nil
             timing = nil
+            durationText = Self.shortDuration(duration)
+            finishedText = "\(Formatting.age(since: build.finishedAt ?? now, now: now)) ago"
             var facts = [
                 Fact(label: "Result", value: result.rawValue, state: row.state),
                 Fact(label: "Duration", value: Formatting.duration(duration)),
@@ -191,8 +238,43 @@ struct BuildDetailModel: Hashable, Sendable {
             let ran = stage.status != .notExecuted
             return StageRow(
                 index: index, name: stage.name, symbol: look.symbol, color: look.color, word: look.word,
-                duration: ran ? Formatting.duration(stage.duration) : nil)
+                duration: ran ? Formatting.duration(stage.duration) : nil,
+                shortDuration: ran ? Self.shortDuration(stage.duration) : nil, seconds: ran ? max(0, stage.duration) : 0,
+                kind: kind(of: stage.status))
         }
+    }
+
+    private static func kind(of status: Stage.Status) -> StageKind {
+        switch status {
+        case .success: .success
+        case .failed: .failed
+        case .unstable: .unstable
+        case .inProgress: .running
+        case .aborted: .aborted
+        case .notExecuted: .notRun
+        default: .other
+        }
+    }
+
+    /// The badge's word of a state.
+    private static func badgeWord(_ state: BuildState) -> String {
+        switch state {
+        case .running: "Running"
+        case .failed: "Failed"
+        case .unstable: "Unstable"
+        case .successful: "Successful"
+        case .aborted: "Aborted"
+        case .other(let result): result.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    /// Returns a duration for the dense places: "45s", "33m" and "1h05m"; the rows' "0h33m" stays in ``Formatting``.
+    static func shortDuration(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds))
+        if total < 60 { return "\(total)s" }
+        if total < 3600 { return "\(total / 60)m" }
+        let minutes = total % 3600 / 60
+        return "\(total / 3600)h\(minutes < 10 ? "0" : "")\(minutes)m"
     }
 
     /// Returns a stage status's symbol, color and word, in the vocabulary of `status-icon.md`.

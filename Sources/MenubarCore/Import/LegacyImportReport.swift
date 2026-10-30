@@ -132,7 +132,7 @@ public struct TokenImport: Codable, Hashable, Sendable {
 public enum TokenOutcome: Codable, Hashable, Sendable {
     /// stored under menubar-monitor; it was found here
     case imported(LegacyToken.Source)
-    /// menubar-monitor already had one, which was kept
+    /// MegaMonitor already had one, which was kept
     case kept
     /// none was found (``LegacyToken/Source/missing``), or `~/.zshrc` computes it (``LegacyToken/Source/zshrcComputed``)
     case notFound(LegacyToken.Source)

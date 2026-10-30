@@ -59,7 +59,7 @@ struct TeamStoreTests {
             try store.importTeamFile(from: file)
         }
         #expect(TeamFileError.newerFormat(2).message
-            == "That team file is from a newer menubar-monitor (format 2): update the app first")
+            == "That team file is from a newer MegaMonitor (format 2): update the app first")
         #expect(store.projects().isEmpty)
         #expect(!folder.contents().contains { $0.hasPrefix("support/") })
     }

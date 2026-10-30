@@ -111,7 +111,7 @@ struct AlertContentTests {
         let content = try Self.content(.success)
         #expect(content.defaultAction == .openMergeRequest)
         #expect(content.buttons == [.openMergeRequest, .openBuild, .dismiss])
-        #expect(content.buttons.map(\.title) == ["Open MR", "Open Build", "Dismiss"])
+        #expect(content.buttons.map(\.title) == ["Show MR", "Show Build", "Dismiss"])
         #expect(content.url(for: content.defaultAction) == Self.mergeRequest)
     }
 
@@ -121,7 +121,7 @@ struct AlertContentTests {
         #expect(failure.defaultAction == .openBuild)
         // Rebuild comes next to Open Build for a failed, unstable or aborted build (PIPE-09).
         #expect(failure.buttons == [.openBuild, .rebuild, .openMergeRequest, .dismiss])
-        #expect(failure.buttons.map(\.title) == ["Open Build", "Rebuild", "Open MR", "Dismiss"])
+        #expect(failure.buttons.map(\.title) == ["Show Build", "Rebuild", "Show MR", "Dismiss"])
         #expect(failure.rebuild == BuildID(job: "MR-1", number: 7))
         #expect(failure.url(for: .openBuild) == failure.links.build)
 
@@ -149,7 +149,7 @@ struct AlertContentTests {
         #expect(withoutMergeRequest.bannerActions == [.openBuild, .openConsole, .hide])
     }
 
-    /// What a live alert offers, by result and by kind of build: the window's buttons, its More menu and the banner's
+    /// What a live alert offers, by result and by kind of build: the window's buttons, its context menu and the banner's
     /// actions. Open Console and Hide are there for every result, Rebuild only for the results that failed.
     @Test(
         "ALERT-03 the actions of an alert depend on the result and the kind of build",

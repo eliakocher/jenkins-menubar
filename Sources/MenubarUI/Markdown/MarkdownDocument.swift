@@ -29,6 +29,20 @@ struct MarkdownDocument: Hashable, Sendable {
         self.blocks = blocks
     }
 
+    /// The document without its first block when that is a heading with the text of `title`, compared without regard to
+    /// case and surrounding space: a description that starts with "Description" under a card titled "Description".
+    func droppingLeadingHeading(titled title: String) -> MarkdownDocument {
+        guard case .heading(_, let text)? = blocks.first else {
+            return self
+        }
+        let heading = String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard heading.compare(title.trimmingCharacters(in: .whitespacesAndNewlines), options: .caseInsensitive) == .orderedSame
+        else {
+            return self
+        }
+        return MarkdownDocument(blocks: Array(blocks.dropFirst()))
+    }
+
     /// Returns whether a URL may open in the browser: `http` and `https` with a host.
     static func isWebURL(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {

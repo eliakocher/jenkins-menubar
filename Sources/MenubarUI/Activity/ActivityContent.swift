@@ -90,11 +90,14 @@ struct ActivityContent<Inspector: View>: View {
     private var list: some View {
         ScrollViewReader { proxy in
             List(selection: $selection) {
+                if !data.isLoaded {
+                    // The first read of the log: rows of bars in the entries' shape.
+                    SkeletonRows(count: 9, leading: .symbol(column: 16), spacing: 8)
+                }
                 ForEach(rows) { day in
                     Section(day.title) {
                         ForEach(day.items) { item in
                             ActivityRow(item: item, isCompact: isCompact) { inspect([item.id]) }
-                                .redacted(reason: data.isLoaded ? [] : .placeholder)
                                 .listRowBackground(ActivityRowTint.color(of: item.entry.level))
                         }
                     }
@@ -155,9 +158,9 @@ struct ActivityContent<Inspector: View>: View {
         }
     }
 
-    /// the days to show: two placeholder rows under "Today" before the first read
+    /// the days to show; none before the first read, which shows skeleton rows
     private var rows: [ActivityDay] {
-        data.isLoaded ? data.days : [ActivityDay(day: .distantPast, title: "Today", items: Self.placeholders)]
+        data.isLoaded ? data.days : []
     }
 
     /// The empty state over the list, which has no rows then.
@@ -212,24 +215,6 @@ struct ActivityContent<Inspector: View>: View {
         guard data.isLoaded, selection.count == 1, let id = selection.first else { return }
         // Without an anchor: the least scroll that shows it, none when it is in view already.
         proxy.scrollTo(id)
-    }
-
-    /// two rows of the usual length, drawn as placeholders before the first read
-    private static var placeholders: [ActivityItem] {
-        [
-            ActivityItem(
-                id: "placeholder-0",
-                entry: ActivityEntry(
-                    time: .distantPast, level: .debug, source: .jenkins,
-                    message: "Checked Jenkins: 3 requests, 0.54s together", outcome: .ok("OK")),
-                position: 1),
-            ActivityItem(
-                id: "placeholder-1",
-                entry: ActivityEntry(
-                    time: .distantPast, level: .debug, source: .gitlab, message: "POST MergeRequests in 0.41s",
-                    outcome: .ok("200")),
-                position: 0),
-        ]
     }
 }
 

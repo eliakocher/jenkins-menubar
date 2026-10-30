@@ -1,0 +1,27 @@
+[
+  {
+    "id": 4101,
+    "iid": 19202,
+    "project_id": 7,
+    "title": "Dialog bot answers twice",
+    "state": "opened",
+    "web_url": "https://gitlab.example.com/group/project/-/issues/19202"
+  },
+  {
+    "id": 4055,
+    "iid": 19100,
+    "project_id": 7,
+    "title": "Flaky dialog test",
+    "state": "closed",
+    "web_url": "https://gitlab.example.com/group/project/-/issues/19100"
+  },
+  {
+    "id": 5200,
+    "iid": 5,
+    "project_id": 9,
+    "title": "Docs for the dialog bot",
+    "state": "opened",
+    "web_url": "https://gitlab.example.com/group/other/-/issues/5",
+    "references": {"short": "#5", "relative": "group/other#5", "full": "group/other#5"}
+  }
+]

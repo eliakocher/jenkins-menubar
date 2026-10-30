@@ -1,6 +1,6 @@
 import Foundation
 
-/// A token found outside menubar-monitor's keychain, and where it was found (ACC-02).
+/// A token found outside MegaMonitor's keychain, and where it was found (ACC-02).
 ///
 /// Its description and its mirror name only the source, so a token never reaches a log or a test's output by accident.
 public struct LegacyToken: Hashable, Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {

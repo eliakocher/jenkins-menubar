@@ -52,6 +52,19 @@ struct WorkItemTests {
         #expect(first.type == .issue && first.state == .opened)
     }
 
+    @Test("WIN-02 a work item carries its author and assignees, and an answer without them still reads")
+    func authorAndAssignees() async throws {
+        let lists = try await Self.realWorkItems()
+        let first = try #require(lists.committed?.items.first)
+        #expect(first.author == MergeRequest.Person(username: "sam.lee", name: "Sam Lee"))
+        #expect(first.assignees == [MergeRequest.Person(username: "alex.doe", name: "Alex Doe"), MergeRequest.Person(username: "jkim", name: "")])
+        let second = try #require(lists.committed?.items.dropFirst().first)
+        #expect(second.author == nil && second.assignees == nil)
+        // A cache written before the fields were asked for decodes without them.
+        let old = try JSONEncoder().encode(Self.item())
+        #expect(try JSONDecoder().decode(WorkItem.self, from: old).assignees == nil)
+    }
+
     @Test("WI-01 single list without a committed label")
     func singleList() {
         let variables = Self.variables(WorkItemFilters(), committedLabel: "")
@@ -426,7 +439,7 @@ struct WorkItemTests {
     @Test("MR-04 explains how to get a GitLab token")
     func tokenLink() {
         #expect(GitLabLinks.newToken(gitLab: Self.gitLab).absoluteString
-            == "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=menubar-monitor&scopes=api")
+            == "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=MegaMonitor&scopes=api")
         #expect(Problem.noToken(.gitLab).message == "Needs a GitLab token with the api scope")
     }
 }

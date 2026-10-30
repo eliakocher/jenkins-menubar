@@ -10,6 +10,8 @@ import SwiftUI
 /// as one view: `FlakyHintLine(build:)`.
 struct FlakyHintLine: View {
     let build: Build
+    /// whether the hints are orange chips for the detail's header, rather than quiet lines
+    var asChips = false
 
     @Environment(AppModel.self) private var model: AppModel?
     @Environment(\.flakyHintFixtures) private var fixtures
@@ -19,6 +21,22 @@ struct FlakyHintLine: View {
         let state = fixtures?.state(of: build.id) ?? model?.flakyHints.state(of: build.id) ?? .loading
         Group {
             switch state {
+            case .loading where asChips:
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Checking recent runs…")
+                }
+                .foregroundStyle(.tertiary)
+            case .loaded(let hints) where asChips && !hints.isEmpty:
+                PillFlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(hints, id: \.self) { hint in
+                        DetailChip(
+                            symbol: Self.symbol(of: hint), tint: MergeRequestStatus.Color.orange.swiftUI,
+                            text: Self.message(of: hint), help: "Looked up from the job's recent runs")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             case .loading:
                 HStack(spacing: 6) {
                     ProgressView()

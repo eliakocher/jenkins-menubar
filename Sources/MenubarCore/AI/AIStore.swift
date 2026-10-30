@@ -7,6 +7,16 @@ public enum AISubject: Hashable, Sendable {
     /// a merge request, by its full reference
     case mergeRequest(String)
     case digest
+    /// the inline chat about a merge request's code, by the merge request's full reference (AI-07)
+    case codeChat(String)
+    /// a question about a work item, by its full reference (AI-08)
+    case workItem(String)
+}
+
+/// A first answer in progress, and where its subject stood before it began.
+struct FirstRun {
+    var task: Task<Void, Never>
+    var before: AIAnswerState?
 }
 
 /// Whether `claude` is installed, as last looked for.
@@ -16,7 +26,7 @@ public enum ClaudeAvailability: Hashable, Sendable {
     case missing
 }
 
-/// An answer of Claude's, with what it cost and what was sent (AI-02 to AI-04).
+/// An answer of Claude's, with the model that gave it and what was sent (AI-02 to AI-04).
 public struct AIAnswer: Hashable, Sendable {
     /// "Why Did It Fail?"'s answer
     public var explanation: BuildExplanation?
@@ -24,9 +34,6 @@ public struct AIAnswer: Hashable, Sendable {
     public var summary: ThreadsSummary?
     /// the digest's text
     public var text: String?
-    public var usage: ClaudeUsage
-    public var costUSD: Double
-    public var seconds: Double?
     /// the model that answered, like `claude-opus-5-5`
     public var model: String
     /// what was sent
@@ -34,23 +41,20 @@ public struct AIAnswer: Hashable, Sendable {
     public var answeredAt: Date
 
     public init(
-        explanation: BuildExplanation? = nil, summary: ThreadsSummary? = nil, text: String? = nil, usage: ClaudeUsage,
-        costUSD: Double, seconds: Double?, model: String, prompt: ClaudePrompt, answeredAt: Date
+        explanation: BuildExplanation? = nil, summary: ThreadsSummary? = nil, text: String? = nil, model: String,
+        prompt: ClaudePrompt, answeredAt: Date
     ) {
         self.explanation = explanation
         self.summary = summary
         self.text = text
-        self.usage = usage
-        self.costUSD = costUSD
-        self.seconds = seconds
         self.model = model
         self.prompt = prompt
         self.answeredAt = answeredAt
     }
 
-    /// "1,407 tokens in, 275 out · $0.017 · 4.5 s"
-    public var usageLine: String {
-        AIFormat.usageLine(usage, costUSD: costUSD, seconds: seconds)
+    /// the model that answered, for the card: "Opus 5.5", or the name as reported when it is none of the app's
+    public var modelName: String {
+        ClaudeModel(rawValue: model)?.shortName ?? model
     }
 }
 
@@ -77,22 +81,39 @@ public enum AIAnswerState: Hashable, Sendable {
 /// - nothing is sent without a click, except the morning digest the user turns on; the first send of each use case shows
 ///   what it sends and waits for Send;
 /// - everything sent is redacted first (``SecretRedactor``): the app's tokens, cookies, keys and passwords never go out;
-/// - each answer shows its tokens and cost; the month's costs are summed, and at the monthly cap nothing more is sent;
 /// - the answer is marked as Claude's; a failure stays plainly a failure;
-/// - the log gets the use case, the model, the tokens, the cost and the exit code, never the prompt or the answer.
+/// - the log gets the use case, the model, the tokens and the exit code, never the prompt or the answer.
 @Observable @MainActor
 public final class AIStore {
     /// how long `open -a <terminal>` may take
     static let launchWait: Duration = .seconds(10)
 
     public private(set) var settings: AISettings
-    /// this month's usage
-    public private(set) var usage: AIUsage
     public private(set) var availability: ClaudeAvailability = .unknown
     /// each subject's answer
     public private(set) var states: [AISubject: AIAnswerState] = [:]
     /// what the last Open in Claude Code did, or why it failed, and for what; replaced by the next
     public private(set) var lastLaunch: ClaudeCodeLaunchResult?
+    /// what the next question of a merge request's chat is about, by its reference: a removable chip above the field;
+    /// none means the whole merge request (AI-07)
+    public internal(set) var pendingScopes: [String: CodeScope] = [:]
+    /// counts the times a scope was aimed at, so that the chat's field can take the focus when it is
+    public internal(set) var aimCount = 0
+    /// what the first question of a subject's chat was about (AI-07)
+    public internal(set) var openingScopes: [AISubject: CodeScope] = [:]
+    /// the subjects whose run the user stopped; their card says so until the next question or Clear
+    public internal(set) var stoppedSubjects: Set<AISubject> = []
+    /// the question of a stopped first answer, for the field to take back once
+    var stoppedQuestions: [AISubject: String] = [:]
+    /// the follow-up questions and answers below each subject's answer, while the app runs (AI-08)
+    public internal(set) var conversations: [AISubject: Conversation] = [:]
+    /// the user's own first question of the subjects that start with one, like a work item's (AI-08)
+    public internal(set) var openingQuestions: [AISubject: String] = [:]
+
+    /// what the user's Claude Code setup offers the chats, once per app session (AI-09)
+    public internal(set) var setupInventory: SetupInventoryState = .unknown
+    /// the user's slash commands and skills for the "/" list; empty until read
+    public internal(set) var slashCommands: [SlashCommand] = []
 
     /// posts the morning digest as a notification, with its text; the app sets it
     @ObservationIgnored public var notify: (@Sendable (String) async -> Void)?
@@ -101,21 +122,38 @@ public final class AIStore {
     /// the digest's facts from the app's stores; the app sets it
     @ObservationIgnored public var digestFacts: (@MainActor () -> DigestFacts)?
 
+    /// the model chosen for an answer that waits in review, until it is sent
+    @ObservationIgnored private var reviewModels: [AISubject: ClaudeModel] = [:]
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let engine: ClaudeEngine
+    @ObservationIgnored let engine: ClaudeEngine
     @ObservationIgnored private let launcher: any ProgramLauncher
     @ObservationIgnored private let terminals: any TerminalDirectory
     @ObservationIgnored private let launchFolder: URL
     @ObservationIgnored private let log: ActivityLog?
     @ObservationIgnored private let clock: any Clock<Duration>
-    @ObservationIgnored private let now: @Sendable () -> Date
+    @ObservationIgnored let now: @Sendable () -> Date
     @ObservationIgnored private let jenkins: PipelinesServices?
-    @ObservationIgnored private let gitLab: GitLabServices?
+    @ObservationIgnored let gitLab: GitLabServices?
+    /// runs `git` to read a checkout's commit for a question about code
+    @ObservationIgnored let runner: any ProcessRunner
+    /// gathers the diff a follow-up of a code chat is about, by subject; the latest question's facts
+    @ObservationIgnored var scopeContexts: [AISubject: @Sendable (CodeScope) async throws -> String] = [:]
+    /// the first answers being gathered or written, by subject, with where the subject stood before, so that Stop can end
+    /// them and put the card back
+    @ObservationIgnored var runs: [AISubject: FirstRun] = [:]
+    /// the follow-ups being answered, by subject, so that Stop can end them
+    @ObservationIgnored var followUpTasks: [AISubject: Task<Void, Never>] = [:]
+    /// the subjects with a conversation, the oldest first
+    @ObservationIgnored var conversationOrder: [AISubject] = []
     @ObservationIgnored private var detecting: Task<Void, Never>?
+    /// the setup listing in progress, so that two chats waiting for it share one
+    @ObservationIgnored var listing: Task<Void, Never>?
+    /// the folder the slash commands were read for
+    @ObservationIgnored var slashCommandsProject: String??
     @ObservationIgnored private var digestLoop: Task<Void, Never>?
 
     /// - Parameters:
-    ///   - defaults: the preferences' suite, where the settings and the month's usage are kept
+    ///   - defaults: the preferences' suite, where the settings are kept
     ///   - runner: runs `claude` and the login shell
     ///   - launcher: opens the terminal for Open in Claude Code
     ///   - terminals: where the user's terminal is looked up
@@ -134,6 +172,7 @@ public final class AIStore {
         jenkins: PipelinesServices? = nil, gitLab: GitLabServices? = nil, resolver: ProgramResolver? = nil
     ) {
         self.defaults = defaults
+        self.runner = runner
         engine = ClaudeEngine(runner: runner, resolver: resolver)
         self.launcher = launcher
         self.terminals = terminals
@@ -144,7 +183,8 @@ public final class AIStore {
         self.jenkins = jenkins
         self.gitLab = gitLab
         settings = AISettings.load(from: defaults)
-        usage = AIUsage.load(from: defaults, month: AIUsage.month(of: now()))
+        // The monthly spend of earlier versions is gone.
+        defaults.removeObject(forKey: "ai.usage")
         scheduleDigest()
     }
 
@@ -156,18 +196,6 @@ public final class AIStore {
     /// whether Settings shows the Claude section: only while `claude` is installed
     public var isSettingsShown: Bool {
         availability == .found
-    }
-
-    /// this month's usage as of now: a new month reads as nothing spent
-    public var monthUsage: AIUsage {
-        usage.current(in: AIUsage.month(of: now()))
-    }
-
-    /// "$0.12 of $10 this month · 7 answers"
-    public var monthLine: String {
-        let usage = monthUsage
-        return "\(AIFormat.cost(usage.costUSD)) of $\(settings.monthlyCapUSD) this month · \(usage.answers) "
-            + (usage.answers == 1 ? "answer" : "answers")
     }
 
     /// Looks for `claude` once, so the Claude features show or stay hidden. Calling it again waits for the first look.
@@ -189,7 +217,7 @@ public final class AIStore {
         await detect()
     }
 
-    /// Saves changed settings. Logs what changed: on or off, the model, the cap, the digest; never anything sent.
+    /// Saves changed settings. Logs what changed: on or off, the model, the effort, the digest; never anything sent.
     ///
     /// - Parameter new: the settings as edited
     public func update(_ new: AISettings) {
@@ -204,8 +232,14 @@ public final class AIStore {
         } else if old.model != new.model {
             record("Claude answers with \(new.model.title)", level: .info, source: .settings)
         }
-        if old.monthlyCapUSD != new.monthlyCapUSD {
-            record("Claude's monthly cap is $\(new.monthlyCapUSD)", level: .info, source: .settings)
+        if old.effort != new.effort {
+            record("Claude's effort is \(new.effort.title)", level: .info, source: .settings)
+        }
+        if old.useMySetup != new.useMySetup {
+            record(new.useMySetup ? "Claude chats use your Claude Code setup" : "Claude chats are back in safe mode", level: .info, source: .settings)
+        }
+        if old.useMyClaudeMd != new.useMyClaudeMd {
+            record(new.useMyClaudeMd ? "Claude chats read your CLAUDE.md" : "Claude chats leave your CLAUDE.md out", level: .info, source: .settings)
         }
         if old.morningDigest != new.morningDigest || old.digestMinutes != new.digestMinutes || old.isEnabled != new.isEnabled {
             if new.morningDigest != old.morningDigest {
@@ -223,6 +257,13 @@ public final class AIStore {
     /// Forgets a subject's answer or failure, or cancels its review.
     public func dismiss(_ subject: AISubject) {
         states[subject] = nil
+        reviewModels[subject] = nil
+        clearConversation(of: subject)
+        openingQuestions[subject] = nil
+        openingScopes[subject] = nil
+        scopeContexts[subject] = nil
+        stoppedSubjects.remove(subject)
+        stoppedQuestions[subject] = nil
     }
 
     // MARK: - The use cases
@@ -236,8 +277,9 @@ public final class AIStore {
     ///   - build: the failed build
     ///   - failedTests: the failed tests when the detail has them; read from Jenkins otherwise
     ///   - flakyHints: what the job's recent builds say of the failed stages, when the detail has it
-    public func explain(_ build: Build, failedTests: [FailedTest]?, flakyHints: [FlakyHint] = []) async {
-        await ask(.build(build.id)) { [jenkins] in
+    ///   - model: the model for this answer; `nil` is the one chosen in Settings
+    public func explain(_ build: Build, failedTests: [FailedTest]?, flakyHints: [FlakyHint] = [], model: ClaudeModel? = nil) async {
+        await ask(.build(build.id), model: model) { [jenkins] in
             guard let jenkins else {
                 throw AIGatherError("Jenkins isn't set up")
             }
@@ -249,9 +291,11 @@ public final class AIStore {
     /// "Summarize Discussion" (AI-03): reads the merge request's threads with all their notes from GitLab, and asks
     /// Claude what was agreed, what is open, and who each open point waits on.
     ///
-    /// - Parameter mergeRequest: the merge request
-    public func summarize(_ mergeRequest: MergeRequest) async {
-        await ask(.mergeRequest(mergeRequest.reference)) { [gitLab] in
+    /// - Parameters:
+    ///   - mergeRequest: the merge request
+    ///   - model: the model for this answer; `nil` is the one chosen in Settings
+    public func summarize(_ mergeRequest: MergeRequest, model: ClaudeModel? = nil) async {
+        await ask(.mergeRequest(mergeRequest.reference), model: model) { [gitLab] in
             guard let gitLab else {
                 throw AIGatherError("GitLab isn't set up")
             }
@@ -282,8 +326,10 @@ public final class AIStore {
     /// The daily digest (AI-04): loads the merge requests and work items, gathers my merge requests, the reviews
     /// waiting for me, the red builds and the work items by slot from the app's stores, and asks Claude for a short
     /// text.
-    public func writeDigest() async {
-        await ask(.digest) { [weak self] in
+    ///
+    /// - Parameter model: the model for this answer; `nil` is the one chosen in Settings
+    public func writeDigest(model: ClaudeModel? = nil) async {
+        await ask(.digest, model: model) { [weak self] in
             await self?.refreshBeforeDigest?()
             guard let facts = self?.digestFacts?() else {
                 throw AIGatherError("Nothing to write about yet")
@@ -305,7 +351,27 @@ public final class AIStore {
         var next = settings
         next.confirmedUseCases.insert(prompt.useCase)
         update(next)
-        await run(subject, prompt)
+        let model = reviewModels[subject]
+        await track(subject) { await self.run(subject, prompt, model: model) }
+    }
+
+    /// Asks again with what was sent before, to another model: the answer's own facts, not gathered anew. Works on an
+    /// answer and on a failure that had sent something; nothing else.
+    ///
+    /// - Parameters:
+    ///   - subject: the subject whose answer is asked for again
+    ///   - model: the model for this answer
+    public func askAgain(_ subject: AISubject, model: ClaudeModel) async {
+        let prompt: ClaudePrompt
+        switch state(of: subject) {
+        case .answered(let answer): prompt = answer.prompt
+        case .failed(_, let sent?): prompt = sent
+        default: return
+        }
+        guard settings.isEnabled else {
+            return
+        }
+        await track(subject) { await self.run(subject, prompt, model: model) }
     }
 
     /// Opens the user's terminal in a checkout running `claude` with the context as its first prompt (AI-05;
@@ -315,7 +381,8 @@ public final class AIStore {
     /// - Parameters:
     ///   - context: the work item, merge request, build or checkout
     ///   - checkout: the checkout Claude Code starts in
-    public func openInClaudeCode(_ context: ClaudeCodeContext, in checkout: Checkout) async {
+    ///   - model: the model Claude Code starts with; `nil` is the one chosen in Settings
+    public func openInClaudeCode(_ context: ClaudeCodeContext, in checkout: Checkout, model: ClaudeModel? = nil) async {
         lastLaunch = nil
         guard settings.isEnabled, let claude = await engine.locate() else {
             lastLaunch = ClaudeCodeLaunchResult(context: context, message: ClaudeFailure.notFound.message, isProblem: true)
@@ -325,7 +392,9 @@ public final class AIStore {
         ClaudeCodeLaunch.removeLeftovers(in: launchFolder, now: now())
         let choice = TerminalChoice.choose(preferred: TerminalChoice.preferred(in: defaults), for: .script, in: terminals)
         do {
-            let script = try ClaudeCodeLaunch.write(prompt: prompt, directory: checkout.path, claude: claude, in: launchFolder)
+            let script = try ClaudeCodeLaunch.write(
+                prompt: prompt, directory: checkout.path, claude: claude, model: model ?? settings.model,
+                effort: settings.effort, in: launchFolder)
             let outcome = try await launcher.launch(
                 URL(filePath: "/usr/bin/open"), arguments: choice.openArguments(for: script.path(percentEncoded: false)),
                 directory: nil, path: nil, wait: Self.launchWait)
@@ -348,8 +417,11 @@ public final class AIStore {
 
     // MARK: - Asking
 
-    /// Gathers the facts, redacts them, and sends them, or first shows them when the use case was never sent.
-    private func ask(_ subject: AISubject, prompt make: @escaping @MainActor () async throws -> ClaudePrompt) async {
+    /// Gathers the facts, redacts them, and sends them, or first shows them when the use case was never sent. The user
+    /// can stop it meanwhile (``stop(_:)``).
+    func ask(
+        _ subject: AISubject, model: ClaudeModel?, prompt make: @escaping @MainActor () async throws -> ClaudePrompt
+    ) async {
         switch state(of: subject) {
         case .preparing, .running:
             return
@@ -359,6 +431,12 @@ public final class AIStore {
         guard settings.isEnabled else {
             return
         }
+        await track(subject) { await self.gatherAndRun(subject, model: model, prompt: make) }
+    }
+
+    private func gatherAndRun(
+        _ subject: AISubject, model: ClaudeModel?, prompt make: @escaping @MainActor () async throws -> ClaudePrompt
+    ) async {
         await detect()
         guard isOffered else {
             states[subject] = .failed(ClaudeFailure.notFound.message, nil)
@@ -369,38 +447,91 @@ public final class AIStore {
         do {
             prompt = try await make().redacted(by: SecretRedactor(knownSecrets: await knownSecrets()))
         } catch let error as AIGatherError {
+            guard !Task.isCancelled else { return }
             states[subject] = .failed(error.message, nil)
             return
         } catch let error as JenkinsError {
+            guard !Task.isCancelled else { return }
             states[subject] = .failed(error.problem.message, nil)
             return
         } catch {
+            guard !Task.isCancelled else { return }
             states[subject] = .failed(error.localizedDescription, nil)
             return
         }
+        guard !Task.isCancelled else { return }
         guard settings.confirmedUseCases.contains(prompt.useCase) else {
             states[subject] = .review(prompt)
+            reviewModels[subject] = model
             return
         }
-        await run(subject, prompt)
+        await run(subject, prompt, model: model)
     }
 
-    /// Sends a prompt within the monthly cap, and keeps the answer, its cost and the log line.
-    private func run(_ subject: AISubject, _ prompt: ClaudePrompt) async {
-        let month = AIUsage.month(of: now())
-        let budget: Double
-        switch AICostCap.allowance(usage: usage.current(in: month), capUSD: settings.monthlyCapUSD) {
-        case .reached(let spent, let cap):
-            states[subject] = .failed(AICostCap.reachedMessage(spentUSD: spent, capUSD: cap), prompt)
-            record("Claude: \(prompt.useCase.logName) not sent: the monthly cap of $\(cap) is reached", level: .warning, source: .app)
-            return
-        case .allowed(let budgetUSD):
-            budget = budgetUSD
+    /// Runs a first answer's work as a task Stop can end, and keeps where the subject stood before.
+    private func track(_ subject: AISubject, _ work: @escaping @MainActor () async -> Void) async {
+        stoppedSubjects.remove(subject)
+        stoppedQuestions[subject] = nil
+        let task = Task { await work() }
+        runs[subject] = FirstRun(task: task, before: states[subject])
+        await task.value
+        if runs[subject]?.task == task {
+            runs[subject] = nil
         }
+    }
+
+    /// Stops a first answer that is being gathered or written: `claude` is ended, the card goes back to where it was
+    /// before the question (nothing, or the review, or the earlier answer) with "Stopped", and no failure is shown.
+    /// A question of the user's own comes back to its field.
+    ///
+    /// - Parameter subject: the subject
+    /// - Returns: whether something was stopped
+    @discardableResult
+    public func stop(_ subject: AISubject) -> Bool {
+        switch state(of: subject) {
+        case .preparing, .running: break
+        default: return false
+        }
+        guard let run = runs[subject] else {
+            return false
+        }
+        run.task.cancel()
+        runs[subject] = nil
+        states[subject] = run.before
+        if run.before == nil {
+            // The chat's question goes back to the field, with its scope.
+            if let question = openingQuestions[subject] {
+                stoppedQuestions[subject] = question
+                if case .codeChat(let reference) = subject, let scope = openingScopes[subject], scope != .mergeRequest {
+                    pendingScopes[reference] = scope
+                }
+            }
+            openingQuestions[subject] = nil
+            openingScopes[subject] = nil
+        }
+        stoppedSubjects.insert(subject)
+        return true
+    }
+
+    /// Returns the question of a stopped first answer once, for the field to take back.
+    ///
+    /// - Parameter subject: the subject
+    public func takeStoppedQuestion(of subject: AISubject) -> String? {
+        stoppedQuestions.removeValue(forKey: subject)
+    }
+
+    /// Sends a prompt, and keeps the answer and the log line.
+    private func run(_ subject: AISubject, _ prompt: ClaudePrompt, model chosen: ClaudeModel?) async {
+        reviewModels[subject] = nil
         states[subject] = .running(prompt)
-        let model = settings.model
+        let model = chosen ?? settings.model
         do {
-            let run = try await engine.run(prompt, model: model, budgetUSD: budget)
+            let setup = await setupForChat(of: prompt)
+            let run = try await engine.run(
+                setup == nil ? prompt : prompt.startingWithCommand(), model: model, effort: settings.effort, setup: setup)
+            guard !Task.isCancelled else { return }
+            // A new first answer starts the conversation anew.
+            clearConversation(of: subject)
             count(run, prompt: prompt, model: model)
             guard let answer = Self.answer(of: run, prompt: prompt, model: model, at: now()) else {
                 states[subject] = .failed(ClaudeFailure.unreadableAnswer(run).message, prompt)
@@ -408,6 +539,8 @@ public final class AIStore {
             }
             states[subject] = .answered(answer)
         } catch {
+            guard !Task.isCancelled else { return }
+            clearConversation(of: subject)
             if let run = error.run {
                 count(run, prompt: prompt, model: model)
             } else {
@@ -421,7 +554,6 @@ public final class AIStore {
     /// Returns the answer of a run in the shape of its use case; `nil` when the structured answer is missing.
     static func answer(of run: ClaudeRun, prompt: ClaudePrompt, model: ClaudeModel, at date: Date) -> AIAnswer? {
         var answer = AIAnswer(
-            usage: run.usage, costUSD: run.costUSD, seconds: run.durationMS.map { Double($0) / 1000 },
             model: run.model ?? model.rawValue, prompt: prompt, answeredAt: date)
         switch prompt.useCase {
         case .explainBuild:
@@ -430,25 +562,24 @@ public final class AIStore {
         case .summarizeThreads:
             guard let summary = run.decoded(ThreadsSummary.self) else { return nil }
             answer.summary = summary
-        case .digest, .openInClaudeCode:
+        case .digest, .openInClaudeCode, .askAboutCode, .askAboutItem:
             guard let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             answer.text = text
         }
         return answer
     }
 
-    /// Adds a run's cost to the month and logs it: the use case, the model, the tokens, the cost and the exit code.
-    private func count(_ run: ClaudeRun, prompt: ClaudePrompt, model: ClaudeModel) {
-        let month = AIUsage.month(of: now())
-        usage = usage.adding(costUSD: run.costUSD, usage: run.usage, month: month)
-        usage.save(to: defaults)
-        let line = "Claude: \(prompt.useCase.logName), \(run.model ?? model.rawValue), "
-            + "\(run.usage.inputTokens) tokens in, \(run.usage.outputTokens) out, \(AIFormat.cost(run.costUSD)), exit \(run.exitStatus)"
-        record(run.isError ? line + ", \(run.subtype ?? "error")" : line, level: run.isError ? .warning : .info, source: .app)
+    /// Logs a run: the use case, the model, the tokens and the exit code.
+    func count(_ run: ClaudeRun, prompt: ClaudePrompt, model: ClaudeModel, followUp: Bool = false) {
+        let line = "Claude: \(prompt.useCase.logName)\(followUp ? " follow-up" : ""), \(run.model ?? model.rawValue), "
+            + "\(run.usage.inputTokens) tokens in, \(run.usage.outputTokens) out, exit \(run.exitStatus)"
+        // A stopped call reads in plain words, not as the raw `error_max_budget_usd` code.
+        let reason = run.subtype == "error_max_budget_usd" ? "stopped before it finished" : run.subtype ?? "error"
+        record(run.isError ? line + ", \(reason)" : line, level: run.isError ? .warning : .info, source: .app)
     }
 
     /// The app's tokens, which the redactor removes wherever they appear.
-    private func knownSecrets() async -> [String] {
+    func knownSecrets() async -> [String] {
         guard let tokens = jenkins?.tokens ?? gitLab?.tokens else {
             return []
         }
@@ -541,7 +672,7 @@ public final class AIStore {
         }
     }
 
-    private func record(_ message: String, level: ActivityEntry.Level, source: ActivityEntry.Source) {
+    func record(_ message: String, level: ActivityEntry.Level, source: ActivityEntry.Source) {
         guard let log else {
             return
         }

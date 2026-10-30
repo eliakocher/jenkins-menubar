@@ -125,11 +125,25 @@ public struct TeamValues: Codable, Hashable, Sendable {
     /// how many days before the code freeze a committed work item without a merge request is flagged, and the slot
     /// alert comes; empty means 3 (SLOT-04)
     public var slotWarnDays: String
+    /// how many upcoming slots show after the current one, 1 to 12; empty means 4 (SLOT-02)
+    public var slotUpcomingShown: String
     /// the label of a work item that is being worked on, like `status::InProgress`; empty finds a label whose value is
     /// "in progress" (SLOT-03)
     public var inProgressLabel: String
     /// the web page of the team's slot planning tool, which Slots opens; empty hides the link (SLOT-05)
     public var slotPlanningURL: String
+    /// the GitLab group whose issues fill the slots, like `group`, asked with its subgroups; empty shows only the work
+    /// items Work Items loads (SLOT-06)
+    public var slotGroup: String
+    /// the prefix of the label of the slot an item is planned for, not yet committed, like `slot-scheduled::` (SLOT-06)
+    public var slotScheduledLabelPrefix: String
+    /// the prefix of the labels that name an item's squad, like `squad::` (SLOT-07)
+    public var squadLabelPrefix: String
+    /// the prefix of the scoped status label, like `status::`, which the chips and the rows read (SLOT-07)
+    public var statusLabelPrefix: String
+    /// the points a squad takes per slot: `Alpha: 60, Delta: 120`, or one number for every squad; empty shows no load
+    /// (SLOT-08)
+    public var squadCapacity: String
 
     public init(
         jenkinsJobURL: String = "",
@@ -145,8 +159,14 @@ public struct TeamValues: Codable, Hashable, Sendable {
         slotEarlyAccessNth: String = "",
         slotEarlyAccessWeekday: String = "",
         slotWarnDays: String = "",
+        slotUpcomingShown: String = "",
         inProgressLabel: String = "",
-        slotPlanningURL: String = ""
+        slotPlanningURL: String = "",
+        slotGroup: String = "",
+        slotScheduledLabelPrefix: String = "",
+        squadLabelPrefix: String = "",
+        statusLabelPrefix: String = "",
+        squadCapacity: String = ""
     ) {
         self.jenkinsJobURL = jenkinsJobURL
         self.gitLabURL = gitLabURL
@@ -161,8 +181,14 @@ public struct TeamValues: Codable, Hashable, Sendable {
         self.slotEarlyAccessNth = slotEarlyAccessNth
         self.slotEarlyAccessWeekday = slotEarlyAccessWeekday
         self.slotWarnDays = slotWarnDays
+        self.slotUpcomingShown = slotUpcomingShown
         self.inProgressLabel = inProgressLabel
         self.slotPlanningURL = slotPlanningURL
+        self.slotGroup = slotGroup
+        self.slotScheduledLabelPrefix = slotScheduledLabelPrefix
+        self.squadLabelPrefix = squadLabelPrefix
+        self.statusLabelPrefix = statusLabelPrefix
+        self.squadCapacity = squadCapacity
     }
 
     /// A missing value reads as empty, so a team file from an older or newer app still reads.
@@ -189,15 +215,22 @@ public struct TeamValues: Codable, Hashable, Sendable {
         case slotEarlyAccessNth
         case slotEarlyAccessWeekday
         case slotWarnDays
+        case slotUpcomingShown
         case inProgressLabel
         case slotPlanningURL
+        case slotGroup
+        case slotScheduledLabelPrefix
+        case squadLabelPrefix
+        case statusLabelPrefix
+        case squadCapacity
 
         /// whether the app can't check anything without this value (TEAM-03)
         public var isRequired: Bool {
             switch self {
             case .jenkinsJobURL, .gitLabURL, .gitLabProject: true
             case .committedLabel, .slotLabelPrefix, .ignoredMergeRequestPrefix, .typeLabelPrefix, .slotReleaseWeekday,
-                .slotCodeFreezeNth, .slotCodeFreezeWeekday, .slotEarlyAccessNth, .slotEarlyAccessWeekday, .slotWarnDays, .inProgressLabel, .slotPlanningURL: false
+                .slotCodeFreezeNth, .slotCodeFreezeWeekday, .slotEarlyAccessNth, .slotEarlyAccessWeekday, .slotWarnDays, .slotUpcomingShown, .inProgressLabel,
+                .slotPlanningURL, .slotGroup, .slotScheduledLabelPrefix, .squadLabelPrefix, .statusLabelPrefix, .squadCapacity: false
             }
         }
     }
@@ -218,8 +251,14 @@ public struct TeamValues: Codable, Hashable, Sendable {
             case .slotEarlyAccessNth: slotEarlyAccessNth
             case .slotEarlyAccessWeekday: slotEarlyAccessWeekday
             case .slotWarnDays: slotWarnDays
+            case .slotUpcomingShown: slotUpcomingShown
             case .inProgressLabel: inProgressLabel
             case .slotPlanningURL: slotPlanningURL
+            case .slotGroup: slotGroup
+            case .slotScheduledLabelPrefix: slotScheduledLabelPrefix
+            case .squadLabelPrefix: squadLabelPrefix
+            case .statusLabelPrefix: statusLabelPrefix
+            case .squadCapacity: squadCapacity
             }
         }
         set {
@@ -237,8 +276,14 @@ public struct TeamValues: Codable, Hashable, Sendable {
             case .slotEarlyAccessNth: slotEarlyAccessNth = newValue
             case .slotEarlyAccessWeekday: slotEarlyAccessWeekday = newValue
             case .slotWarnDays: slotWarnDays = newValue
+            case .slotUpcomingShown: slotUpcomingShown = newValue
             case .inProgressLabel: inProgressLabel = newValue
             case .slotPlanningURL: slotPlanningURL = newValue
+            case .slotGroup: slotGroup = newValue
+            case .slotScheduledLabelPrefix: slotScheduledLabelPrefix = newValue
+            case .squadLabelPrefix: squadLabelPrefix = newValue
+            case .statusLabelPrefix: statusLabelPrefix = newValue
+            case .squadCapacity: squadCapacity = newValue
             }
         }
     }

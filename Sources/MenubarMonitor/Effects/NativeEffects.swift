@@ -32,12 +32,17 @@ final class NativeEffects: Effects {
     /// hides a build until its job's next build, for the alert window's Hide; the app delegate sets it to the shell's
     /// (HIDE-01)
     var onHide: @MainActor (BuildID) -> Void = { _ in }
+    /// shows a link in the app (`true`) or opens it in the browser (`false`), for the alert window's buttons; the app
+    /// delegate sets it to the shell's. Never `NSWorkspace`: while the app is the default browser, the link would come
+    /// back to it.
+    var onOpen: @MainActor (URL, Bool) -> Void = { _, _ in }
 
     func showAlertWindow(_ alert: BuildAlert) async {
         panels.show(
             alert, notificationsOff: bannerFallbacks.remove(alert.id) != nil,
             rebuild: { [weak self] build in self?.onRebuild(build) },
-            hide: { [weak self] build in self?.onHide(build) })
+            hide: { [weak self] build in self?.onHide(build) },
+            open: { [weak self] url, inApp in self?.onOpen(url, inApp) })
     }
 
     func postBanner(_ alert: BuildAlert) async -> Bool {

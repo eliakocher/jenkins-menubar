@@ -13,7 +13,8 @@ extension PanelActions {
     @MainActor
     static func mainWindow(_ model: AppModel, router: WindowRouter, openURL: OpenURLAction) -> PanelActions {
         PanelActions(
-            open: { openURL($0) },
+            // The real browser: a page opened through macOS comes back to this app while it is the default browser.
+            open: { router.browse($0, fallback: openURL) },
             openSettings: { router.open(.settings(pane: $0)) },
             openWindow: { router.open(.main) },
             watchBuild: { router.open(.watch(MergeRequestWatching.request(model: model, router: router))) },
@@ -38,7 +39,10 @@ extension PanelActions {
                 Task { await projects.cancelRebuild(jobKey: job) }
             },
             watchBuilds: { MergeRequestWatching.watch($0, model: model, router: router) },
-            newWorkItem: NewWorkItemLauncher.action(model: model) { openURL($0) })
+            newWorkItem: NewWorkItemLauncher.action(model: model) { router.browse($0, fallback: openURL) },
+            followLink: { router.follow($0, model: model, fallback: openURL) },
+            setJobNotifications: { model.setNotifications($1, forJob: $0) },
+            setGroupNotifications: { model.setNotifications(for: $0, isOn: $1) })
     }
 }
 
@@ -53,6 +57,9 @@ enum MainWindowLinks {
     ///   - model: the app's model
     ///   - router: the router, which holds the section and the selections
     static func selected(_ model: AppModel, router: WindowRouter) -> URL? {
+        if let opened = router.opened {
+            return model.opened.item(opened)?.webURL
+        }
         let selection = router.selection
         switch router.section {
         case .pipelines:

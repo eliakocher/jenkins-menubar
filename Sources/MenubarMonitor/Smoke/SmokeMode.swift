@@ -1,7 +1,7 @@
 import Foundation
 import MenubarCore
 
-/// `menubar-monitor --smoke --stub <URL>`: the launch steps, one Jenkins check and one GitLab load against a stub
+/// `MegaMonitor --smoke --stub <URL>`: the launch steps, one Jenkins check and one GitLab load against a stub
 /// server, then exit (Task 4.7). `scripts/smoke.sh` runs it from the built bundle.
 ///
 /// It never touches the user's data or screen:
@@ -23,7 +23,7 @@ enum SmokeMode {
     static func run(arguments: [String]) -> Never {
         let environment = ProcessInfo.processInfo.environment
         guard let stub = value(of: "--stub", in: arguments).flatMap(URL.init(string:)), stub.host() != nil else {
-            fail("usage: MENUBAR_MONITOR_DATA_DIR=<folder> menubar-monitor --smoke --stub <URL>")
+            fail("usage: MENUBAR_MONITOR_DATA_DIR=<folder> MegaMonitor --smoke --stub <URL>")
         }
         guard let folder = environment[FileLocations.dataDirectoryVariable], !folder.isEmpty else {
             fail("the smoke check needs \(FileLocations.dataDirectoryVariable), so it never touches the user's files")
@@ -56,7 +56,7 @@ enum SmokeMode {
         }
 
         let model = AppModel(dependencies: dependencies)
-        let shell = AppShell(model: model, legacySources: .none(in: folder))
+        let shell = AppShell(model: model, legacySources: .none(in: folder), defaultBrowser: InertDefaultBrowser())
         await shell.importIfNeeded()
 
         let outcome: CheckOutcome

@@ -1,0 +1,32 @@
+{
+  "data": {
+    "g0": {
+      "opened": {
+        "nodes": [
+          {"iid": "412", "title": "Make the export retry on a closed socket", "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/412",
+           "reference": "acme/main/server/server!412", "state": "opened", "draft": true, "updatedAt": "2026-10-29T09:15:00Z",
+           "author": {"username": "akim", "name": "Alex Kim"}},
+          {"iid": "7", "title": "Retry the export job", "webUrl": "https://gitlab.example.com/acme/main/web/web/-/merge_requests/7",
+           "reference": "acme/main/web/web!7", "state": "opened", "draft": false, "updatedAt": "2026-10-01T09:15:00.250Z",
+           "author": {"username": "sam", "name": ""}}
+        ]
+      },
+      "recent": {
+        "nodes": [
+          {"iid": "7", "title": "Retry the export job", "webUrl": "https://gitlab.example.com/acme/main/web/web/-/merge_requests/7",
+           "reference": "acme/main/web/web!7", "state": "opened", "draft": false, "updatedAt": "2026-10-01T09:15:00.250Z",
+           "author": {"username": "sam", "name": ""}},
+          {"iid": "398", "title": "Export retry, first try", "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/398",
+           "reference": "acme/main/server/server!398", "state": "merged", "draft": false, "updatedAt": "2026-10-28T16:00:00Z",
+           "author": {"username": "jdoe", "name": "Jane Doe"}},
+          {"iid": "freak", "title": "A node without a number is skipped", "webUrl": "https://gitlab.example.com/x/-/merge_requests/1",
+           "reference": "x!1", "state": "opened", "draft": false, "updatedAt": "2026-10-28T16:00:00Z", "author": null},
+          {"iid": "301", "title": "Export retry, abandoned", "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/301",
+           "reference": "acme/main/server/server!301", "state": "closed", "draft": false, "updatedAt": "2026-09-02T08:00:00Z",
+           "author": null}
+        ]
+      }
+    },
+    "p0": null
+  }
+}

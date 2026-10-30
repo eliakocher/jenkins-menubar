@@ -66,6 +66,9 @@ public final class PipelinesStore {
         didSet { now = services.now() }
     }
 
+    /// which builds may alert; a change applies at the next check (ALERT-08)
+    public var notifications = NotificationPolicy()
+
     /// the rebuilds started from the app, per job, until the new build shows or the rebuild failed (PIPE-09)
     public private(set) var rebuilds: [String: JenkinsRebuild] = [:]
 
@@ -461,7 +464,7 @@ public final class PipelinesStore {
         log(.warning, .jenkins, "Rebuild of \(build.label) failed: \(error.message)", outcome: .failed("REBUILD"))
     }
 
-    /// the hat the butler wears now: the party hat during a green streak, the Santa hat from December 24 to 26, none with
+    /// the hat the butler wears now: the party hat during a green streak, the Santa hat all of December, none with
     /// the eggs off (EGG-03, EGG-04)
     public var butlerHat: ButlerHat? {
         preferences.easterEggs ? EggRules.hat(memory: eggMemory, now: now) : nil
@@ -539,7 +542,7 @@ public final class PipelinesStore {
         let input = PipelinesCheck.Input(
             userState: userState, state: state, alertStates: alertStates, merged: merged, gitLabUser: shared ?? gitLabUser,
             preferences: preferences, lookUpJobs: reason == .checkNow, alertsArmed: alertsArmed, eggs: eggMemory,
-            project: projectID)
+            project: projectID, notifications: notifications)
         let output = try await round.run(input)
         apply(output)
         await round.announce(output.alerts, preferences: preferences)

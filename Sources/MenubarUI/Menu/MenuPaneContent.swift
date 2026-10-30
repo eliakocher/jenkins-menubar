@@ -101,7 +101,7 @@ struct MenuPaneContent: View {
         return HStack(spacing: 8) {
             Image(systemName: symbol)
                 .font(.system(size: 13))
-                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
                 .frame(width: MenuMetrics.paneSymbol)
             VStack(alignment: .leading, spacing: 1) {
                 Text(verbatim: title)
@@ -112,7 +112,7 @@ struct MenuPaneContent: View {
                 }
             }
             Spacer(minLength: 8)
-            MenuSecondaryText(shortcut)
+            MenuSecondaryText(shortcut, isHint: true)
         }
         .menuRow(isHighlighted: isHighlighted)
         .menuPaneRow(row, events: events)
@@ -145,7 +145,7 @@ struct MenuAreaRow: View {
             trailing
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
         }
         .frame(minHeight: MenuMetrics.areaRowHeight)
         .menuRow(isHighlighted: isHighlighted)
@@ -163,7 +163,7 @@ struct MenuAreaRow: View {
         } else if let count = area.count {
             Text(verbatim: String(count))
                 .monospacedDigit()
-                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
                 .fixedSize()
         }
     }
@@ -193,8 +193,8 @@ struct MenuSummaryLine: View {
 
     /// The counts and notes joined with " · ", each count's symbol in its color before it.
     private var text: Text {
-        // The vibrant secondary label style at full strength, as a native menu item's subtitle; white on the highlight.
-        let grey = isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary)
+        // The menu's grey, as a native menu item's subtitle; white on the highlight.
+        let grey = isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey)
         var line = Text(verbatim: "")
         var first = true
         for part in parts {

@@ -10,6 +10,11 @@ public enum ClaudeCodeContext: Hashable, Sendable {
     case build(Build, page: URL?, failedTests: [FailedTest])
     /// a checkout and what it works on
     case workspace(Checkout, task: WorkspaceTask)
+    /// a question about a merge request's code and its answer, to go on with (AI-07)
+    case codeQuestion(MergeRequest, text: String)
+    /// a whole conversation with Claude about an item, to go on with (AI-08): the item's context, then the text, which is
+    /// ``ClaudePrompt/continuation(of:turns:)``
+    indirect case conversation(ClaudeCodeContext, text: String)
 
     /// Returns the checkout the context belongs in: the checkout itself; for a merge request or a build, the one on its
     /// source branch (``WorkspaceLinks``); for a work item, the one whose branch starts with its number. `nil` asks the
@@ -26,9 +31,11 @@ public enum ClaudeCodeContext: Hashable, Sendable {
         let links = WorkspaceLinks(checkouts: checkouts, readings: readings, mergeRequests: mergeRequests)
         let entry: WorkspaceLinks.Entry?
         switch self {
+        case .conversation(let inner, _):
+            return inner.checkout(in: checkouts, readings: readings, mergeRequests: mergeRequests)
         case .workspace(let checkout, _):
             return checkout
-        case .mergeRequest(let mergeRequest):
+        case .mergeRequest(let mergeRequest), .codeQuestion(let mergeRequest, _):
             entry = links.checkout(for: mergeRequest)
         case .build(let build, _, _):
             entry = links.checkout(for: build)
@@ -45,7 +52,7 @@ public enum ClaudeCodeContext: Hashable, Sendable {
     /// - Parameter checkout: the checkout Claude Code starts in
     /// - Returns: the prompt, not redacted yet
     public func prompt(in checkout: Checkout) -> String {
-        var lines = ["Context from menubar-monitor, for this checkout (\(checkout.name), base branch origin/\(checkout.baseBranch)):"]
+        var lines = ["Context from MegaMonitor, for this checkout (\(checkout.name), base branch origin/\(checkout.baseBranch)):"]
         switch self {
         case .workItem(let item):
             lines.append("- Work item: \(item.reference) \"\(item.title)\" (\(item.type.rawValue.lowercased()), \(item.state.rawValue))")
@@ -95,6 +102,19 @@ public enum ClaudeCodeContext: Hashable, Sendable {
             lines.append(
                 "Find the cause of this failure in this checkout (the build log is on the build's page) and propose a "
                     + "fix. Don't commit or push.")
+        case .conversation(let inner, let text):
+            // The item's own lines, without its first task: the conversation is the task.
+            let context = inner.prompt(in: checkout).components(separatedBy: "\n")
+            lines = Array(context.prefix { !$0.isEmpty })
+            lines.append("")
+            lines.append(text)
+        case .codeQuestion(let mergeRequest, let text):
+            lines.append("- Merge request: \(mergeRequest.reference) \"\(mergeRequest.title)\"")
+            if let branch = mergeRequest.sourceBranch {
+                lines.append("- Source branch: \(branch)")
+            }
+            lines.append("")
+            lines.append(text)
         case .workspace(_, let task):
             if let number = task.number {
                 lines.append("- Work item: #\(number)\(task.title.map { " \"\($0)\"" } ?? "")")
@@ -118,27 +138,38 @@ public enum ClaudeCodeContext: Hashable, Sendable {
 /// Starts Claude Code in a Terminal window, in a checkout, with a first prompt (AI-05), without ever putting the
 /// prompt or a path into a shell command.
 ///
-/// The app writes a folder of its own (mode 700) with four files: a fixed `.command` script, and the checkout's path,
-/// `claude`'s path and the prompt as plain text (mode 600). `open -a Terminal` runs the script; the script reads the
-/// three values with `$(<file)` into quoted variables, deletes the folder, changes to the checkout and runs
-/// `claude "$prompt"`. The script's text never changes, so no item title, path or log line can ever be read as shell
+/// The app writes a folder of its own (mode 700) with six files: a fixed `.command` script, and the checkout's path,
+/// `claude`'s path, the model, the effort and the prompt as plain text (mode 600). `open -a Terminal` runs the script; the script
+/// reads the five values with `$(<file)` into quoted variables, deletes the folder, changes to the checkout and runs
+/// `claude --model "$model" --effort "$effort" "$prompt"`. The model is one of ``ClaudeModel``'s names and the effort
+/// one of ``ClaudeEffort``'s levels, which the script checks against the fixed lists before it passes them; any other
+/// value starts `claude` without that flag. The script's text never changes, so no item title, path or log line can ever be read as shell
 /// syntax: zsh never evaluates a variable's value. The prompt is an argument of the interactive `claude`, which is how
 /// Claude Code takes a first prompt; it is redacted like everything the app sends.
 public enum ClaudeCodeLaunch {
     /// the script, the same for every launch
     public static let script = """
         #!/bin/zsh -f
-        # Written by menubar-monitor's "Open in Claude Code". Starts Claude Code in a checkout with a first prompt.
+        # Written by MegaMonitor's "Open in Claude Code". Starts Claude Code in a checkout with a first prompt.
         # The checkout, the program and the prompt are read from the files next to this script as plain text; nothing
         # in them runs as a command. The folder deletes itself before Claude Code starts.
         here=${0:A:h}
         dir=$(<"$here/directory")
         claude=$(<"$here/claude")
+        model=$(<"$here/model")
+        effort=$(<"$here/effort")
         prompt=$(<"$here/prompt")
         rm -rf -- "$here"
         cd -- "$dir" || exit 1
         clear
-        exec "$claude" "$prompt"
+        args=()
+        case $model in
+            \(ClaudeModel.allCases.map(\.rawValue).joined(separator: "|"))) args+=(--model "$model") ;;
+        esac
+        case $effort in
+            \(ClaudeEffort.levelPattern)) args+=(--effort "$effort") ;;
+        esac
+        exec "$claude" "${args[@]}" "$prompt"
 
         """
 
@@ -151,9 +182,13 @@ public enum ClaudeCodeLaunch {
     ///   - prompt: the first prompt, redacted
     ///   - directory: the checkout's path
     ///   - claude: `claude`'s full path
+    ///   - model: the model Claude Code starts with; only its fixed name is written, never free text
+    ///   - effort: how long Claude thinks; only its fixed level is written, Default writes none
     ///   - parent: the folder the launch folder goes in
     /// - Returns: the script to open with Terminal
-    public static func write(prompt: String, directory: String, claude: URL, in parent: URL) throws -> URL {
+    public static func write(
+        prompt: String, directory: String, claude: URL, model: ClaudeModel, effort: ClaudeEffort = .standard, in parent: URL
+    ) throws -> URL {
         let manager = FileManager.default
         try manager.createDirectory(at: parent, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let folder = parent.appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -161,6 +196,8 @@ public enum ClaudeCodeLaunch {
         let values = [
             "directory": directory,
             "claude": claude.path(percentEncoded: false),
+            "model": model.rawValue,
+            "effort": effort.level ?? "",
             "prompt": prompt,
         ]
         for (name, value) in values {

@@ -7,7 +7,10 @@ struct WorkspaceActions {
     var openInIDE: @MainActor (Checkout) -> Void
     var openInTerminal: @MainActor (Checkout) -> Void
     var revealInFinder: @MainActor (Checkout) -> Void
+    /// opens a page in the real browser
     var open: @MainActor (URL) -> Void
+    /// shows a work item or merge request in the app, under "Opened" when it isn't in a list; ⌥ held opens the browser
+    var follow: @MainActor (URL) -> Void = { _ in }
     var copy: @MainActor (String) -> Void
     var showInPipelines: @MainActor (String) -> Void
     var showInMergeRequests: @MainActor (MergeRequest.ID) -> Void
@@ -29,7 +32,8 @@ struct WorkspaceActions {
             openInIDE: { checkout in Task { await store.openInIDE(checkout) } },
             openInTerminal: { checkout in Task { await store.openInTerminal(checkout) } },
             revealInFinder: { checkout in Task { await store.revealInFinder(checkout) } },
-            open: { openURL($0) },
+            open: { router.browse($0, fallback: openURL) },
+            follow: { router.follow($0, model: model, fallback: openURL) },
             copy: { text in
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
@@ -183,10 +187,10 @@ struct WorkspaceMenuItems: View {
         Button("Reveal in Finder") { actions.revealInFinder(row.checkout) }
         Divider()
         if let mergeRequest = row.task.mergeRequest {
-            Button("Open Merge Request \(row.mergeRequestReference ?? "")") { actions.open(mergeRequest.webURL) }
+            Button("Show Merge Request \(row.mergeRequestReference ?? "")") { actions.follow(mergeRequest.webURL) }
         }
         if let url = row.task.workItemURL {
-            Button("Open Work Item \(row.number ?? "")") { actions.open(url) }
+            Button("Show Work Item \(row.number ?? "")") { actions.follow(url) }
         }
         Divider()
         Button("Copy Path") { actions.copy(row.checkout.path) }
@@ -349,24 +353,9 @@ struct WorkspaceFacts: View {
     }
 }
 
-/// Two rows standing in for checkouts not read yet.
+/// Rows of bars standing in for checkouts not read yet: the icon, a name, a task's title and the numbers.
 private struct WorkspacePlaceholderRows: View {
     var body: some View {
-        ForEach(0..<2, id: \.self) { index in
-            HStack(alignment: .top, spacing: 10) {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .frame(width: 28, height: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: index == 0 ? "develop1" : "develop2")
-                        .font(.headline)
-                    Text(verbatim: "A placeholder for a task's title")
-                    Text(verbatim: "!00 · #00 · ↑0 ↓0")
-                        .font(.subheadline)
-                }
-            }
-            .padding(.vertical, 3)
-            .redacted(reason: .placeholder)
-            .selectionDisabled()
-        }
+        SkeletonRows(count: 4, leading: .square(side: 28), lines: 3, spacing: 10, titleLine: 18, detailLine: 14)
     }
 }

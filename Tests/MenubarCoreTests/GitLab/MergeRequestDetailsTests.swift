@@ -68,6 +68,8 @@ struct MergeRequestDetailsTests {
         // The resolved thread and the one that can't be resolved are left out.
         #expect(details.threads.map(\.id) == ["gid://gitlab/Discussion/a1", "gid://gitlab/Discussion/a4"])
         #expect(details.resolvedThreadCount == 1)
+        // The resolved one is kept for the card's one folded line.
+        #expect(details.resolvedThreads.map(\.id) == ["gid://gitlab/Discussion/a2"])
         #expect(details.hasMoreDiscussions == false)
 
         let diffNote = details.threads[0]
@@ -80,6 +82,27 @@ struct MergeRequestDetailsTests {
         #expect(comment.location == nil)
         #expect(comment.url?.absoluteString == "https://gitlab.example.com/group/project/-/merge_requests/16#note_504")
         #expect(comment.author?.username == "cnovak")
+    }
+
+    @Test("MR-07 a thread keeps its full first note and its replies, oldest first, without system notes")
+    func threadReplies() async throws {
+        let details = try await Self.details("merge-request-details.json")
+        let thread = details.threads[0]
+
+        #expect(thread.body.hasPrefix("## Question"))
+        #expect(thread.createdAt == Date(timeIntervalSince1970: 1_793_178_000))
+        // The system note ("changed this line…") is no reply; a time with fractions of a second decodes too.
+        #expect(thread.replies.map(\.body) == ["It does, but the retry belongs next to the timeout.", "Fair, I will move it."])
+        #expect(thread.replies[0].author?.name == "Alex Kim")
+        #expect(thread.replies[0].createdAt != nil)
+        #expect(thread.replies[1].author == nil)
+        #expect(thread.replies[1].url?.absoluteString.hasSuffix("#note_506") == true)
+        // A reply without a `url` jumps to its number on the merge request's page.
+        #expect(thread.replies[0].url?.absoluteString == "https://gitlab.example.com/group/project/-/merge_requests/16#note_505")
+        #expect(thread.hasMoreReplies)
+        #expect(details.threads[1].replies.isEmpty && !details.threads[1].hasMoreReplies)
+        // The shared thread view takes the same.
+        #expect(thread.comment.first.body == thread.body && thread.comment.replies == thread.replies)
     }
 
     @Test("MR-07 more discussions than asked for are noted")

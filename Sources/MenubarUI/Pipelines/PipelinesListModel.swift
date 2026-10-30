@@ -104,6 +104,8 @@ struct PipelinesListModel: Sendable {
     var query: String
     /// the team's Jenkins multibranch job, for the waiting jobs' pages
     var jobURL: URL?
+    /// which builds may alert, for the section headers' bells and the waiting jobs' menus (ALERT-08)
+    var notifications = NotificationPolicy()
 
     /// Returns the page a row opens: the build's, or a waiting job's job page.
     func page(of item: PipelinesItem) -> URL? {
@@ -134,6 +136,7 @@ struct PipelinesListModel: Sendable {
         self.query = query
         jobURL = data.jobURL
         let jenkins = data.panel.jenkins
+        notifications = jenkins.notifications
         problems = MainWindowProblems.appWide(jenkins: jenkins.problem, update: data.panel.update)
         guard !MainWindowProblems.teamValuesMissing(jenkins.problem) else {
             // TEAM-03: the team row alone; without the job URL there is no link row either.

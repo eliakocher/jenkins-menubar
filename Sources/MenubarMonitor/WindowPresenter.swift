@@ -14,7 +14,7 @@ import SwiftUI
 /// SwiftUI hands out `openWindow` and `openSettings` only to views, so every scene's view passes them in through
 /// ``capture(openWindow:openSettings:)``. The menubar label does it at launch (Task 0.10 verified it works before the
 /// panel ever opened). With "Show in menu bar" off no view has appeared, and no window opens at launch (APP-03), so a
-/// window asked for before then waits, and the presenter performs the Window menu's "menubar-monitor" command, whose
+/// window asked for before then waits, and the presenter performs the Window menu's "MegaMonitor" command, whose
 /// view reads both actions from its environment and hands them over (``handOver(openWindow:openSettings:)``); the
 /// waiting window then opens.
 ///
@@ -54,7 +54,7 @@ final class WindowPresenter {
         _ = handOver(openWindow: openWindow, openSettings: openSettings)
     }
 
-    /// Keeps SwiftUI's actions to open windows, which the Window menu's "menubar-monitor" command hands over when it is
+    /// Keeps SwiftUI's actions to open windows, which the Window menu's "MegaMonitor" command hands over when it is
     /// performed, and opens the window that waited for them.
     ///
     /// - Returns: whether a window waited; the command then opens nothing else
@@ -89,7 +89,7 @@ final class WindowPresenter {
         guard NSApp.isActive, !NSApp.isHidden, let window = NSApp.keyWindow else {
             return false
         }
-        return window.identifier?.rawValue.contains(Self.mainWindowID) == true || window.title == AppIdentity.name
+        return window.identifier?.rawValue.contains(Self.mainWindowID) == true || window.title == AppIdentity.displayName
     }
 
     /// Opens the main window, or brings it forward, and gives it the keyboard.
@@ -116,7 +116,7 @@ final class WindowPresenter {
         NSApp.activate()
     }
 
-    /// Keeps a window until SwiftUI's actions arrive, and asks the Window menu's "menubar-monitor" command for them.
+    /// Keeps a window until SwiftUI's actions arrive, and asks the Window menu's "MegaMonitor" command for them.
     /// When the menu has no such command yet, the window opens as soon as any view hands the actions over.
     private func wait(for window: PendingWindow) {
         pending = window
@@ -125,7 +125,7 @@ final class WindowPresenter {
         }
         guard let item = Self.mainWindowMenuItem(in: NSApp.mainMenu), let menu = item.menu else {
             AppLog.warning("No view has handed over SwiftUI's window actions yet, and the Window menu has no "
-                + "\(AppIdentity.name) item; the window opens once a view appears")
+                + "\(AppIdentity.displayName) item; the window opens once a view appears")
             return
         }
         isAskingMenu = true
@@ -133,10 +133,10 @@ final class WindowPresenter {
         menu.performActionForItem(at: menu.index(of: item))
     }
 
-    /// Returns the Window menu's "menubar-monitor" item (⌘0), which `MainWindowCommands` puts there.
+    /// Returns the Window menu's "MegaMonitor" item (⌘0), which `MainWindowCommands` puts there.
     private static func mainWindowMenuItem(in menu: NSMenu?) -> NSMenuItem? {
         for item in menu?.items ?? [] {
-            if item.title == AppIdentity.name, item.keyEquivalent == "0", item.submenu == nil {
+            if item.title == AppIdentity.displayName, item.keyEquivalent == "0", item.submenu == nil {
                 return item
             }
             if let found = mainWindowMenuItem(in: item.submenu) {

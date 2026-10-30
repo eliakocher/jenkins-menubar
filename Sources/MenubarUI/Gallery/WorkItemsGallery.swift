@@ -22,6 +22,80 @@ struct WorkItemsGalleryView: View {
     }
 }
 
+/// The work item detail alone, at a width of its own (Task 7.0): a typical item, with a long description, merge requests
+/// with their builds, a flag and a slot whose code freeze is ahead; or a sparse one, with nothing but its title.
+struct WorkItemDetailGalleryView: View {
+    let fixtures: Fixtures
+    let sparse: Bool
+    let size: CGSize
+    /// the item's own text, discussion and merge requests still on their way: skeleton cards
+    var loading = false
+
+    var body: some View {
+        let w = fixtures.workItemsScreen
+        let item = sparse ? sparseItem : typicalItem
+        let related: [String: [RelatedMergeRequest]] = sparse ? [item.reference: []] : [
+            item.reference: [
+                w.related(14, "Rework the color tokens", .opened),
+                w.related(11, "Move the color values into one file", .merged),
+                w.related(44, "[cascade] Merge release/2.4 into main", .opened),
+            ]
+        ]
+        let lists = WorkItemLists(
+            committed: WorkItemList(count: 1, items: sparse ? [] : [item]), others: WorkItemList(count: 1, items: sparse ? [item] : []))
+        let data = w.data(lists, related: related, mergeRequests: fixtures.mergeRequestsScreen.sections).data
+        let builds: [Int: BuildReality] = [
+            14: BuildReality(signal: .red, url: URL(string: "https://jenkins.example.com/job/project/job/MR-14/215/"), label: "#215"),
+            11: BuildReality(signal: .green, url: URL(string: "https://jenkins.example.com/job/project/job/MR-11/198/"), label: "#198"),
+        ]
+        let reality = SlotPlan.make(
+            workItems: [item], mergeRequests: { related[$0.reference] }, build: { builds[$0.iid] }, team: fixtures.team,
+            today: fixtures.now
+        ).slots.flatMap(\.items).first
+        WorkItemDetailContent(model: WorkItemDetailModel(data, selection: item.id, reality: reality), actions: .none)
+            .environment(
+                \.descriptionFixtures,
+                DescriptionFixtures(descriptions: [item.reference: loading ? .loading : .loaded(sparse ? "" : w.description31)])
+            )
+            .environment(
+                \.discussionFixtures,
+                [item.reference: loading ? .loading : .loaded(sparse ? WorkItemDiscussion() : w.discussion31)])
+            .frame(width: size.width, height: size.height)
+            .background(.windowBackground)
+    }
+
+    /// #31, committed to the slot whose release is five weeks ahead, by Sam Lee for Jane Doe and Alex Kim
+    private var typicalItem: WorkItem {
+        let w = fixtures.workItemsScreen
+        var item = w.item(31, "Rework the color tokens so the badges, the panel and the main window share one source of truth", labels: [
+            "workflow::committed", Self.slotLabel(now: fixtures.now), "type::feature", "priority::high", "design", "frontend",
+            "team::web::frontend",
+        ])
+        // GitLab's slot color, as `WorkItemsFixtures.colors` has it for the other slots.
+        item.labels = item.labels.map { $0.title.hasPrefix("slot::") ? MenubarCore.Label(title: $0.title, color: "#9B59B6") : $0 }
+        item.author = MergeRequest.Person(username: "slee", name: "Sam Lee")
+        item.assignees = [MergeRequest.Person(username: "jdoe", name: "Jane Doe"), MergeRequest.Person(username: "akim", name: "Alex Kim")]
+        return item
+    }
+
+    /// #40, a task with one label, nobody assigned and no description
+    private var sparseItem: WorkItem {
+        var item = fixtures.workItemsScreen.item(40, "Update the onboarding checklist", type: .task, labels: ["docs"], updatedMinutesAgo: 1440)
+        item.author = MergeRequest.Person(username: "jdoe", name: "Jane Doe")
+        item.assignees = []
+        return item
+    }
+
+    /// the slot label of the ISO week five weeks from now, so its code freeze is about a week ahead
+    static func slotLabel(now: Date) -> String {
+        var calendar = Calendar(identifier: .iso8601)
+        calendar.timeZone = .current
+        let release = calendar.date(byAdding: .day, value: 35, to: now) ?? now
+        let parts = calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: release)
+        return "slot::\(String(parts.yearForWeekOfYear ?? 2026)).\(String(format: "%02d", parts.weekOfYear ?? 1))"
+    }
+}
+
 extension GalleryCatalog {
     /// One entry per state of `docs/design/work-items.md`.
     static var workItemsEntries: [GalleryEntry] {
@@ -31,7 +105,26 @@ extension GalleryCatalog {
         let tall = CGSize(width: minimum.width, height: 1100)
         // The default width, tall enough for the whole templated description.
         let descriptionSize = CGSize(width: size.width, height: 1900)
+        let wide = CGSize(width: 1100, height: 1160)
+        let narrow = CGSize(width: 600, height: 1480)
         return [
+            // The detail alone, wide (two columns of cards) and narrow (one), typical and sparse (Task 7.0).
+            GalleryEntry(screen: "work-items", state: "detail-typical-wide", size: wide) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: wide)
+            },
+            GalleryEntry(screen: "work-items", state: "detail-typical-narrow", size: narrow) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: narrow)
+            },
+            // The description and the discussion still loading: their cards as skeletons, the header and the rest real.
+            GalleryEntry(screen: "work-items", state: "detail-loading", size: CGSize(width: 1100, height: 900)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 1100, height: 900), loading: true)
+            },
+            GalleryEntry(screen: "work-items", state: "detail-sparse-wide", size: CGSize(width: 1100, height: 520)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: true, size: CGSize(width: 1100, height: 520))
+            },
+            GalleryEntry(screen: "work-items", state: "detail-sparse-narrow", size: CGSize(width: 600, height: 560)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: true, size: CGSize(width: 600, height: 560))
+            },
             GalleryEntry(screen: "work-items", state: "sections", size: size) { f in
                 let w = f.workItemsScreen
                 return WorkItemsGalleryView(state: w.data(), selection: w.item31.id)

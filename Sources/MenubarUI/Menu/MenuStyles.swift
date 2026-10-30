@@ -87,18 +87,47 @@ private struct MenuRowModifier: ViewModifier {
     }
 }
 
-/// A menu row's grey text: `.secondary`, white while the row is highlighted, as a native menu item's subtitle.
+/// The one grey of the pane's and the flyouts' secondary text, a bit stronger than `.secondary` (the user, 2026-10-30:
+/// "the contrast of the gray text is low"). It is the vibrant primary style at a fixed opacity, so it keeps the glass's
+/// vibrancy and follows the appearance: more opacity in dark, where thin light text on glass reads weakest.
+struct MenuGreyStyle: ShapeStyle {
+    /// how much lighter than the subtitles the grey is: the shortcut hints and counts, still clearly readable
+    var isHint = false
+
+    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
+        let dark = environment.colorScheme == .dark
+        let opacity = switch (dark, isHint) {
+        case (true, false): 0.72
+        case (true, true): 0.64
+        case (false, false): 0.68
+        case (false, true): 0.60
+        }
+        return HierarchicalShapeStyle.primary.opacity(opacity)
+    }
+}
+
+extension ShapeStyle where Self == MenuGreyStyle {
+    /// the menu's grey for subtitles, summaries, notes, section titles and symbols
+    static var menuGrey: MenuGreyStyle { MenuGreyStyle() }
+    /// the menu's grey for shortcut hints and counts, a touch lighter than ``menuGrey``
+    static var menuHint: MenuGreyStyle { MenuGreyStyle(isHint: true) }
+}
+
+/// A menu row's grey text: ``menuGrey``, white while the row is highlighted, as a native menu item's subtitle.
 struct MenuSecondaryText: View {
     let text: String
+    let isHint: Bool
     @Environment(\.menuHighlighted) private var isHighlighted
 
-    init(_ text: String) {
+    /// - Parameter isHint: whether the text is a shortcut hint, a touch lighter than a subtitle
+    init(_ text: String, isHint: Bool = false) {
         self.text = text
+        self.isHint = isHint
     }
 
     var body: some View {
         Text(verbatim: text)
-            .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(MenuGreyStyle(isHint: isHint)))
     }
 }
 
@@ -142,7 +171,7 @@ struct MenuAreaIcon: View {
     var body: some View {
         Image(systemName: Self.glyph(of: section))
             .font(.system(size: 13))
-            .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+            .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
             .frame(width: MenuMetrics.paneSymbol)
             .accessibilityHidden(true)
     }

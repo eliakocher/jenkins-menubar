@@ -9,12 +9,19 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     @Binding var section: MainWindowSection
     @Binding var searchText: String
     @Binding var columnVisibility: NavigationSplitViewVisibility
-    /// Check Now, Watch a Build… and the rebuild
+    /// Watch a Build… and the rebuild
     let actions: PanelActions
+    /// Reload's action, which loads the shown section again (``MainWindowReload``); `nil` does nothing, as in the gallery
+    var reload: (@MainActor () -> Void)?
     /// grows when the search field should take the keyboard focus (⌘F)
     var searchFocusRequest = 0
     /// the easter egg note for the search text, above the list; `nil` for none (EGG-06)
     var searchNote: String?
+    /// the "Opened" group of the sidebar; while one of its items is selected, the window shows its detail in place of a
+    /// section's list and detail (WIN-06)
+    var opened = OpenedSidebar()
+    /// the Back and Forward buttons at the toolbar's leading side (WIN-08); `nil` shows none, as in the gallery
+    var navigation: NavigationControls?
     private let content: Content
     private let detail: Detail
     private let sectionToolbar: SectionToolbar
@@ -26,15 +33,20 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     ///   - searchText: the search field's text
     ///   - columnVisibility: whether the sidebar shows
     ///   - actions: the toolbar's actions
+    ///   - reload: Reload's action, which loads the shown section again
     ///   - searchFocusRequest: grows when the search field should take the keyboard focus
     ///   - searchNote: the easter egg note for the search text; `nil` for none
+    ///   - opened: the "Opened" group
+    ///   - navigation: the Back and Forward buttons; `nil` for none
     ///   - content: the section's list
     ///   - detail: the section's detail; not shown for Activity, whose list is full width
     ///   - sectionToolbar: the section's own toolbar items, group 1; empty for Pipelines and Merge Requests
     init(
         model: MainWindowShellModel, section: Binding<MainWindowSection>, searchText: Binding<String>,
-        columnVisibility: Binding<NavigationSplitViewVisibility>, actions: PanelActions, searchFocusRequest: Int = 0,
-        searchNote: String? = nil, @ViewBuilder content: () -> Content, @ViewBuilder detail: () -> Detail,
+        columnVisibility: Binding<NavigationSplitViewVisibility>, actions: PanelActions,
+        reload: (@MainActor () -> Void)? = nil, searchFocusRequest: Int = 0,
+        searchNote: String? = nil, opened: OpenedSidebar = OpenedSidebar(), navigation: NavigationControls? = nil,
+        @ViewBuilder content: () -> Content, @ViewBuilder detail: () -> Detail,
         @ToolbarContentBuilder sectionToolbar: () -> SectionToolbar
     ) {
         self.model = model
@@ -42,8 +54,11 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
         _searchText = searchText
         _columnVisibility = columnVisibility
         self.actions = actions
+        self.reload = reload
         self.searchFocusRequest = searchFocusRequest
         self.searchNote = searchNote
+        self.opened = opened
+        self.navigation = navigation
         self.content = content()
         self.detail = detail()
         self.sectionToolbar = sectionToolbar()
@@ -51,8 +66,8 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
 
     var body: some View {
         splitView
-        .navigationTitle(section.title)
-        .navigationSubtitle(model.subtitle ?? "")
+        .navigationTitle(opened.selected.map { $0.title ?? $0.reference } ?? section.title)
+        .navigationSubtitle(opened.selected?.reference ?? model.subtitle ?? "")
         .searchable(text: $searchText, placement: .toolbar, prompt: Text(section.searchPrompt))
         .searchFocused($isSearchFocused)
         .onChange(of: searchFocusRequest) {
@@ -66,7 +81,16 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     /// 2026-10-29, "old look, new brains"); the `detail` view isn't shown then.
     @ViewBuilder
     private var splitView: some View {
-        if section == .activity || section == .slots {
+        if opened.selected != nil {
+            // An opened item has no list: the sidebar and the detail at full width.
+            NavigationSplitView(columnVisibility: twoColumnVisibility) {
+                sidebar
+            } detail: {
+                detail
+                    .frame(minHeight: 0, maxHeight: .infinity)
+                    .toolbar { toolbar }
+            }
+        } else if section == .activity || section == .slots {
             NavigationSplitView(columnVisibility: twoColumnVisibility) {
                 sidebar
             } detail: {
@@ -95,7 +119,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     }
 
     private var sidebar: some View {
-        MainWindowSidebar(section: $section, badges: model.badges, markers: model.markers)
+        MainWindowSidebar(section: $section, badges: model.badges, markers: model.markers, opened: opened)
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
     }
 
@@ -109,13 +133,16 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     }
 
     /// The groups, leading to trailing: the section's, the update, the shared one. The flexible spacer pushes them all
-    /// to the trailing edge, so the conditional groups grow toward the leading side and Watch a Build…, Check Now and
+    /// to the trailing edge, so the conditional groups grow toward the leading side and Watch a Build…, Reload and
     /// the search never move (`main-window.md`, Toolbar).
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        if let navigation {
+            NavigationButtons(controls: navigation)
+        }
         ToolbarSpacer(.flexible)
         sectionToolbar
-        if section == .workItems || section == .activity {
+        if opened.selected == nil, section == .workItems || section == .activity {
             ToolbarSpacer(.fixed)
         }
         if model.showsUpdateItem {
@@ -134,25 +161,29 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
             .help("Watch the builds of someone else's merge request or branch")
             Button {
                 // During a check this starts nothing new (JERR-07); the scheduler sees to that.
-                actions.checkNow()
+                reload?()
             } label: {
-                CheckNowLabel(isBusy: model.isBusy)
+                ReloadLabel(title: MainWindowReload.title(for: section), isBusy: model.isBusy)
             }
-            .help("Check Jenkins and reload GitLab now")
+            .help(MainWindowReload.title(for: section))
+            // Activity has nothing to fetch; the item stays, so the others don't move.
+            .disabled(!MainWindowReload.isAvailable(in: section))
         }
     }
 }
 
-/// Check Now's label: its symbol, or a small spinner in the same place while a check or load runs past 1 s, so quick
-/// ones don't flicker and the item keeps its width (`main-window.md`, Toolbar).
-struct CheckNowLabel: View {
+/// Reload's label, named for the section ("Reload Merge Requests"): its symbol, or a small spinner in the same place
+/// while a check or load of the section runs past 1 s, so quick ones don't flicker and the item keeps its width
+/// (`main-window.md`, Toolbar).
+struct ReloadLabel: View {
+    let title: String
     let isBusy: Bool
     @Environment(\.panelSpinnerDelay) private var delay
     @ViewState private var showsSpinner = false
 
     var body: some View {
         Label {
-            Text("Check Now")
+            Text(title)
         } icon: {
             ZStack {
                 Image(systemName: "arrow.clockwise")

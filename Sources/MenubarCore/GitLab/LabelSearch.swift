@@ -57,6 +57,35 @@ public struct LabelSearch: Sendable {
         return LabelSearchResult(labels: titles, colors: colors.filter { titles.contains($0.key) }, found: found, problem: problem)
     }
 
+    /// Asks GitLab for the slot labels of the given years: every label of the project and its groups whose title starts
+    /// with the slot prefix and a year, like `slot::2026.` (SLOT-02).
+    ///
+    /// One request per year keeps the 100 labels of an answer for the years that matter. Labels that aren't slots (a
+    /// prefix match in the description, a year in a longer name) are left out.
+    ///
+    /// - Parameters:
+    ///   - prefix: the slot label prefix from Team
+    ///   - years: the years to ask for
+    /// - Returns: the slot labels with their colors, sorted by title; `nil` when GitLab wasn't asked (no token) or a
+    ///   request failed, so the caller keeps what it had
+    /// - Throws: `CancellationError` when the task was cancelled
+    public func slotLabels(prefix: String, years: [Int]) async throws -> [Label]? {
+        guard let client, !prefix.isEmpty else { return nil }
+        var found: [String: Label] = [:]
+        for year in years {
+            do {
+                for label in try await client.send(.labels(project: project, searchTerm: "\(prefix)\(year).")) {
+                    if SlotName(label: label.title, prefix: prefix) != nil {
+                        found[label.title] = label
+                    }
+                }
+            } catch is GitLabError {
+                return nil
+            }
+        }
+        return found.values.sorted { $0.title < $1.title }
+    }
+
     /// Asks GitLab about every filter label that no loaded work item has, after a load of the work items (WI-06).
     ///
     /// A label GitLab answers without is flagged as gone. When GitLab doesn't answer, a label keeps the flag it had.

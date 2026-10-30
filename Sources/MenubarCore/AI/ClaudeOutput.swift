@@ -12,11 +12,11 @@ public struct ClaudeUsage: Codable, Hashable, Sendable {
 }
 
 /// What one `claude -p --output-format json` run reported (AI-01): the answer, the structured answer when a JSON Schema
-/// was given, the tokens, the cost and the time, or the error.
+/// was given, the tokens and the time, or the error.
 ///
 /// Measured on 2026-10-29 with Claude Code 2.1.312: one JSON object with `type: "result"`, `subtype` (`success`, or an
 /// error like `error_max_budget_usd`), `is_error`, `result` (the text; `null` on an error), `structured_output` (with
-/// `--json-schema`), `errors` (on an error), `total_cost_usd`, `duration_ms`, `usage` (`input_tokens`,
+/// `--json-schema`), `errors` (on an error), `duration_ms`, `usage` (`input_tokens`,
 /// `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`) and `modelUsage` keyed by the model.
 public struct ClaudeRun: Hashable, Sendable {
     /// the answer as text; for a structured answer, its JSON
@@ -24,8 +24,6 @@ public struct ClaudeRun: Hashable, Sendable {
     /// the structured answer's JSON, when a schema was given
     public var structured: Data?
     public var usage: ClaudeUsage
-    /// the cost `claude` reports, in US dollars; spent on an error too
-    public var costUSD: Double
     /// how long it took, as `claude` measured it
     public var durationMS: Int?
     /// the model that answered, like `claude-opus-5-5`
@@ -39,13 +37,12 @@ public struct ClaudeRun: Hashable, Sendable {
     public var exitStatus: Int32 = 0
 
     public init(
-        text: String? = nil, structured: Data? = nil, usage: ClaudeUsage = ClaudeUsage(), costUSD: Double = 0,
+        text: String? = nil, structured: Data? = nil, usage: ClaudeUsage = ClaudeUsage(),
         durationMS: Int? = nil, model: String? = nil, isError: Bool = false, subtype: String? = nil, errors: [String] = []
     ) {
         self.text = text
         self.structured = structured
         self.usage = usage
-        self.costUSD = costUSD
         self.durationMS = durationMS
         self.model = model
         self.isError = isError
@@ -77,7 +74,7 @@ public struct ClaudeRun: Hashable, Sendable {
                 outputTokens: $0.outputTokens ?? 0)
         } ?? ClaudeUsage()
         return ClaudeRun(
-            text: shape.result, structured: structured, usage: usage, costUSD: shape.totalCostUsd ?? 0,
+            text: shape.result, structured: structured, usage: usage,
             durationMS: shape.durationMs, model: shape.modelUsage?.keys.sorted().first,
             isError: shape.isError ?? (shape.subtype.map { $0 != "success" } ?? false), subtype: shape.subtype,
             errors: shape.errors ?? [])
@@ -100,8 +97,11 @@ public struct ClaudeRun: Hashable, Sendable {
         return try? decoder.decode(type, from: Data(String(json).utf8))
     }
 
-    /// the error in a line, for the failure: "Reached maximum budget ($0.01)"
+    /// the error in a line, for the failure
     public var errorMessage: String {
+        if subtype == "error_max_budget_usd" {
+            return "Claude stopped before it finished. Ask again."
+        }
         if let first = errors.first(where: { !$0.isEmpty }) {
             return first
         }
@@ -127,7 +127,6 @@ public struct ClaudeRun: Hashable, Sendable {
         var isError: Bool?
         var result: String?
         var errors: [String]?
-        var totalCostUsd: Double?
         var durationMs: Int?
         var usage: Usage?
         var modelUsage: [String: ModelUsage]?

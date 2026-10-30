@@ -163,6 +163,12 @@ public actor Scheduler {
         }
     }
 
+    /// Runs a Jenkins check at once, or right after the one running, and loads no GitLab surface: the main window's
+    /// Reload in Pipelines.
+    public func checkBuildsNow() {
+        request(.checkNow)
+    }
+
     /// Changes the check interval. A wait under way starts again with the new interval.
     ///
     /// - Parameter interval: the time from the end of one check to the start of the next

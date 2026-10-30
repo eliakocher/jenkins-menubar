@@ -22,10 +22,20 @@ public struct WorkItemsListView: View {
 
     public var body: some View {
         TimelineView(.periodic(from: .now, by: 10)) { context in
+            let list = WorkItemsListModel(WorkItemsData(model, now: context.date), query: searchText)
             WorkItemsListContent(
-                model: WorkItemsListModel(WorkItemsData(model, now: context.date), query: searchText),
+                model: list,
                 selection: $selection,
-                actions: .live(model: model, router: router, openURL: openURL))
+                actions: .live(model: model, router: router, openURL: openURL),
+                search: list.showsGitLabSearch
+                    ? GitLabSearchRows.make(
+                        kind: .workItem, text: searchText, shown: list.sections.flatMap(\.rows).map(\.workItem.reference),
+                        model: model, now: context.date)
+                    : .hidden)
+        }
+        // "In GitLab" follows the search field (WIN-07).
+        .onChange(of: searchText, initial: true) {
+            model.gitLabSearch.update(kind: .workItem, text: searchText)
         }
     }
 }
@@ -35,10 +45,28 @@ struct WorkItemsListContent: View {
     let model: WorkItemsListModel
     @Binding var selection: WorkItem.ID?
     let actions: GitLabSectionActions
+    /// the "In GitLab" section while the search has text (WIN-07)
+    var search = GitLabSearchRows.hidden
+    /// the "In GitLab" row that the arrow keys are on; the list's own selection stays, so the detail doesn't change
+    @ViewState private var highlighted: WorkItem.ID?
+
+    /// the list's selection with the "In GitLab" rows in it: the arrow keys reach them, and they open on a click or Return
+    private var listSelection: Binding<WorkItem.ID?> {
+        Binding(
+            get: { search.row(reference: highlighted) != nil ? highlighted : selection },
+            set: { newValue in
+                if search.row(reference: newValue) != nil {
+                    highlighted = newValue
+                } else {
+                    highlighted = nil
+                    selection = newValue
+                }
+            })
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(selection: $selection) {
+            List(selection: listSelection) {
                 MainWindowProblemRows(model.problems, openSettings: actions.openSettings)
                 if let note = model.tokenNote {
                     // MR-04 in the note look: the steps are in Merge Requests.
@@ -47,13 +75,6 @@ struct WorkItemsListContent: View {
                         .selectionDisabled()
                     Button("Show Merge Requests") { actions.showSection(.mergeRequests) }
                         .buttonStyle(.link)
-                        .selectionDisabled()
-                }
-                if let summary = model.summary {
-                    Text(verbatim: summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                         .selectionDisabled()
                 }
                 if model.isPlaceholder {
@@ -69,6 +90,7 @@ struct WorkItemsListContent: View {
                         Text(verbatim: section.title)
                     }
                 }
+                GitLabSearchSection(search: search, tag: \.reference) { actions.follow($0.url) }
                 if let link = model.link {
                     Section {
                         Link("All Work Items in GitLab", destination: link)
@@ -78,21 +100,32 @@ struct WorkItemsListContent: View {
                 }
             }
             .contextMenu(forSelectionType: WorkItem.ID.self) { ids in
-                if let row = model.row(ids.first) {
+                if let found = search.row(reference: ids.first) {
+                    Button(found.openTitle) { actions.open(found.url) }
+                    Divider()
+                    Button("Copy Link") { actions.copy(found.url) }
+                } else if let row = model.row(ids.first) {
                     Button(row.openTitle) { actions.open(row.workItem.webURL) }
                     Divider()
                     Button("Copy Link") { actions.copy(row.workItem.webURL) }
                 }
             } primaryAction: { ids in
-                if let row = model.row(ids.first) {
-                    actions.open(row.workItem.webURL)
+                // It shows in the detail already; ⌥ opens it in GitLab (the user, 2026-10-30).
+                if let found = search.row(reference: ids.first) {
+                    actions.follow(found.url)
+                } else if let row = model.row(ids.first) {
+                    actions.follow(row.workItem.webURL)
                 }
             }
             .onKeyPress(.return) {
+                if let found = search.row(reference: highlighted) {
+                    actions.follow(found.url)
+                    return .handled
+                }
                 guard let row = model.row(selection) else {
                     return .ignored
                 }
-                actions.open(row.workItem.webURL)
+                actions.follow(row.workItem.webURL)
                 return .handled
             }
             .overlay {
@@ -107,7 +140,7 @@ struct WorkItemsListContent: View {
                             Link("All Work Items in GitLab", destination: link)
                         }
                     }
-                } else if model.findsNothing {
+                } else if model.findsNothing, !search.isShown {
                     ContentUnavailableView.search(text: model.query)
                 }
             }

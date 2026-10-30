@@ -23,7 +23,7 @@ struct MenubarMonitorApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window(AppIdentity.name, id: WindowPresenter.mainWindowID) {
+        Window(AppIdentity.displayName, id: WindowPresenter.mainWindowID) {
             MainWindowRoot()
                 .tracksPresence(as: WindowPresenter.mainWindowID, in: shell.presenter)
                 .onAppear { shell.surfaceAppeared() }
@@ -67,7 +67,8 @@ struct MenubarMonitorApp: App {
         return SettingsSystem(
             notificationPermission: { await effects.notificationPermission() },
             requestNotificationPermission: { _ = await effects.requestNotificationPermission() },
-            openNotificationSettings: { effects.openNotificationSettings() })
+            openNotificationSettings: { effects.openNotificationSettings() },
+            linkRouting: delegate.shell.linkRouting)
     }
 
     /// What the welcome flow asks of the app: the notification permission through `NativeEffects` (APP-04) and the

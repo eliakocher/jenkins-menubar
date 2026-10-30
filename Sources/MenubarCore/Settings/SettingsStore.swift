@@ -423,13 +423,16 @@ public final class SettingsStore {
             return isPath ? nil : "Enter the project's path, like group/project"
         case .slotReleaseWeekday, .slotCodeFreezeWeekday, .slotEarlyAccessWeekday:
             return SlotRules.weekday(of: value) == nil ? "Enter a weekday, like Monday, or a number from 1 (Monday) to 7" : nil
-        case .slotCodeFreezeNth, .slotEarlyAccessNth:
+        case .slotCodeFreezeNth, .slotEarlyAccessNth, .slotUpcomingShown:
             return SlotRules.nth(of: value) == nil ? "Enter a number from 1 to 12, like 4" : nil
         case .slotWarnDays:
             return SlotRules.days(of: value) == nil ? "Enter a number of days from 0 to 365" : nil
         case .slotPlanningURL:
             return TeamValues(slotPlanningURL: value).slotPlanning == nil ? "Enter a URL that starts with https:// or http://" : nil
-        case .committedLabel, .slotLabelPrefix, .ignoredMergeRequestPrefix, .typeLabelPrefix, .inProgressLabel:
+        case .squadCapacity:
+            return SquadCapacity(value) == nil ? "Enter points like Alpha: 60, Delta: 120, or one number for every squad" : nil
+        case .committedLabel, .slotLabelPrefix, .ignoredMergeRequestPrefix, .typeLabelPrefix, .inProgressLabel, .slotGroup,
+            .slotScheduledLabelPrefix, .squadLabelPrefix, .statusLabelPrefix:
             return nil
         }
     }

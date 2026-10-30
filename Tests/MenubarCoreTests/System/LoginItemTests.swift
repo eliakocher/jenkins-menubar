@@ -27,6 +27,26 @@ struct LoginItemTests {
         #expect(await log.entries().allSatisfy { $0.level == .info && $0.source == .settings })
     }
 
+    @Test("APP-07 registers the login item again for the new bundle path when install.sh left the marker")
+    func refreshesWhenMarked() async throws {
+        let folder = try TemporaryFolder()
+        let item = FakeLoginItem(status: .enabled)
+        let launchAtLogin = LaunchAtLogin(item: item)
+
+        // No marker: nothing happens, so a login item the user turned on or off stays as it is.
+        await launchAtLogin.refreshRegistrationIfMarked(in: folder.url)
+        #expect(item.calls.isEmpty)
+
+        _ = try folder.write("", to: LaunchAtLogin.refreshMarkerName)
+        await launchAtLogin.refreshRegistrationIfMarked(in: folder.url)
+        #expect(item.calls == [.unregister, .register])
+        #expect(item.status == .enabled)
+
+        // The marker is gone, so the next launch leaves it alone.
+        await launchAtLogin.refreshRegistrationIfMarked(in: folder.url)
+        #expect(item.calls == [.unregister, .register])
+    }
+
     @Test("APP-02 shows the login item status")
     func showsTheStatus() async throws {
         let item = FakeLoginItem()

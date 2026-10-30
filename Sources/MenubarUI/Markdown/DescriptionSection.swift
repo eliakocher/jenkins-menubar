@@ -2,13 +2,15 @@ import MenubarCore
 import SwiftUI
 
 /// The detail's Description section (WIN-02): the selected merge request's or work item's description as rendered
-/// Markdown, cut after about 20 lines with "Show More". It loads when the item is selected; while it loads, a small
-/// spinner; when it fails, a quiet line with "Try Again"; an empty description shows no section at all.
+/// Markdown, cut after about 20 lines with "Show More". It loads when the item is selected; while it loads, a
+/// skeleton; when it fails, a quiet line with "Try Again"; an empty description shows no section at all.
 ///
 /// It takes the description from `AppModel.descriptions`, or from the gallery's ``DescriptionFixtures``, so the details
 /// insert it as one view: `DescriptionSection(source: DescriptionSource(item))`.
 struct DescriptionSection: View {
     let source: DescriptionSource
+    /// whether it is a card of the merge request detail's ScrollView rather than a `Form`'s section
+    var inCard = false
 
     @Environment(AppModel.self) private var model: AppModel?
     @Environment(\.descriptionFixtures) private var fixtures
@@ -18,9 +20,12 @@ struct DescriptionSection: View {
     var body: some View {
         let description = fixtures?.descriptions[source.reference] ?? model?.descriptions.description(of: source)
             ?? .loaded("")
-        let document = description.text.map { MarkdownDocument(parsing: $0, base: source.webURL) }
+        // A first heading that repeats the card's title is dropped.
+        let document = description.text.map {
+            MarkdownDocument(parsing: $0, base: source.webURL).droppingLeadingHeading(titled: "Description")
+        }
         if let document, !document.isEmpty {
-            Section("Description") {
+            container(showsSizeButtons: true) {
                 CollapsibleMarkdown(document: document, startsExpanded: fixtures?.expanded ?? false)
                     .id(source.reference)
                     .task(id: source) { await load() }
@@ -28,7 +33,7 @@ struct DescriptionSection: View {
         } else if description.isCurrent {
             // An empty description: no header either.
         } else if description.failed {
-            Section("Description") {
+            container {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("The description couldn't be loaded")
                         .foregroundStyle(.secondary)
@@ -41,12 +46,34 @@ struct DescriptionSection: View {
                 .task(id: source) { await load() }
             }
         } else {
-            Section("Description") {
-                // A small spinner in the part still loading, never over the pane (OD-01).
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            container {
+                // Skeleton lines in the card's own chrome, about as tall as a short description.
+                SkeletonLines(count: 4)
                     .task(id: source) { await load() }
+            }
+        }
+    }
+
+    /// A `Form`'s section, or the merge request detail's card.
+    @ViewBuilder
+    private func container(showsSizeButtons: Bool = false, @ViewBuilder _ content: () -> some View) -> some View {
+        if inCard {
+            DetailCard("Description", symbol: "text.alignleft", width: .fullWidth, content: content) {
+                if showsSizeButtons {
+                    MarkdownSizeButtons()
+                }
+            }
+        } else {
+            Section {
+                content()
+            } header: {
+                HStack {
+                    Text("Description")
+                    Spacer(minLength: 8)
+                    if showsSizeButtons {
+                        MarkdownSizeButtons()
+                    }
+                }
             }
         }
     }
@@ -63,25 +90,32 @@ struct DescriptionSection: View {
 
 /// The description cut to about 20 lines behind a soft fade, with "Show More" and "Show Less". A description only a few
 /// lines longer isn't cut.
-private struct CollapsibleMarkdown: View {
+struct CollapsibleMarkdown: View {
     let document: MarkdownDocument
 
     @ViewState private var isExpanded: Bool
     /// the height of the whole description, at the width it gets
     @ViewState private var fullHeight: CGFloat = 0
 
-    /// about 20 lines of body text
-    private static let cutHeight: CGFloat = 20 * 16
-    /// a description that ends within about 4 more lines shows whole
-    private static let slack: CGFloat = 4 * 16
-    private static let fadeHeight: CGFloat = 56
+    @AppStorage(MarkdownReadingSize.key) private var sizeStep = MarkdownReadingSize.defaultStep
 
-    init(document: MarkdownDocument, startsExpanded: Bool) {
+    /// the lines after which the text is cut: 20 for a description, fewer for a comment
+    private let lines: Int
+    /// about `lines` lines of body text, at the reading size
+    private var cutHeight: CGFloat { CGFloat(lines) * 16 * scale }
+    /// a text that ends within a few more lines shows whole: 4 after 20 lines, 1 after 4
+    private var slack: CGFloat { CGFloat(max(1, lines / 5)) * 16 * scale }
+    private var fadeHeight: CGFloat { lines < 8 ? 28 : 56 }
+
+    private var scale: CGFloat { MarkdownReadingSize.scale(forStep: sizeStep) }
+
+    init(document: MarkdownDocument, startsExpanded: Bool, lines: Int = 20) {
         self.document = document
+        self.lines = lines
         _isExpanded = ViewState(initialValue: startsExpanded)
     }
 
-    private var isCuttable: Bool { fullHeight > Self.cutHeight + Self.slack }
+    private var isCuttable: Bool { fullHeight > cutHeight + slack }
     private var isCut: Bool { isCuttable && !isExpanded }
 
     var body: some View {
@@ -89,14 +123,14 @@ private struct CollapsibleMarkdown: View {
             MarkdownView(document: document)
                 .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
-                .frame(height: isCut ? Self.cutHeight : nil, alignment: .top)
+                .frame(height: isCut ? cutHeight : nil, alignment: .top)
                 .clipped()
                 .mask {
                     VStack(spacing: 0) {
                         Rectangle()
                         if isCut {
                             LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                                .frame(height: Self.fadeHeight)
+                                .frame(height: fadeHeight)
                         }
                     }
                 }

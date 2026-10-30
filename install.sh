@@ -1,6 +1,7 @@
 #!/bin/bash
-# Installs menubar-monitor from this checkout: builds it into ~/Applications/menubar-monitor.app and opens it. Only the
-# Command Line Tools are needed. The app remembers this checkout and offers "Update Ready — Rebuild" when it changes.
+# Installs MegaMonitor from this checkout: builds it into ~/Applications/MegaMonitor.app and opens it. Only the
+# Command Line Tools are needed. An older ~/Applications/menubar-monitor.app (the app's name before MegaMonitor) is
+# quit and removed by the build (scripts/migrate-old-bundle.sh), which leaves open at login on if it was on. The app remembers this checkout and offers "Update Ready — Rebuild" when it changes.
 #
 #   ./install.sh [--dry-run]
 #   ./install.sh --retire-old [--dry-run]
@@ -12,7 +13,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")" && pwd)
-app=$HOME/Applications/menubar-monitor.app
+app=$HOME/Applications/MegaMonitor.app
 dry_run=false
 retire=false
 for arg in "$@"; do
@@ -118,7 +119,7 @@ install_app() {
 	local version
 	version=$(sw_vers -productVersion)
 	if ((${version%%.*} < 26)); then
-		echo "✗ menubar-monitor needs macOS 26 or later; this Mac runs macOS $version." >&2
+		echo "✗ MegaMonitor needs macOS 26 or later; this Mac runs macOS $version." >&2
 		exit 1
 	fi
 	if ! xcode-select -p >/dev/null 2>&1 || ! xcrun --find swift >/dev/null 2>&1; then
@@ -128,16 +129,23 @@ install_app() {
 	echo "✓ $(xcode-select -p)"
 
 	step 'Build and install'
+	if [[ -d $HOME/Applications/menubar-monitor.app ]]; then
+		echo '• found the old menubar-monitor.app: the build removes it and keeps open at login as it was'
+	fi
 	change "$root/build.sh" --install
 
 	step 'Start'
-	# A running copy keeps running the old code, and open would only bring it forward.
-	if pgrep -x menubar-monitor >/dev/null; then
-		change pkill -x menubar-monitor || true
-		if ! $dry_run; then
-			wait_for_exit menubar-monitor
+	# A running copy keeps running the old code, and open would only bring it forward. The executable was called
+	# menubar-monitor before the rename, so a copy that still runs under that name is quit as well.
+	local running
+	for running in MegaMonitor menubar-monitor; do
+		if pgrep -x "$running" >/dev/null; then
+			change pkill -x "$running" || true
+			if ! $dry_run; then
+				wait_for_exit "$running"
+			fi
 		fi
-	fi
+	done
 	change open "$app"
 	echo '✓ The welcome flow takes it from here: what it imported, the team values, the tokens and the notifications.'
 	if old_tool_present; then
@@ -273,7 +281,7 @@ unregister_helper() {
 delete_old_data() {
 	step 'Old caches, logs and keychain items'
 	if [[ ! -e $import_marker ]]; then
-		echo "• menubar-monitor hasn't imported from the old tool yet: open it once, then run this again to delete them."
+		echo "• MegaMonitor hasn't imported from the old tool yet: open it once, then run this again to delete them."
 		return
 	fi
 	local found='' account delete_accounts='' helper_defaults=false answer=''
@@ -292,7 +300,7 @@ delete_old_data() {
 			delete_accounts="$delete_accounts $account"
 			found=$found"  the keychain item $old_service $account"$'\n'
 		else
-			echo "• keeps the keychain item $old_service $account: menubar-monitor has no copy of it yet"
+			echo "• keeps the keychain item $old_service $account: MegaMonitor has no copy of it yet"
 		fi
 	done
 	if defaults read "$old_helper_id" >/dev/null 2>&1; then
@@ -334,7 +342,7 @@ delete_old_data() {
 
 retire_old_tool() {
 	if [[ ! -d $app ]]; then
-		echo "✗ menubar-monitor isn't installed: run ./install.sh first, and retire the old tool after the trial." >&2
+		echo "✗ MegaMonitor isn't installed: run ./install.sh first, and retire the old tool after the trial." >&2
 		exit 1
 	fi
 	add_old_folder "$root"
@@ -355,7 +363,7 @@ retire_old_tool() {
 		echo '• SwiftBar and jq stay installed; if nothing else uses them: brew uninstall --cask swiftbar && brew uninstall jq'
 	fi
 	if grep -qE '^[[:space:]]*export (JENKINS_MCP_BASIC_AUTH|GITLAB_TOKEN)=' "$HOME/.zshrc" 2>/dev/null; then
-		echo '• ~/.zshrc still exports JENKINS_MCP_BASIC_AUTH or GITLAB_TOKEN. menubar-monitor keeps its own copies in'
+		echo '• ~/.zshrc still exports JENKINS_MCP_BASIC_AUTH or GITLAB_TOKEN. MegaMonitor keeps its own copies in'
 		echo '  the keychain, so remove the exports unless something else uses them.'
 	fi
 }

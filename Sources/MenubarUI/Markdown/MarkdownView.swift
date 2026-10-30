@@ -6,15 +6,37 @@ import SwiftUI
 struct MarkdownView: View {
     let document: MarkdownDocument
 
+    @AppStorage(MarkdownReadingSize.key) private var sizeStep = MarkdownReadingSize.defaultStep
+    @Environment(\.openItemLink) private var openItemLink
+
     var body: some View {
+        let scale = MarkdownReadingSize.scale(forStep: sizeStep)
         MarkdownBlocks(blocks: document.blocks, depth: 0)
+            .environment(\.markdownScale, scale)
+            // The macOS body size, so that 1× is what the text looked like before it could change; headings and code
+            // below take their sizes from the same factor.
+            .font(.system(size: MarkdownType.body * scale))
+            .lineSpacing(MarkdownType.lineSpacing * (scale - 1))
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
             // The document makes no other links; this keeps any other scheme from reaching the system.
-            .environment(\.openURL, OpenURLAction { url in
-                MarkdownDocument.isWebURL(url) ? .systemAction : .discarded
+            .environment(\.openURL, OpenURLAction { [openItemLink] url in
+                guard MarkdownDocument.isWebURL(url) else {
+                    return .discarded
+                }
+                // A merge request or work item of the app's GitLab opens in the app, ⌥ aside (WIN-06).
+                return MainActor.assumeIsolated { openItemLink.handle(url) } ? .handled : .systemAction
             })
     }
+}
+
+/// The macOS text styles' sizes, which the reading size scales (`Font.system(size:)` doesn't follow text styles).
+enum MarkdownType {
+    static let body: CGFloat = 13
+    static let callout: CGFloat = 12
+    static let title3: CGFloat = 15
+    /// the extra room between lines at 2×, per unit of scale above 1×
+    static let lineSpacing: CGFloat = 3
 }
 
 /// Blocks one under the other; a heading gets more room above it than the blocks between.
@@ -23,11 +45,13 @@ private struct MarkdownBlocks: View {
     /// how deep in lists and quotes, for the bullets
     let depth: Int
 
+    @Environment(\.markdownScale) private var scale
+
     var body: some View {
-        VStack(alignment: .leading, spacing: depth == 0 ? 10 : 6) {
+        VStack(alignment: .leading, spacing: (depth == 0 ? 10 : 6) * scale) {
             ForEach(blocks.indices, id: \.self) { index in
                 MarkdownBlockView(block: blocks[index], depth: depth)
-                    .padding(.top, index > 0 && blocks[index].isHeading ? 6 : 0)
+                    .padding(.top, index > 0 && blocks[index].isHeading ? 6 * scale : 0)
             }
         }
     }
@@ -37,11 +61,13 @@ private struct MarkdownBlockView: View {
     let block: MarkdownBlock
     let depth: Int
 
+    @Environment(\.markdownScale) private var scale
+
     var body: some View {
         switch block {
         case .heading(let level, let text):
             Text(text.styled)
-                .font(Self.font(level))
+                .font(Self.font(level, scale: scale))
                 .foregroundStyle(level >= 5 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
@@ -53,10 +79,10 @@ private struct MarkdownBlockView: View {
         case .code(_, let code):
             MarkdownCodeView(code: code)
         case .quote(let blocks):
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: 10 * scale) {
                 Capsule()
                     .fill(.tertiary)
-                    .frame(width: 3)
+                    .frame(width: 3 * scale)
                 MarkdownBlocks(blocks: blocks, depth: depth + 1)
                     .foregroundStyle(.secondary)
             }
@@ -65,24 +91,26 @@ private struct MarkdownBlockView: View {
             MarkdownTableView(table: table)
         case .rawText(let text):
             Text(verbatim: text)
-                .font(.system(.callout, design: .monospaced))
+                .font(.system(size: MarkdownType.callout * scale, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         case .rule:
             Divider()
-                .padding(.vertical, 2)
+                .padding(.vertical, 2 * scale)
         }
     }
 
     /// The templates' sections are `###`, so level 3 reads as a section header; 1 and 2 a step above, 4 to 6 below.
-    private static func font(_ level: Int) -> Font {
-        switch level {
-        case 1: .title3.weight(.bold)
-        case 2: .title3.weight(.semibold)
-        case 3: .headline
-        case 4: .body.weight(.semibold)
-        default: .callout.weight(.semibold)
-        }
+    private static func font(_ level: Int, scale: CGFloat) -> Font {
+        let (size, weight): (CGFloat, Font.Weight) =
+            switch level {
+            case 1: (MarkdownType.title3, .bold)
+            case 2: (MarkdownType.title3, .semibold)
+            case 3: (MarkdownType.body, .bold)
+            case 4: (MarkdownType.body, .semibold)
+            default: (MarkdownType.callout, .semibold)
+            }
+        return .system(size: size * scale, weight: weight)
     }
 }
 
@@ -91,13 +119,15 @@ private struct MarkdownListView: View {
     let list: MarkdownList
     let depth: Int
 
+    @Environment(\.markdownScale) private var scale
+
     private static let bullets = ["•", "◦", "▪︎"]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 5 * scale) {
             ForEach(list.items.indices, id: \.self) { index in
                 let item = list.items[index]
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6 * scale) {
                     marker(item, number: list.start + index)
                     MarkdownBlocks(blocks: item.blocks, depth: depth + 1)
                 }
@@ -115,11 +145,11 @@ private struct MarkdownListView: View {
             Text(verbatim: "\(String(number)).")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
-                .frame(minWidth: 16, alignment: .trailing)
+                .frame(minWidth: 16 * scale, alignment: .trailing)
         } else {
             Text(verbatim: Self.bullets[depth % Self.bullets.count])
                 .foregroundStyle(.secondary)
-                .frame(width: 10)
+                .frame(width: 10 * scale)
         }
     }
 }
@@ -128,13 +158,15 @@ private struct MarkdownListView: View {
 private struct MarkdownCodeView: View {
     let code: String
 
+    @Environment(\.markdownScale) private var scale
+
     var body: some View {
         ScrollView(.horizontal) {
             Text(verbatim: code)
-                .font(.system(.callout, design: .monospaced))
+                .font(.system(size: MarkdownType.callout * scale, design: .monospaced))
                 .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 10 * scale)
+                .padding(.vertical, 8 * scale)
         }
         // The overlay scroller sat on the code as a grey blob; a trackpad or Shift and the wheel still scroll.
         .scrollIndicators(.hidden)
@@ -148,8 +180,10 @@ private struct MarkdownCodeView: View {
 private struct MarkdownTableView: View {
     let table: MarkdownTable
 
+    @Environment(\.markdownScale) private var scale
+
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
+        Grid(alignment: .leading, horizontalSpacing: 14 * scale, verticalSpacing: 6 * scale) {
             GridRow {
                 ForEach(table.header.indices, id: \.self) { column in
                     cell(table.header[column], column: column)
@@ -166,8 +200,8 @@ private struct MarkdownTableView: View {
                 }
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10 * scale)
+        .padding(.vertical, 8 * scale)
         .overlay {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(.separator)

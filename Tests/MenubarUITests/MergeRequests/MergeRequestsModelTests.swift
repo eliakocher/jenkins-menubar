@@ -63,7 +63,7 @@ struct MergeRequestsModelTests {
 
         let items = WorkItemsListModel(f.workItemsScreen.data().data, query: query)
         #expect(items.sections.flatMap(\.rows).map(\.reference) == workItems)
-        #expect(items.summary == nil && items.link == nil)
+        #expect(items.link == nil)
         #expect(items.findsNothing == workItems.isEmpty)
     }
 }

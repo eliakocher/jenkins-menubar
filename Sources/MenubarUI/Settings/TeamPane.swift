@@ -86,8 +86,14 @@ public struct TeamValueFields: View {
                 field(.slotEarlyAccessNth)
                 field(.slotEarlyAccessWeekday)
                 field(.slotWarnDays)
+                field(.slotUpcomingShown)
                 field(.inProgressLabel)
                 field(.slotPlanningURL)
+                field(.slotGroup)
+                field(.slotScheduledLabelPrefix)
+                field(.squadLabelPrefix)
+                field(.statusLabelPrefix)
+                field(.squadCapacity)
             } header: {
                 Text("Slots")
             } footer: {
@@ -96,8 +102,12 @@ public struct TeamValueFields: View {
                         + "(slots before 2026.30 released on Thursday, so their dates are a few days off). The code freeze is "
                         + "the Nth weekday before the release, by default the 4th Friday; early access the 2nd Monday. "
                         + "Committed items without a merge request are flagged from the warning days before the code freeze, "
-                        + "and the slot alert, if on in General, comes then. Empty values use the defaults. The in-progress "
-                        + "label marks work items that are being worked on; empty finds a label like status::InProgress.")
+                        + "and the slot alert, if on in General, comes then. Empty values use the defaults. Slots shows the current slot and this many upcoming ones (1 to 12), "
+                        + "and later ones only with committed items. The in-progress "
+                        + "label marks work items that are being worked on; empty finds a label like status::InProgress. "
+                        + "With a slot group, Slots shows every issue of the group and its subgroups in the shown slots, "
+                        + "committed by the slot label, planned by the scheduled one; the squad labels give the chips, and "
+                        + "the capacity the load.")
             }
         }
     }
@@ -131,8 +141,14 @@ public struct TeamValueFields: View {
         case .slotEarlyAccessNth: "Early access: which weekday before"
         case .slotEarlyAccessWeekday: "Early access weekday"
         case .slotWarnDays: "Warning, days before the freeze"
+        case .slotUpcomingShown: "Upcoming slots shown"
         case .inProgressLabel: "In-progress label"
         case .slotPlanningURL: "Slot planning URL"
+        case .slotGroup: "Slot group"
+        case .slotScheduledLabelPrefix: "Scheduled slot label prefix"
+        case .squadLabelPrefix: "Squad label prefix"
+        case .statusLabelPrefix: "Status label prefix"
+        case .squadCapacity: "Squad capacity, points per slot"
         }
     }
 
@@ -152,8 +168,14 @@ public struct TeamValueFields: View {
         case .slotEarlyAccessNth: "2"
         case .slotEarlyAccessWeekday: "Monday"
         case .slotWarnDays: "3"
+        case .slotUpcomingShown: "4"
         case .inProgressLabel: "Auto, like status::InProgress"
         case .slotPlanningURL: "Off, like https://planning.example.com"
+        case .slotGroup: "Off, like group"
+        case .slotScheduledLabelPrefix: "Off, like slot-scheduled::"
+        case .squadLabelPrefix: "Off, like squad::"
+        case .statusLabelPrefix: "Off, like status::"
+        case .squadCapacity: "Off, like Alpha: 60, Delta: 120"
         }
     }
 }

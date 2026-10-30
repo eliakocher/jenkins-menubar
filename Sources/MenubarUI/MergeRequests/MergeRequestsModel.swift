@@ -84,6 +84,11 @@ struct MergeRequestsListModel: Sendable {
         !query.isEmpty && setup == nil && !isPlaceholder && sections.isEmpty && !showsEmpty
     }
 
+    /// whether the "In GitLab" search may show: GitLab is asked only with the team values and the token (WIN-07)
+    var showsGitLabSearch: Bool {
+        !query.isEmpty && setup == nil
+    }
+
     /// Returns the row with an id.
     ///
     /// - Parameter id: the MR's web URL
@@ -161,7 +166,7 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
     var lead: String
     /// "by Sam Lee · updated 5m ago · 3 files +10 −2 · pipeline success"
     var rest: String
-    /// "Open Merge Request !21"
+    /// "Open Merge Request !21 in GitLab"
     var openTitle: String
     /// whether I wrote it, so a line can leave out "by …"
     var isMine: Bool
@@ -184,7 +189,7 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
         let details = mergeRequest.details(me: me, project: project, now: now)
         // The details start with the reference and the badge text; the rest truncates first.
         rest = details.hasPrefix(lead + " · ") ? String(details.dropFirst(lead.count + 3)) : ""
-        openTitle = "Open Merge Request \(shortReference)"
+        openTitle = "Open Merge Request \(shortReference) in GitLab"
         isMine = mergeRequest.author.username == me
     }
 
@@ -205,6 +210,8 @@ struct MergeRequestDetailModel: Sendable {
     var status: MergeRequestStatus
     /// "Open Merge Request !14"
     var openTitle: String
+    /// the project's name without its group, "project", which the header shows before the iid
+    var projectName: String
     /// the head pipeline's status; `nil` shows "No pipeline"
     var pipeline: PipelineFact?
     /// the MR's build while Pipelines shows it (WIN-02); `nil` shows no row
@@ -215,6 +222,9 @@ struct MergeRequestDetailModel: Sendable {
     var changes: String
     /// the easter egg line under the diff stats (EGG-19); set by the view, `nil` for none
     var eggLine: String?
+    /// the work items of the merge request: its title's references and GitLab's links (MR-12); set by the view, since it
+    /// reads the lists and GitLab's answers
+    var workItems: [LinkedWorkItem] = []
     /// "Sam Lee", mine "Jane Doe (me)"
     var author: String
     /// "5m ago"
@@ -270,11 +280,14 @@ struct MergeRequestDetailModel: Sendable {
         var state: BuildState
         /// "!16 #3 · FAILURE", running "!14 #3 · running"
         var text: String
+        /// the header's chip: "Jenkins #3 · Failure", "Jenkins #3 · Running"
+        var chip: String
 
         init(_ build: Build) {
             job = build.job
             state = BuildState(build)
             text = "\(build.label) #\(String(build.number)) · \(state.resultText ?? "running")"
+            chip = "Jenkins #\(String(build.number)) · \((state.resultText ?? "running").capitalized)"
         }
     }
 
@@ -287,6 +300,10 @@ struct MergeRequestDetailModel: Sendable {
         /// the symbol for an approval or requested changes; `nil` for the other states
         var mark: Mark?
         var id: String
+        /// GitLab's state of the review, which picks the chip's glyph
+        var state: MergeRequest.ReviewState = .unreviewed
+        /// whether the reviewer is me, whom the chip rings
+        var isMe = false
 
         /// Returns the word and the symbol of a review state: "approved", "requested changes", "review started".
         static func describe(state: MergeRequest.ReviewState, approved: Bool) -> (word: String, mark: Mark?) {
@@ -316,11 +333,22 @@ struct MergeRequestDetailModel: Sendable {
         else {
             return nil
         }
-        let me = list.username
+        self.init(data, mergeRequest: mergeRequest, me: list.username)
+    }
+
+    /// Returns the detail of a merge request that isn't in the list, one opened under "Opened" (WIN-06).
+    ///
+    /// - Parameters:
+    ///   - data: the stores' values
+    ///   - mergeRequest: the merge request, as loaded for itself
+    ///   - me: my username; `nil` takes the one of the last list load, or none before it
+    init(_ data: MergeRequestsData, mergeRequest: MergeRequest, me: String? = nil) {
+        let me = me ?? data.mergeRequests.list?.username ?? ""
         let project = data.team.gitLabProject
         self.mergeRequest = mergeRequest
         status = MergeRequestStatus.of(mergeRequest, me: me)
-        openTitle = "Open Merge Request \(mergeRequest.shortReference(project: project))"
+        openTitle = "Open Merge Request \(mergeRequest.shortReference(project: project)) in GitLab"
+        projectName = Self.projectName(of: mergeRequest.reference)
         pipeline = mergeRequest.pipelineStatus.map(PipelineFact.init)
         jenkinsBuild = Self.build(of: mergeRequest, in: data.builds).map(JenkinsBuildFact.init)
         // An MR is watched in its own project; one of a project not set up offers nothing (plan Phase 13).
@@ -336,7 +364,7 @@ struct MergeRequestDetailModel: Sendable {
             let (word, mark) = ReviewerRow.describe(state: reviewer.reviewState, approved: reviewer.approved)
             return ReviewerRow(
                 name: Self.name(reviewer.name, username: reviewer.username, me: me), word: word, mark: mark,
-                id: reviewer.username)
+                id: reviewer.username, state: reviewer.reviewState, isMe: reviewer.username == me)
         }
         changesURL = mergeRequest.webURL.appending(path: "diffs")
         pipelinesURL = mergeRequest.webURL.appending(path: "pipelines")
@@ -353,6 +381,12 @@ struct MergeRequestDetailModel: Sendable {
     static func build(of mergeRequest: MergeRequest, in builds: [Build]) -> Build? {
         let target = Self.comparable(mergeRequest.webURL)
         return builds.first { $0.gitLabURL.map(Self.comparable) == target }
+    }
+
+    /// "project" of `group/subgroup/project!16`
+    private static func projectName(of reference: String) -> String {
+        let path = reference.split(separator: "!").first.map(String.init) ?? reference
+        return path.split(separator: "/").last.map(String.init) ?? path
     }
 
     private static func comparable(_ url: URL) -> String {

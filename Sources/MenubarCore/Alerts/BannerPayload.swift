@@ -19,7 +19,9 @@ public struct BannerPayload: Hashable, Sendable {
 
     /// What a click on a banner or one of its actions asks the app to do.
     public enum Intent: Hashable, Sendable {
-        /// open a link in the browser
+        /// show a build or merge request in the app, in its list or under "Opened" (WIN-06)
+        case show(URL)
+        /// open a link in the browser: the console output
         case open(URL)
         /// start the build's rebuild (PIPE-09)
         case rebuild(BuildID)
@@ -68,7 +70,12 @@ public struct BannerPayload: Hashable, Sendable {
         if let build = hide(forAction: action) {
             return .hide(build)
         }
-        return url(forAction: action).map(Intent.open)
+        guard let url = url(forAction: action) else {
+            return nil
+        }
+        let resolved = action.flatMap(AlertContent.Action.init(rawValue:)) ?? defaultAction
+        // A preview's build is made up: there is nothing to show in the app, so its links open in the browser.
+        return resolved.showsInApp && hide != nil ? .show(url) : .open(url)
     }
 
     /// Returns the build a click on the banner's Hide hides (HIDE-01).

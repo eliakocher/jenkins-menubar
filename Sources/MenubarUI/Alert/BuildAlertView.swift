@@ -7,15 +7,21 @@ import SwiftUI
 ///
 /// `NativeEffects` hosts it in a non-activating panel that never takes the keyboard by itself; once a click makes the
 /// panel key, Return presses the default button and Esc presses Dismiss. A live alert keeps Open Console and Hide Until
-/// the Next Build in a More menu above Dismiss. 320 pt wide; the height fits the content.
+/// the Next Build in the context menu of its background, so the buttons stay calm. A dark tint over the glass and a
+/// lighter grey for the facts keep it readable over a light window (the user, 2026-10-30). 320 pt wide; the height
+/// fits the content.
 public struct BuildAlertView: View {
     let alert: BuildAlert
     let notificationsOff: Bool
     let perform: (AlertContent.Action) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     /// the alert's fixed width
     public static let width: CGFloat = 320
+
+    /// the glass's corners, which are the window's corners too
+    public static let cornerRadius: CGFloat = 16
 
     /// - Parameters:
     ///   - alert: the alert
@@ -37,7 +43,7 @@ public struct BuildAlertView: View {
                 // With several projects, which one the build is of (plan Phase 13).
                 Text(verbatim: project)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.alertGrey)
                     .padding(.top, 12)
             }
             headline(content)
@@ -59,12 +65,12 @@ public struct BuildAlertView: View {
                 }
             }
             .font(.callout)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.alertGrey)
             .padding(.top, 4)
             if notificationsOff {
                 Text("Notifications are off, so this alert shows as a window.")
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.alertGrey)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
             }
@@ -72,22 +78,24 @@ public struct BuildAlertView: View {
                 // An easter egg adds a line under the facts, never in place of one (EGG-11).
                 Text(verbatim: eggLine)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.alertGrey)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 8)
             }
             VStack(spacing: 8) {
                 ForEach(content.buttons, id: \.self) { action in
-                    // The secondary actions sit in a menu above Dismiss, so the buttons stay calm (ALERT-03).
-                    if action == .dismiss, !content.moreActions.isEmpty {
-                        moreMenu(content.moreActions)
-                    }
                     Button(action.title) {
                         perform(action)
                     }
                     .controlSize(.large)
                     .buttonSizing(.flexible)
                     .frame(maxWidth: .infinity)
+                    .background {
+                        // The plain buttons' fill a touch more visible on the darker glass.
+                        if action != content.defaultAction {
+                            Capsule().fill(Color.white.opacity(colorScheme == .dark ? 0.08 : 0))
+                        }
+                    }
                     .keyboardShortcut(shortcut(for: action))
                 }
             }
@@ -98,23 +106,26 @@ public struct BuildAlertView: View {
         .padding(.top, 20)
         .frame(width: Self.width)
         .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// Open Console and Hide Until the Next Build, in a menu of their own.
-    private func moreMenu(_ actions: [AlertContent.Action]) -> some View {
-        Menu {
-            ForEach(actions, id: \.self) { action in
+        .background {
+            // A tint over the glass, so the white title and buttons stand out over a light window; the glass still
+            // shows through. The corners match the panel's glass.
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .fill(Color.black.opacity(colorScheme == .dark ? Self.darkTint : Self.lightTint))
+        }
+        .contextMenu {
+            // The secondary actions: Open Console and Hide Until the Next Build (ALERT-03, HIDE-01).
+            ForEach(content.moreActions, id: \.self) { action in
                 Button(action.title) {
                     perform(action)
                 }
             }
-        } label: {
-            Label("More", systemImage: "ellipsis")
         }
-        .controlSize(.large)
-        .buttonSizing(.flexible)
-        .frame(maxWidth: .infinity)
     }
+
+    /// how dark the glass's tint is: strong in dark, where light text sits on glass over a light window, slight in
+    /// light, where the text is dark
+    static let darkTint = 0.42
+    static let lightTint = 0.07
 
     private static let failedStagesPrefix = "Failed stages: "
 
@@ -148,4 +159,16 @@ public struct BuildAlertView: View {
         }
         return action == .dismiss ? .cancelAction : nil
     }
+}
+
+/// The grey of the alert's facts and notes, lighter than `.secondary` over the tinted glass: the vibrant primary style
+/// at a fixed opacity (the user, 2026-10-30: "the grey text a bit lighter").
+private struct AlertGreyStyle: ShapeStyle {
+    func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
+        HierarchicalShapeStyle.primary.opacity(environment.colorScheme == .dark ? 0.80 : 0.72)
+    }
+}
+
+private extension ShapeStyle where Self == AlertGreyStyle {
+    static var alertGrey: AlertGreyStyle { AlertGreyStyle() }
 }

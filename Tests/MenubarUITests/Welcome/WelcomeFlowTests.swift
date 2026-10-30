@@ -252,7 +252,7 @@ struct WelcomeFlowTests {
             stored.contains(.jenkins) ? nil : WelcomeSummary.noJenkinsToken, WelcomeSummary.noGitLabToken,
             notifications == .off ? WelcomeNotificationText.off(preferences) : nil,
         ].compactMap { $0 })
-        #expect(summary.whereToFind == "Open menubar-monitor again to see your builds in its window.")
+        #expect(summary.whereToFind == "Open MegaMonitor again to see your builds in its window.")
 
         // Without an import, nothing is listed as not moved; with both tokens, it's ready.
         let fresh = WelcomeSummary.make(

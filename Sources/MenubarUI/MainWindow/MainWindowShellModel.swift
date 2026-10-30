@@ -11,7 +11,7 @@ public struct MainWindowShellModel: Hashable, Sendable {
     public var markers: [MainWindowSection: String]
     /// "Last checked 10:42" for what the shown section shows; `nil` before the first check or load
     public var subtitle: String?
-    /// whether a check, or a GitLab load of the shown section, runs: a spinner takes Check Now's place (JERR-07)
+    /// whether a check or load of the shown section runs: a spinner takes Reload's place (JERR-07)
     public var isBusy: Bool
     /// where the app's update stands (APP-05), for the toolbar's update item
     public var update: UpdateState
@@ -28,9 +28,10 @@ public struct MainWindowShellModel: Hashable, Sendable {
     ///   - activitySubtitle: Activity's subtitle, "182 entries" or "12 of 182 entries" (LOG-04); `nil` for none
     ///   - workspacesSubtitle: Workspaces' subtitle, "4 checkouts · 2 free" (WS-01); `nil` for none
     ///   - workspacesBusy: whether git reads the checkouts
+    ///   - slotsBusy: whether the slot labels or the slot items load
     public init(
         _ data: PanelData, section: MainWindowSection, activitySubtitle: String? = nil, workspacesSubtitle: String? = nil,
-        workspacesBusy: Bool = false
+        workspacesBusy: Bool = false, slotsBusy: Bool = false
     ) {
         update = data.update
         workItemFilters = data.workItems.filters
@@ -38,9 +39,11 @@ public struct MainWindowShellModel: Hashable, Sendable {
         let jenkins = data.jenkins
         let mergeRequests = data.mergeRequests
         let workItems = data.workItems
-        isBusy = jenkins.isChecking
+        // Reload loads the shown section only, so only its work shows (the user, 2026-10-30).
+        isBusy = (section == .pipelines && jenkins.isChecking)
             || (section == .mergeRequests && mergeRequests.isLoading)
-            || ((section == .workItems || section == .slots) && workItems.isLoading)
+            || (section == .workItems && workItems.isLoading)
+            || (section == .slots && (workItems.isLoading || slotsBusy))
             || (section == .workspaces && workspacesBusy)
         // TEAM-03: the team row alone, without counts or times.
         guard jenkins.problem != .teamValuesMissing else {
@@ -88,7 +91,8 @@ public struct MainWindowShellModel: Hashable, Sendable {
         case .mergeRequests:
             subtitle = mergeRequestsNeedToken ? nil : mergeRequests.lastLoadAt.map { Formatting.lastChecked($0) }
         case .workItems:
-            subtitle = workItemsNeedToken ? nil : workItems.lastLoadAt.map { Formatting.lastChecked($0) }
+            // The filters sit in the header with the check time, in one line (the user, 2026-10-30).
+            subtitle = workItemsNeedToken ? nil : Self.workItemsSubtitle(filters: workItems.filters, lastLoadAt: workItems.lastLoadAt)
         case .activity:
             subtitle = activitySubtitle
         case .workspaces:
@@ -96,6 +100,21 @@ public struct MainWindowShellModel: Hashable, Sendable {
         case .slots:
             subtitle = workItemsNeedToken ? nil : workItems.lastLoadAt.map { Formatting.lastChecked($0) }
         }
+    }
+
+    /// Returns the Work Items subtitle: the filters in one line and the check time, "Assigned to me · Open · −wontfix ·
+    /// checked 14:29". The title bar truncates it at the end when the window is narrow.
+    ///
+    /// - Parameters:
+    ///   - filters: the work item filters
+    ///   - lastLoadAt: when the last load ended; `nil` before the first
+    /// - Returns: the text
+    static func workItemsSubtitle(filters: WorkItemFilters, lastLoadAt: Date?) -> String {
+        var parts = [filters.summary]
+        if let lastLoadAt {
+            parts.append(Formatting.lastChecked(lastLoadAt).replacing("Last checked", with: "checked"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// whether the toolbar's update item shows: "Update Ready — Rebuild", "Rebuilding…", or "Relaunching…" once the new

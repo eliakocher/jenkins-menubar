@@ -8,6 +8,8 @@ struct ExplainBuildSection: View {
     let build: Build
     /// the build's page, which Claude Code's prompt links
     let page: URL?
+    /// whether it is a card of the build detail's ScrollView rather than a `Form`'s section
+    var inCard = false
 
     @Environment(AppModel.self) private var model: AppModel?
 
@@ -19,7 +21,7 @@ struct ExplainBuildSection: View {
                 if case .loaded(let tests) = model.failedTests.state(of: build.id) { tests } else { nil }
             let hints: [FlakyHint] =
                 if case .loaded(let hints) = model.flakyHints.state(of: build.id) { hints } else { [] }
-            Section {
+            container {
                 VStack(alignment: .leading, spacing: 6) {
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 8) {
@@ -37,15 +39,29 @@ struct ExplainBuildSection: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                .controlSize(.small)
                 .padding(.vertical, 2)
                 ClaudeCodeLaunchLine(context: .build(build, page: page, failedTests: []))
                 AIAnswerRows(
-                    state: state, send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
+                    state: state, subject: subject, item: .build(build, page: page, failedTests: failedTests ?? []),
+                    send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
                 ) { answer in
                     if let explanation = answer.explanation {
                         BuildExplanationCard(explanation: explanation)
                     }
                 }
+            }
+        }
+    }
+
+    /// A `Form`'s section, or the build detail's card.
+    @ViewBuilder
+    private func container(@ViewBuilder _ content: () -> some View) -> some View {
+        if inCard {
+            DetailCard("Claude", symbol: "sparkles", width: .fullWidth, content: content)
+        } else {
+            Section {
+                content()
             } header: {
                 Text("Claude")
             }
@@ -54,14 +70,13 @@ struct ExplainBuildSection: View {
 
     @ViewBuilder
     private func buttons(_ model: AppModel, state: AIAnswerState, failedTests: [FailedTest]?, hints: [FlakyHint]) -> some View {
-        Button {
-            Task { await model.ai.explain(build, failedTests: failedTests, flakyHints: hints) }
-        } label: {
-            Label("Why Did It Fail?", systemImage: "sparkles")
+        ClaudeActionButton(
+            title: "Why Did It Fail?", systemImage: "sparkles", prominent: true,
+            help: "Ask Claude for the root cause, the evidence in the log, the suspect commits and the next step.",
+            isDisabled: state.isBusy
+        ) { picked in
+            Task { await model.ai.explain(build, failedTests: failedTests, flakyHints: hints, model: picked) }
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(state.isBusy)
-        .help("Ask Claude for the root cause, the evidence in the log, the suspect commits and the next step")
         OpenInClaudeCodeButton(context: .build(build, page: page, failedTests: failedTests ?? []))
     }
 }
@@ -210,42 +225,6 @@ private struct SuspectRow: View {
     }
 }
 
-/// The merge request detail's Claude section, right after its threads (AI-03, AI-05): "Summarize Discussion" with
-/// what was agreed, what is open and who it waits on, and "Open in Claude Code".
-struct ThreadsSummarySection: View {
-    let mergeRequest: MergeRequest
-
-    @Environment(AppModel.self) private var model: AppModel?
-
-    var body: some View {
-        if let model, model.ai.isOffered {
-            let subject = AISubject.mergeRequest(mergeRequest.reference)
-            let state = model.ai.state(of: subject)
-            Section {
-                HStack(spacing: 8) {
-                    Button("Summarize Discussion") {
-                        Task { await model.ai.summarize(mergeRequest) }
-                    }
-                    .disabled(state.isBusy)
-                    .help("Ask Claude what the review threads agreed, what is open and who it waits on")
-                    OpenInClaudeCodeButton(context: .mergeRequest(mergeRequest))
-                }
-                .buttonStyle(.bordered)
-                ClaudeCodeLaunchLine(context: .mergeRequest(mergeRequest))
-                AIAnswerRows(
-                    state: state, send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
-                ) { answer in
-                    if let summary = answer.summary {
-                        ThreadsSummaryCard(summary: summary)
-                    }
-                }
-            } header: {
-                Text("Claude")
-            }
-        }
-    }
-}
-
 /// Claude's summary of a discussion: the open points with whom they wait on, then what was agreed.
 struct ThreadsSummaryCard: View {
     let summary: ThreadsSummary
@@ -297,26 +276,5 @@ struct ThreadsSummaryCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-/// The work item detail's Claude section (AI-05): "Open in Claude Code" in the checkout on the item's branch.
-struct ClaudeWorkItemSection: View {
-    let workItem: WorkItem
-
-    @Environment(AppModel.self) private var model: AppModel?
-
-    var body: some View {
-        if let model, model.ai.isOffered, !workItem.isEpic {
-            Section {
-                OpenInClaudeCodeButton(context: .workItem(workItem))
-                ClaudeCodeLaunchLine(context: .workItem(workItem))
-            } header: {
-                Text("Claude")
-            } footer: {
-                Text("Starts Claude Code in the checkout on this item's branch, with the item as its first prompt.")
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 }

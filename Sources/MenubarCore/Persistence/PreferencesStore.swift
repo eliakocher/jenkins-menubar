@@ -27,6 +27,34 @@ public struct PreferencesStore: @unchecked Sendable {
         nonmutating set { defaults.set(newValue, forKey: Self.welcomeCompletedKey) }
     }
 
+    /// the UserDefaults key of ``notificationPolicy``
+    static let notificationPolicyKey = "notificationPolicy"
+
+    /// Which builds may alert (ALERT-08), kept as JSON in one key. It isn't one of the ``Preferences``: the pipeline's
+    /// views change it from the lists, and Settings neither shows nor logs it. Text that doesn't decode reads as the
+    /// default, which notifies for everything.
+    public var notificationPolicy: NotificationPolicy {
+        get {
+            guard let text = defaults.string(forKey: Self.notificationPolicyKey),
+                let policy = try? JSONDecoder().decode(NotificationPolicy.self, from: Data(text.utf8))
+            else {
+                return NotificationPolicy()
+            }
+            return policy
+        }
+        nonmutating set {
+            if newValue == NotificationPolicy() {
+                defaults.removeObject(forKey: Self.notificationPolicyKey)
+                return
+            }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            if let data = try? encoder.encode(newValue), let text = String(data: data, encoding: .utf8) {
+                defaults.set(text, forKey: Self.notificationPolicyKey)
+            }
+        }
+    }
+
     /// The UserDefaults key of each value, which is also its name in the log (SET-01).
     public enum Key: String, CaseIterable, Sendable {
         case checkIntervalSeconds

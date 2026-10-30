@@ -42,10 +42,24 @@ public final class AppModel {
     public let mergeRequests: MergeRequestsStore
     /// the work items, loaded while shown (WI-01, OD-02, OD-03)
     public let workItems: WorkItemsStore
+    /// the merge requests and work items opened outside the lists, under "Opened" in the main window (WIN-06)
+    public let opened: OpenedItemsStore
+    /// the window's "In GitLab" search for merge requests and work items beyond my lists (WIN-07)
+    public let gitLabSearch: GitLabSearchStore
+    /// every slot label GitLab has, loaded while the Slots section shows (SLOT-02)
+    public let slotLabels: SlotLabelsStore
+    /// every issue of the slot group in the shown slots, loaded while the Slots section shows (SLOT-06)
+    public let slotItems: SlotItemsStore
     /// the descriptions of the selected merge requests and work items, loaded on selection (WIN-02)
     public let descriptions: DescriptionsStore
+    /// the discussions of the selected work items, loaded on selection (WIN-02)
+    public let itemDiscussions: ItemDiscussionsStore
     /// the approvals, unresolved threads and GitLab pipeline of the selected merge requests, loaded on selection (MR-06)
     public let mergeRequestDetails: MergeRequestDetailsStore
+    /// the code changes of the selected merge requests, loaded on selection (MR-11)
+    public let mergeRequestChanges: MergeRequestChangesStore
+    /// GitLab's links from merge requests to work items, loaded when a merge request or one of its builds shows
+    public let itemLinks: LinkedWorkItemsStore
     /// the failed tests of the selected finished builds, loaded on selection (PIPE-03)
     public let failedTests: FailedTestsStore
     /// the "likely flaky" hints of the selected failed builds, loaded on selection (PIPE-10)
@@ -112,6 +126,7 @@ public final class AppModel {
             now: dependencies.now, tokens: tokens, team: team, userStates: userStates, caches: caches, log: log,
             capture: requestCapture, checkTimes: checkTimes, problems: problems, effects: dependencies.effects)
         let projects = ProjectsPipelines(services: services, preferences: preferences)
+        projects.notifications = preferencesStore.notificationPolicy
         self.projects = projects
         let pipelines = projects.primary
         self.pipelines = pipelines
@@ -128,8 +143,16 @@ public final class AppModel {
             services: gitLabServices, preferences: { [weak pipelines] in pipelines?.preferences ?? Preferences() })
         self.mergeRequests = mergeRequests
         self.workItems = workItems
+        opened = OpenedItemsStore(
+            defaults: dependencies.preferences, services: gitLabServices, pipelines: services, now: dependencies.now)
+        gitLabSearch = GitLabSearchStore(services: gitLabServices)
+        slotLabels = SlotLabelsStore(services: gitLabServices)
+        slotItems = SlotItemsStore(services: gitLabServices)
         descriptions = DescriptionsStore(services: gitLabServices)
+        itemDiscussions = ItemDiscussionsStore(services: gitLabServices)
         mergeRequestDetails = MergeRequestDetailsStore(services: gitLabServices)
+        mergeRequestChanges = MergeRequestChangesStore(services: gitLabServices)
+        itemLinks = LinkedWorkItemsStore(services: gitLabServices)
         workItemFilters = preferences.workItems
 
         let scheduler = Scheduler(
@@ -199,6 +222,11 @@ public final class AppModel {
             return
         }
         isStarted = true
+        let launchAtLogin = launchAtLogin
+        let applicationSupport = dependencies.fileLocations.applicationSupport
+        Task { @MainActor in
+            await launchAtLogin.refreshRegistrationIfMarked(in: applicationSupport)
+        }
         let reachable = dependencies.reachability.updates()
         let projects = projects
         watchers = [
@@ -236,6 +264,21 @@ public final class AppModel {
         workspaces.refreshIfShown()
     }
 
+    /// Checks the Jenkins builds only, looking my jobs up again, offline too; GitLab loads nothing. The main window's
+    /// Reload in Pipelines.
+    public func checkBuilds() {
+        Task { [log] in await log.log(.info, .app, "Reload builds") }
+        onScheduler { await $0.checkBuildsNow() }
+    }
+
+    /// Loads a GitLab list again at once, whatever the age of its data, while the window or panel shows it. The main
+    /// window's Reload in Merge Requests and Work Items.
+    ///
+    /// - Parameter surface: the list
+    public func reloadList(_ surface: Surface) {
+        onScheduler { await $0.reload(surface) }
+    }
+
     /// Takes in what the import at launch did (IMP-01): reads everything again, keeps the report for Settings →
     /// Accounts (ACC-02) and reads the tokens. Call it before ``start()``, so the first check has the imported values.
     ///
@@ -255,8 +298,46 @@ public final class AppModel {
         settings.reload()
         projects.reload()
         let preferences = preferencesStore.load()
+        projects.notifications = preferencesStore.notificationPolicy
         apply(preferences)
         onScheduler { await $0.setCheckInterval(.seconds(preferences.checkIntervalSeconds)) }
+    }
+
+    /// Switches the alerts of My Builds or Watching on or off (ALERT-08). The builds stay in the list, the counts and
+    /// the pane; only the alert window and the banners stay quiet.
+    ///
+    /// - Parameters:
+    ///   - group: the group
+    ///   - isOn: whether its builds alert
+    public func setNotifications(for group: NotificationPolicy.Group, isOn: Bool) {
+        var policy = projects.notifications
+        guard policy.isOn(group) != isOn else {
+            return
+        }
+        policy.set(group, isOn: isOn)
+        saveNotifications(policy, "Notifications for \(group == .mine ? "My Builds" : "Watching"): \(isOn ? "on" : "off")")
+    }
+
+    /// Sets the alerts of one job, for every build it gets from now on (ALERT-08).
+    ///
+    /// - Parameters:
+    ///   - setting: always, never, or `nil` to follow the group again
+    ///   - job: the job key, `BuildID.jobKey`
+    public func setNotifications(_ setting: NotificationPolicy.JobSetting?, forJob job: String) {
+        var policy = projects.notifications
+        guard policy.jobs[job] != setting else {
+            return
+        }
+        policy.set(setting, forJob: job)
+        let label = Build.label(forJob: BuildID.split(jobKey: job).job)
+        saveNotifications(policy, "Notifications for \(label): \(setting?.rawValue ?? "default")")
+    }
+
+    private func saveNotifications(_ policy: NotificationPolicy, _ message: String) {
+        projects.notifications = policy
+        preferencesStore.notificationPolicy = policy
+        let log = log
+        Task { await log.log(.info, .app, message) }
     }
 
     /// Hands changed preferences to what doesn't read them itself: the hiding rules and the alerts, the GitLab maximum

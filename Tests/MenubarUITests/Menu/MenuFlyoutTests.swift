@@ -108,11 +108,42 @@ struct MenuFlyoutTests {
             == "No merge request builds by jdoe in Jenkins")
     }
 
+    @Test("APP-06 a click on an entry shows it in the window, with Option it opens the page in the browser")
+    func entryDestinations() {
+        let f = Self.fixtures
+        let data = f.panel(mine: f.typicalBuilds)
+        let entries = [PanelAreaPick.pipelines, .mergeRequests, .workItems].compactMap {
+            MenuFlyout(data, area: $0.area).entries.first
+        }
+        #expect(entries.count == 3)
+        for entry in entries {
+            #expect(entry.destination(option: false) == .window(entry.selection))
+            #expect(entry.url != nil)
+            #expect(entry.destination(option: true) == .browser(entry.url!))
+        }
+        #expect(entries.map(\.selection.section) == [.pipelines, .mergeRequests, .workItems])
+        var withoutPage = entries[0]
+        withoutPage.url = nil
+        #expect(withoutPage.destination(option: true) == .window(withoutPage.selection))
+    }
+
     @Test("PIPE-02 a running build's time against its estimate")
     func runningTime() {
         #expect(MenuEntry.short(5 * 60 + 59) == "5m")
         #expect(MenuEntry.short(65 * 60) == "1h05m")
         #expect(MenuEntry.short(-3) == "0m")
+    }
+}
+
+private enum PanelAreaPick {
+    case pipelines, mergeRequests, workItems
+
+    var area: MainWindowSection {
+        switch self {
+        case .pipelines: .pipelines
+        case .mergeRequests: .mergeRequests
+        case .workItems: .workItems
+        }
     }
 }
 

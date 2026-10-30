@@ -34,7 +34,16 @@ The logs had no such answers.
 | `merge-requests-sections.json` | authored and assigned at once, a review I approved, a review where I'm not among the reviewers, another project |
 | `related-merge-requests.json` | an opened `[cascade]` MR, a merged one and a closed one, in the shape of the spike's query |
 | `labels-search.json` | a search for "bug": `Triage` matches only by its description |
-| `merge-request-details.json` | approval rules, a resolved and a not resolvable discussion, a diff note, failed and running jobs; written from GitLab's GraphQL reference, never run against a real GitLab |
+| `search-merge-requests.json` | the window's "In GitLab" search (WIN-07): a group scope with an open draft, a duplicate of an open one, a merged and a closed one without an author, a node without a number, and a project scope that is `null`; written from GitLab's GraphQL reference, never run against a real GitLab |
+| `work-item-discussion.json` | a work item's comment threads: replies, system notes, a thread of system notes only, a time with fractions of a second; written from GitLab's GraphQL reference, never run against a real GitLab |
+| `merge-request-details.json` | approval rules, a resolved and a not resolvable discussion, a diff note with replies and a system note, failed and running jobs; written from GitLab's GraphQL reference, never run against a real GitLab |
 | `merge-request-details-basic.json` | the answer of a GitLab without approval rules: only `approvedBy`, no pipeline, more discussions than asked for |
 | `merge-request-details-unknown-field.json` | the validation error of a GitLab that doesn't know a field of the full query: HTTP 200, errors and no data |
 | `merge-request-reviews.json` | the reviewers with their interaction times, three diff versions and three commits: Sam reviewed before two pushes, Alex approved after the first one, Robin has not reviewed; written from GitLab's GraphQL reference, never run against a real GitLab |
+
+## Written from the reference
+
+| File | Operation | Source |
+|---|---|---|
+| `merge-request-closes-issues.json` | MergeRequestClosesIssues (REST `closes_issues`) | GitLab's REST reference, "List issues that close on merge": the fields the app reads, made-up values; not taken from a real server |
+| `merge-request-related-issues.json` | MergeRequestRelatedIssues (REST `related_issues`) | the reference, "List issues related to the merge request"; one issue has `references.full` and one lives in another project |

@@ -542,7 +542,7 @@ struct SettingsStoreTests {
         let link = try #require(harness.store.tokenLink(.gitlab))
         #expect(link.url == GitLabLinks.newToken(gitLab: URL(string: "https://gitlab.example.com")!))
         #expect(link.url.absoluteString
-            == "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=menubar-monitor&scopes=api")
+            == "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=MegaMonitor&scopes=api")
         #expect(link.title == "Create a token with the api scope")
     }
 
