@@ -82,7 +82,7 @@ public enum AIAnswerState: Hashable, Sendable {
 /// - the log gets the use case, the model, the tokens, the cost and the exit code, never the prompt or the answer.
 @Observable @MainActor
 public final class AIStore {
-    /// how long `open -a Terminal` may take
+    /// how long `open -a <terminal>` may take
     static let launchWait: Duration = .seconds(10)
 
     public private(set) var settings: AISettings
@@ -104,6 +104,7 @@ public final class AIStore {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let engine: ClaudeEngine
     @ObservationIgnored private let launcher: any ProgramLauncher
+    @ObservationIgnored private let terminals: any TerminalDirectory
     @ObservationIgnored private let launchFolder: URL
     @ObservationIgnored private let log: ActivityLog?
     @ObservationIgnored private let clock: any Clock<Duration>
@@ -116,7 +117,8 @@ public final class AIStore {
     /// - Parameters:
     ///   - defaults: the preferences' suite, where the settings and the month's usage are kept
     ///   - runner: runs `claude` and the login shell
-    ///   - launcher: opens Terminal for Open in Claude Code
+    ///   - launcher: opens the terminal for Open in Claude Code
+    ///   - terminals: where the user's terminal is looked up
     ///   - launchFolder: where Open in Claude Code's launch folders go
     ///   - log: the Activity log
     ///   - clock: the clock of the morning digest
@@ -126,6 +128,7 @@ public final class AIStore {
     ///   - resolver: finds `claude`; one of its own by default
     public init(
         defaults: UserDefaults, runner: any ProcessRunner, launcher: any ProgramLauncher = SystemProgramLauncher(),
+        terminals: any TerminalDirectory = SystemTerminalDirectory(),
         launchFolder: URL = FileManager.default.temporaryDirectory.appending(path: "menubar-monitor-claude", directoryHint: .isDirectory),
         log: ActivityLog? = nil, clock: any Clock<Duration> = ContinuousClock(), now: @escaping @Sendable () -> Date = { Date() },
         jenkins: PipelinesServices? = nil, gitLab: GitLabServices? = nil, resolver: ProgramResolver? = nil
@@ -133,6 +136,7 @@ public final class AIStore {
         self.defaults = defaults
         engine = ClaudeEngine(runner: runner, resolver: resolver)
         self.launcher = launcher
+        self.terminals = terminals
         self.launchFolder = launchFolder
         self.log = log
         self.clock = clock
@@ -300,7 +304,9 @@ public final class AIStore {
         await run(subject, prompt)
     }
 
-    /// Opens Terminal in a checkout running `claude` with the context as its first prompt (AI-05; ``ClaudeCodeLaunch``).
+    /// Opens the user's terminal in a checkout running `claude` with the context as its first prompt (AI-05;
+    /// ``ClaudeCodeLaunch``): the terminal chosen in Settings → Repositories, else the one that opens `.command` files,
+    /// and Terminal, said in the result, when that one can't run a script (``TerminalChoice``).
     ///
     /// - Parameters:
     ///   - context: the work item, merge request, build or checkout
@@ -313,15 +319,16 @@ public final class AIStore {
         }
         let prompt = SecretRedactor(knownSecrets: await knownSecrets()).redact(context.prompt(in: checkout))
         ClaudeCodeLaunch.removeLeftovers(in: launchFolder, now: now())
+        let choice = TerminalChoice.choose(preferred: TerminalChoice.preferred(in: defaults), for: .script, in: terminals)
         do {
             let script = try ClaudeCodeLaunch.write(prompt: prompt, directory: checkout.path, claude: claude, in: launchFolder)
             let outcome = try await launcher.launch(
-                URL(filePath: "/usr/bin/open"), arguments: ["-a", "Terminal", script.path(percentEncoded: false)],
+                URL(filePath: "/usr/bin/open"), arguments: choice.openArguments(for: script.path(percentEncoded: false)),
                 directory: nil, path: nil, wait: Self.launchWait)
             switch outcome {
             case .exited(status: 0, _), .running:
                 lastLaunch = ClaudeCodeLaunchResult(
-                    context: context, message: "Claude Code starts in \(checkout.name), in Terminal", isProblem: false)
+                    context: context, message: "Claude Code starts in \(checkout.name), in \(choice.summary)", isProblem: false)
                 record("Claude: \(AIUseCase.openInClaudeCode.logName) in \(checkout.name), exit 0", level: .info, source: .app)
             case .exited(let status, let lastLine):
                 lastLaunch = ClaudeCodeLaunchResult(
@@ -330,7 +337,7 @@ public final class AIStore {
             }
         } catch {
             lastLaunch = ClaudeCodeLaunchResult(
-                context: context, message: "Couldn't open Terminal: \(error.localizedDescription)", isProblem: true)
+                context: context, message: "Couldn't open \(choice.app.name): \(error.localizedDescription)", isProblem: true)
             record("Claude: \(AIUseCase.openInClaudeCode.logName) couldn't start", level: .warning, source: .app)
         }
     }

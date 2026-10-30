@@ -120,30 +120,45 @@ public struct SlotDates: Hashable, Sendable {
 
 /// How a slot's name becomes its dates, from the team values (SLOT-01).
 ///
-/// The slot `2026.51` is ISO week 51 of 2026 (weeks start on Monday; week 1 holds the year's first Thursday). Its
-/// release is on the chosen weekday of that week; the code freeze and early access are that many days before it. The
-/// defaults are guesses the team corrects in Settings → Projects: Monday, 14 days, 7 days.
+/// The slot `2026.51` is ISO week 51 of 2026 (weeks start on Monday; week 1 holds the year's first Thursday): the week
+/// of its release, which is on the release weekday of that week. The code freeze is the Nth weekday before the release
+/// and so is early access, the way the team's planning tool computes them: by default the 4th Friday and the 2nd
+/// Monday before it, so `2026.51` releases on Mon 14 Dec 2026, freezes on Fri 20 Nov and opens early access on Mon 30
+/// Nov. Slots before 2026.30 released on Thursday; their dates are a few days off with the Monday default.
 public struct SlotRules: Hashable, Sendable {
+    /// a weekday before the release, counted back from it
+    public struct Anchor: Hashable, Sendable {
+        /// which one, 1 for the nearest before the release
+        public var nth: Int
+        /// the ISO weekday: 1 is Monday and 7 is Sunday
+        public var weekday: Int
+
+        public init(nth: Int, weekday: Int) {
+            self.nth = nth
+            self.weekday = weekday
+        }
+    }
+
     /// the release's weekday, ISO: 1 is Monday and 7 is Sunday
     public var releaseWeekday: Int
-    public var codeFreezeDays: Int
-    public var earlyAccessDays: Int
+    public var codeFreeze: Anchor
+    public var earlyAccess: Anchor
     /// how many days before the code freeze a committed work item without a merge request is flagged and the slot alert
     /// comes
     public var warnDays: Int
 
     public static let defaultReleaseWeekday = 1
-    public static let defaultCodeFreezeDays = 14
-    public static let defaultEarlyAccessDays = 7
+    public static let defaultCodeFreeze = Anchor(nth: 4, weekday: 5)
+    public static let defaultEarlyAccess = Anchor(nth: 2, weekday: 1)
     public static let defaultWarnDays = 3
 
     public init(
-        releaseWeekday: Int = defaultReleaseWeekday, codeFreezeDays: Int = defaultCodeFreezeDays,
-        earlyAccessDays: Int = defaultEarlyAccessDays, warnDays: Int = defaultWarnDays
+        releaseWeekday: Int = defaultReleaseWeekday, codeFreeze: Anchor = defaultCodeFreeze,
+        earlyAccess: Anchor = defaultEarlyAccess, warnDays: Int = defaultWarnDays
     ) {
         self.releaseWeekday = releaseWeekday
-        self.codeFreezeDays = codeFreezeDays
-        self.earlyAccessDays = earlyAccessDays
+        self.codeFreeze = codeFreeze
+        self.earlyAccess = earlyAccess
         self.warnDays = warnDays
     }
 
@@ -151,8 +166,12 @@ public struct SlotRules: Hashable, Sendable {
     public init(team: TeamValues) {
         self.init(
             releaseWeekday: Self.weekday(of: team.slotReleaseWeekday) ?? Self.defaultReleaseWeekday,
-            codeFreezeDays: Self.days(of: team.slotCodeFreezeDays) ?? Self.defaultCodeFreezeDays,
-            earlyAccessDays: Self.days(of: team.slotEarlyAccessDays) ?? Self.defaultEarlyAccessDays,
+            codeFreeze: Anchor(
+                nth: Self.nth(of: team.slotCodeFreezeNth) ?? Self.defaultCodeFreeze.nth,
+                weekday: Self.weekday(of: team.slotCodeFreezeWeekday) ?? Self.defaultCodeFreeze.weekday),
+            earlyAccess: Anchor(
+                nth: Self.nth(of: team.slotEarlyAccessNth) ?? Self.defaultEarlyAccess.nth,
+                weekday: Self.weekday(of: team.slotEarlyAccessWeekday) ?? Self.defaultEarlyAccess.weekday),
             warnDays: Self.days(of: team.slotWarnDays) ?? Self.defaultWarnDays)
     }
 
@@ -180,6 +199,14 @@ public struct SlotRules: Hashable, Sendable {
         return days
     }
 
+    /// Reads which weekday before the release: a number from 1 to 12.
+    ///
+    /// - Parameter text: the typed value
+    /// - Returns: the number; `nil` for an empty or invalid text
+    public static func nth(of text: String) -> Int? {
+        days(of: text).flatMap { (1...12).contains($0) ? $0 : nil }
+    }
+
     /// Returns the calendar slot dates are computed in: ISO weeks, in the time zone of the given calendar.
     static func isoCalendar(like calendar: Calendar) -> Calendar {
         var iso = Calendar(identifier: .iso8601)
@@ -203,10 +230,19 @@ public struct SlotRules: Hashable, Sendable {
         let back = iso.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
         guard back.yearForWeekOfYear == name.year, back.weekOfYear == name.week else { return nil }
         let release = iso.startOfDay(for: date)
-        guard let freeze = iso.date(byAdding: .day, value: -codeFreezeDays, to: release),
-            let early = iso.date(byAdding: .day, value: -earlyAccessDays, to: release)
+        guard let freeze = Self.date(of: codeFreeze, before: release, releaseWeekday: releaseWeekday, in: iso),
+            let early = Self.date(of: earlyAccess, before: release, releaseWeekday: releaseWeekday, in: iso)
         else { return nil }
         return SlotDates(release: release, codeFreeze: freeze, earlyAccess: early)
+    }
+
+    /// Returns the Nth weekday strictly before the release: the 1st is the nearest one, a week back for a release on that
+    /// weekday itself.
+    private static func date(of anchor: Anchor, before release: Date, releaseWeekday: Int, in calendar: Calendar) -> Date? {
+        var back = (releaseWeekday - anchor.weekday + 7) % 7
+        if back == 0 { back = 7 }
+        back += 7 * (anchor.nth - 1)
+        return calendar.date(byAdding: .day, value: -back, to: release)
     }
 
     /// Returns the days from one day to another, negative when the second is earlier.

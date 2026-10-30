@@ -34,6 +34,8 @@ public final class WorkspacesStore {
     public private(set) var openingInIDE: Set<Checkout.ID> = []
     /// each checkout's local branches as last read, by its path; read when its detail shows (WS-06)
     public private(set) var branchReadings: [Checkout.ID: LocalBranchesReading] = [:]
+    /// the terminal chosen in Settings → Repositories, by bundle identifier; `nil` is Default
+    public private(set) var terminal: String?
     /// the checkouts whose Start Work Here runs right now (WS-08)
     public private(set) var startingWork: Set<Checkout.ID> = []
     /// what the last Start Work Here did, like "Started 1234-fix-login", by the checkout's path; cleared by the
@@ -45,6 +47,7 @@ public final class WorkspacesStore {
     @ObservationIgnored private let runner: any ProcessRunner
     @ObservationIgnored private let resolver: ProgramResolver
     @ObservationIgnored private let launcher: any ProgramLauncher
+    @ObservationIgnored private let terminals: any TerminalDirectory
     @ObservationIgnored private let log: ActivityLog?
     @ObservationIgnored private let clock: any Clock<Duration>
     @ObservationIgnored private let now: @Sendable () -> Date
@@ -59,12 +62,14 @@ public final class WorkspacesStore {
     ///   - defaults: the preferences' suite, where Settings → Repositories is kept
     ///   - runner: runs `git` and the login shell
     ///   - launcher: starts the actions' programs
+    ///   - terminals: where Open in Terminal's app is looked up
     ///   - log: the Activity log
     ///   - clock: the clock of the reads every few minutes
     ///   - now: the current time
     ///   - home: the home folder, for `~`
     public init(
         defaults: UserDefaults, runner: any ProcessRunner, launcher: any ProgramLauncher = SystemProgramLauncher(),
+        terminals: any TerminalDirectory = SystemTerminalDirectory(),
         log: ActivityLog? = nil, clock: any Clock<Duration> = ContinuousClock(), now: @escaping @Sendable () -> Date = { Date() },
         home: URL = FileManager.default.homeDirectoryForCurrentUser
     ) {
@@ -73,11 +78,13 @@ public final class WorkspacesStore {
         self.runner = runner
         resolver = ProgramResolver(runner: runner, home: home)
         self.launcher = launcher
+        self.terminals = terminals
         self.log = log
         self.clock = clock
         self.now = now
         self.home = home
         settings = RepositorySettings.load(from: defaults)
+        terminal = TerminalChoice.preferred(in: defaults)
     }
 
     /// every checkout found, in the entries' order
@@ -112,6 +119,24 @@ public final class WorkspacesStore {
             let program = LaunchCommand.words(of: new.ideCommand)?.first.map { ($0 as NSString).lastPathComponent }
             log(program.map { "Open in IDE runs \($0)" } ?? "Open in IDE is off", level: .info, source: .settings)
         }
+    }
+
+    /// Keeps the terminal Open in Terminal and Open in Claude Code use.
+    ///
+    /// - Parameter id: the terminal's bundle identifier; `nil` for Default
+    public func setTerminal(_ id: String?) {
+        guard id != terminal else {
+            return
+        }
+        terminal = id
+        TerminalChoice.setPreferred(id, in: defaults)
+        let name = id.flatMap { terminals.app(bundleID: $0)?.name }
+        log("Terminal: \(name ?? "Default")", level: .info, source: .settings)
+    }
+
+    /// Returns what Settings → Repositories offers as the terminal: the default and the installed terminals.
+    public func terminalOptions() -> (default: TerminalApp?, installed: [TerminalApp]) {
+        (terminals.scriptHandler(), terminals.installedTerminals())
     }
 
     /// Returns the folder or pattern to add for a folder picked with Add Folder… (``WorkspaceDiscovery/suggestedPath(for:home:fileManager:)``).
@@ -256,14 +281,21 @@ public final class WorkspacesStore {
         await launch(program, arguments: command.arguments, in: checkout, path: path, action: "Open in IDE")
     }
 
-    /// Opens a Terminal window in the checkout: `open -a Terminal <path>`.
+    /// Opens the checkout in the user's terminal: `open -a <app> <path>`, with the terminal chosen in Settings →
+    /// Repositories, else the one that opens `.command` files, and Terminal with a note when that one can't open a
+    /// folder (``TerminalChoice``).
     ///
     /// - Parameter checkout: the checkout
     public func openInTerminal(_ checkout: Checkout) async {
         actionProblems[checkout.id] = nil
         actionNotes[checkout.id] = nil
+        let choice = TerminalChoice.choose(preferred: terminal, for: .folder, in: terminals)
+        if let note = choice.note {
+            actionNotes[checkout.id] = "Opened in \(choice.app.name): \(note)"
+            log("Open in Terminal: \(choice.summary)", level: .info, source: .app)
+        }
         await launch(
-            URL(filePath: "/usr/bin/open"), arguments: ["-a", "Terminal", checkout.path], in: checkout, path: nil,
+            URL(filePath: "/usr/bin/open"), arguments: choice.openArguments(for: checkout.path), in: checkout, path: nil,
             action: "Open in Terminal")
     }
 

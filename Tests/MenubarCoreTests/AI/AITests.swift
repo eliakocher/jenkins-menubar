@@ -526,6 +526,7 @@ struct AITests {
         let launcher = RecordingLauncher()
         let store = AIStore(
             defaults: defaults.defaults, runner: fake, launcher: launcher,
+            terminals: FakeTerminals(apps: [FakeTerminals.terminal], handler: "com.apple.Terminal"),
             launchFolder: folder.url.appending(path: "launches", directoryHint: .isDirectory), log: log,
             resolver: fake.resolver(found: true))
         let checkout = Checkout(path: "/work/develop2/project", name: "develop2", baseBranch: "develop", folder: UUID())
@@ -542,7 +543,7 @@ struct AITests {
         let call = try #require(await launcher.calls.first)
         #expect(call.program == "/usr/bin/open")
         #expect(call.arguments.count == 3)
-        #expect(Array(call.arguments.prefix(2)) == ["-a", "Terminal"])
+        #expect(Array(call.arguments.prefix(2)) == ["-a", "/System/Applications/Utilities/Terminal.app"])
         #expect(call.arguments[2].hasSuffix("/" + ClaudeCodeLaunch.scriptName))
         let promptFile = URL(filePath: call.arguments[2]).deletingLastPathComponent().appending(path: "prompt")
         let sent = try String(contentsOf: promptFile, encoding: .utf8)
@@ -554,6 +555,41 @@ struct AITests {
         let text = await log.entries().map(\.message).joined(separator: "\n")
         #expect(text.contains("Claude: open in Claude Code in develop2, exit 0"))
         #expect(!text.contains("Rotate"))
+    }
+
+    @Test("AI-05 Open in Claude Code opens the script with the user's terminal, and Terminal with the reason when it can't run one")
+    @MainActor
+    func opensTheUsersTerminal() async throws {
+        let defaults = TemporaryDefaults()
+        let folder = try TemporaryFolder()
+        let fake = FakeClaude(answer: Data())
+        let launcher = RecordingLauncher()
+        let terminals = FakeTerminals(
+            apps: [FakeTerminals.terminal, FakeTerminals.cmux, FakeTerminals.foldersOnly], handler: "com.cmuxterm.app")
+        let store = AIStore(
+            defaults: defaults.defaults, runner: fake, launcher: launcher, terminals: terminals,
+            launchFolder: folder.url.appending(path: "launches", directoryHint: .isDirectory),
+            resolver: fake.resolver(found: true))
+        store.update(AISettings(isEnabled: true))
+        let checkout = Checkout(path: "/work/develop2/project", name: "develop2", baseBranch: "develop", folder: UUID())
+        let item = WorkItem(
+            reference: "group/project#1234", title: "Fix login",
+            webURL: URL(string: "https://gitlab.example.com/group/project/-/issues/1234")!, updatedAt: Date())
+
+        // Default is the app that opens .command files: cmux here, with the script as the one other argument.
+        await store.openInClaudeCode(.workItem(item), in: checkout)
+        let first = try #require(await launcher.calls.last)
+        #expect(Array(first.arguments.prefix(2)) == ["-a", "/Applications/cmux.app"])
+        #expect(first.arguments.count == 3 && first.arguments[2].hasSuffix("/" + ClaudeCodeLaunch.scriptName))
+        #expect(store.lastLaunch?.message == "Claude Code starts in develop2, in cmux")
+
+        // A terminal that can't run a script: Terminal, and the result says so.
+        TerminalChoice.setPreferred("dev.example.folders", in: defaults.defaults)
+        await store.openInClaudeCode(.workItem(item), in: checkout)
+        let second = try #require(await launcher.calls.last)
+        #expect(Array(second.arguments.prefix(2)) == ["-a", "/System/Applications/Utilities/Terminal.app"])
+        #expect(store.lastLaunch?.message == "Claude Code starts in develop2, in Terminal (Folders can't run a script)")
+        #expect(store.lastLaunch?.isProblem == false)
     }
 
     // MARK: - Made-up values

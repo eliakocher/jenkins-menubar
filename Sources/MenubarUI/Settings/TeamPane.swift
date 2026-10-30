@@ -81,8 +81,10 @@ public struct TeamValueFields: View {
             }
             Section {
                 field(.slotReleaseWeekday)
-                field(.slotCodeFreezeDays)
-                field(.slotEarlyAccessDays)
+                field(.slotCodeFreezeNth)
+                field(.slotCodeFreezeWeekday)
+                field(.slotEarlyAccessNth)
+                field(.slotEarlyAccessWeekday)
                 field(.slotWarnDays)
                 field(.inProgressLabel)
                 field(.slotPlanningURL)
@@ -90,11 +92,12 @@ public struct TeamValueFields: View {
                 Text("Slots")
             } footer: {
                 SettingsFooter(
-                    "A slot label's value like 2026.51 is an ISO week; its release is on the weekday below in that week, "
-                        + "and the code freeze and early access that many days before. Committed items without a merge "
-                        + "request are flagged from the warning days before the code freeze, and the slot alert, if on in "
-                        + "General, comes then. Empty values use the defaults. The in-progress label marks work items that "
-                        + "are being worked on; empty finds a label like status::InProgress.")
+                    "A slot label's value like 2026.51 is the ISO week of its release, on the release weekday in that week "
+                        + "(slots before 2026.30 released on Thursday, so their dates are a few days off). The code freeze is "
+                        + "the Nth weekday before the release, by default the 4th Friday; early access the 2nd Monday. "
+                        + "Committed items without a merge request are flagged from the warning days before the code freeze, "
+                        + "and the slot alert, if on in General, comes then. Empty values use the defaults. The in-progress "
+                        + "label marks work items that are being worked on; empty finds a label like status::InProgress.")
             }
         }
     }
@@ -123,8 +126,10 @@ public struct TeamValueFields: View {
         case .ignoredMergeRequestPrefix: "Ignored merge request prefix"
         case .typeLabelPrefix: "Type label prefix"
         case .slotReleaseWeekday: "Release weekday"
-        case .slotCodeFreezeDays: "Code freeze, days before"
-        case .slotEarlyAccessDays: "Early access, days before"
+        case .slotCodeFreezeNth: "Code freeze: which weekday before"
+        case .slotCodeFreezeWeekday: "Code freeze weekday"
+        case .slotEarlyAccessNth: "Early access: which weekday before"
+        case .slotEarlyAccessWeekday: "Early access weekday"
         case .slotWarnDays: "Warning, days before the freeze"
         case .inProgressLabel: "In-progress label"
         case .slotPlanningURL: "Slot planning URL"
@@ -142,8 +147,10 @@ public struct TeamValueFields: View {
         case .ignoredMergeRequestPrefix: "Off, like [cascade]"
         case .typeLabelPrefix: "Off, like type::"
         case .slotReleaseWeekday: "Monday"
-        case .slotCodeFreezeDays: "14"
-        case .slotEarlyAccessDays: "7"
+        case .slotCodeFreezeNth: "4"
+        case .slotCodeFreezeWeekday: "Friday"
+        case .slotEarlyAccessNth: "2"
+        case .slotEarlyAccessWeekday: "Monday"
         case .slotWarnDays: "3"
         case .inProgressLabel: "Auto, like status::InProgress"
         case .slotPlanningURL: "Off, like https://planning.example.com"

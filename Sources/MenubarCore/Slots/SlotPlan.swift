@@ -133,17 +133,17 @@ public struct SlotItem: Hashable, Sendable, Identifiable {
     }
 }
 
-/// Whether a slot is behind us, the next one, or later (SLOT-02).
+/// Whether a slot is overdue, the next one, or later (SLOT-02).
 public enum SlotState: String, Hashable, Sendable {
-    /// the release is before today
-    case past
+    /// the release is before today and work is still open in it; a slot behind us without open work isn't shown
+    case overdue
     /// the next release not yet passed
     case current
     case upcoming
 
     public var title: String {
         switch self {
-        case .past: "Past"
+        case .overdue: "Overdue"
         case .current: "Current"
         case .upcoming: "Upcoming"
         }
@@ -183,7 +183,7 @@ public struct SlotSummary: Hashable, Sendable, Identifiable {
 
 /// The slots, built from the work items, the merge requests and the builds the app already has (SLOT-02, SLOT-03).
 public struct SlotPlan: Hashable, Sendable {
-    /// the slots to show by release date: the current and the upcoming ones, and a past one while it has open items
+    /// the slots to show by release date: the current and the upcoming ones, and an overdue one while it has open items
     public var slots: [SlotSummary]
     /// the work items without a slot (or with a label that isn't a slot's name), which don't show
     public var withoutSlot: Int
@@ -259,7 +259,7 @@ public struct SlotPlan: Hashable, Sendable {
             if isPast, !slotItems.contains(where: { !$0.isDone }) { continue }
             summaries.append(
                 SlotSummary(
-                    name: name, label: label, dates: dates, state: isPast ? .past : .upcoming,
+                    name: name, label: label, dates: dates, state: isPast ? .overdue : .upcoming,
                     countdown: dates.countdown(from: today, calendar: calendar), daysToCodeFreeze: daysToFreeze,
                     items: slotItems, uncommittedCount: uncommitted[name] ?? 0))
         }

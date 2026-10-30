@@ -24,6 +24,11 @@ struct RepositoriesSettingsForm: View {
     let readings: [Checkout.ID: CheckoutReading]
     let home: URL
     let program: ProgramLookup
+    /// the chosen terminal's bundle identifier; `nil` is Default
+    var terminal: Binding<String?> = .constant(nil)
+    /// the app that opens `.command` files, which Default means
+    var defaultTerminal: TerminalApp?
+    var terminals: [TerminalApp] = []
     var onAddFolder: () -> Void = {}
     var onSubmit: () -> Void = {}
 
@@ -31,6 +36,7 @@ struct RepositoriesSettingsForm: View {
         Form {
             foldersSection
             ideSection
+            terminalSection
             checkoutsSection
         }
         .formStyle(.grouped)
@@ -148,6 +154,44 @@ struct RepositoriesSettingsForm: View {
         }
     }
 
+    // MARK: - Terminal
+
+    private var terminalSection: some View {
+        Section {
+            Picker("Terminal", selection: terminal) {
+                Text(verbatim: defaultTerminal.map { "Default (\($0.name))" } ?? "Default (Terminal)")
+                    .tag(String?.none)
+                ForEach(terminals) { app in
+                    Text(verbatim: app.runsScripts ? app.name : "\(app.name) (folders only)")
+                        .tag(Optional(app.id))
+                }
+                // A terminal chosen earlier that is gone stays visible, so the picker never shows a blank.
+                if let chosen = terminal.wrappedValue, !terminals.contains(where: { $0.id == chosen }) {
+                    Text(verbatim: "\(chosen) (not installed)")
+                        .tag(Optional(chosen))
+                }
+            }
+            if let note = terminalNote {
+                StatusLine(.note, note)
+            }
+        } header: {
+            Text("Terminal")
+        } footer: {
+            SettingsFooter(
+                "Open in Terminal and Open in Claude Code open in this app. Default is the app macOS opens .command "
+                    + "files with. A terminal that can't run a script or open a folder is skipped for that action: "
+                    + "Terminal opens it, and the result says so. Kept in your own settings.")
+        }
+    }
+
+    /// what the choice means when it won't do: Default whose app can't run a script, a terminal that is gone or
+    /// can't run one
+    private var terminalNote: String? {
+        let directory = FixedTerminals(apps: terminals, handler: defaultTerminal)
+        let choice = TerminalChoice.choose(preferred: terminal.wrappedValue, for: .script, in: directory)
+        return choice.note.map { "Open in Claude Code uses Terminal: \($0)" }
+    }
+
     @ViewBuilder
     private var programLine: some View {
         switch program {
@@ -232,6 +276,20 @@ struct RepositoriesSettingsForm: View {
     }
 }
 
+/// The terminals the pane already found, as a directory, so the note asks the same rule the actions do.
+private struct FixedTerminals: TerminalDirectory {
+    let apps: [TerminalApp]
+    let handler: TerminalApp?
+
+    func app(bundleID: String) -> TerminalApp? {
+        apps.first { $0.id == bundleID } ?? (bundleID == handler?.id ? handler : nil)
+    }
+
+    func scriptHandler() -> TerminalApp? {
+        handler
+    }
+}
+
 /// One argument of the command, as a small monospaced pill: the program in the accent color, each argument apart, so
 /// a path with spaces visibly stays one argument.
 private struct ArgumentPill: View {
@@ -260,6 +318,7 @@ struct RepositoriesPane: View {
     @ViewState private var draft: RepositorySettings?
     @ViewState private var isPickingFolder = false
     @ViewState private var program: ProgramLookup = .off
+    @ViewState private var terminals: (default: TerminalApp?, installed: [TerminalApp]) = (nil, [])
 
     /// the name the pane shows the checkouts under
     static let host = "repositories-settings"
@@ -269,6 +328,8 @@ struct RepositoriesPane: View {
         RepositoriesSettingsForm(
             settings: Binding(get: { draft ?? store.settings }, set: { draft = $0 }),
             findings: store.findings, readings: store.readings, home: store.homeFolder, program: program,
+            terminal: Binding(get: { store.terminal }, set: { store.setTerminal($0) }),
+            defaultTerminal: terminals.default, terminals: terminals.installed,
             onAddFolder: { isPickingFolder = true },
             onSubmit: save)
             .task(id: draft) {
@@ -294,6 +355,7 @@ struct RepositoriesPane: View {
                 }
             }
             .onAppear {
+                terminals = store.terminalOptions()
                 store.show(by: Self.host)
             }
             .onDisappear {

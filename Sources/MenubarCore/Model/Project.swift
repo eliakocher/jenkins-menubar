@@ -112,10 +112,16 @@ public struct TeamValues: Codable, Hashable, Sendable {
     /// the weekday of a slot's release, in its ISO week: a name like `Monday` or a number from 1 (Monday) to 7; empty
     /// means Monday (SLOT-01)
     public var slotReleaseWeekday: String
-    /// how many days before the release the code freeze is; empty means 14 (SLOT-01)
-    public var slotCodeFreezeDays: String
-    /// how many days before the release early access starts; empty means 7 (SLOT-01)
-    public var slotEarlyAccessDays: String
+    /// which weekday before the release the code freeze is on, counted back from it: `4` is the 4th ``slotCodeFreezeWeekday``
+    /// before the release; empty means 4 (SLOT-01)
+    public var slotCodeFreezeNth: String
+    /// the code freeze's weekday, like `Friday`; empty means Friday (SLOT-01)
+    public var slotCodeFreezeWeekday: String
+    /// which weekday before the release early access starts: `2` is the 2nd ``slotEarlyAccessWeekday`` before it; empty
+    /// means 2 (SLOT-01)
+    public var slotEarlyAccessNth: String
+    /// early access's weekday; empty means Monday (SLOT-01)
+    public var slotEarlyAccessWeekday: String
     /// how many days before the code freeze a committed work item without a merge request is flagged, and the slot
     /// alert comes; empty means 3 (SLOT-04)
     public var slotWarnDays: String
@@ -134,8 +140,10 @@ public struct TeamValues: Codable, Hashable, Sendable {
         ignoredMergeRequestPrefix: String = "",
         typeLabelPrefix: String = "",
         slotReleaseWeekday: String = "",
-        slotCodeFreezeDays: String = "",
-        slotEarlyAccessDays: String = "",
+        slotCodeFreezeNth: String = "",
+        slotCodeFreezeWeekday: String = "",
+        slotEarlyAccessNth: String = "",
+        slotEarlyAccessWeekday: String = "",
         slotWarnDays: String = "",
         inProgressLabel: String = "",
         slotPlanningURL: String = ""
@@ -148,8 +156,10 @@ public struct TeamValues: Codable, Hashable, Sendable {
         self.ignoredMergeRequestPrefix = ignoredMergeRequestPrefix
         self.typeLabelPrefix = typeLabelPrefix
         self.slotReleaseWeekday = slotReleaseWeekday
-        self.slotCodeFreezeDays = slotCodeFreezeDays
-        self.slotEarlyAccessDays = slotEarlyAccessDays
+        self.slotCodeFreezeNth = slotCodeFreezeNth
+        self.slotCodeFreezeWeekday = slotCodeFreezeWeekday
+        self.slotEarlyAccessNth = slotEarlyAccessNth
+        self.slotEarlyAccessWeekday = slotEarlyAccessWeekday
         self.slotWarnDays = slotWarnDays
         self.inProgressLabel = inProgressLabel
         self.slotPlanningURL = slotPlanningURL
@@ -174,8 +184,10 @@ public struct TeamValues: Codable, Hashable, Sendable {
         case ignoredMergeRequestPrefix
         case typeLabelPrefix
         case slotReleaseWeekday
-        case slotCodeFreezeDays
-        case slotEarlyAccessDays
+        case slotCodeFreezeNth
+        case slotCodeFreezeWeekday
+        case slotEarlyAccessNth
+        case slotEarlyAccessWeekday
         case slotWarnDays
         case inProgressLabel
         case slotPlanningURL
@@ -185,7 +197,7 @@ public struct TeamValues: Codable, Hashable, Sendable {
             switch self {
             case .jenkinsJobURL, .gitLabURL, .gitLabProject: true
             case .committedLabel, .slotLabelPrefix, .ignoredMergeRequestPrefix, .typeLabelPrefix, .slotReleaseWeekday,
-                .slotCodeFreezeDays, .slotEarlyAccessDays, .slotWarnDays, .inProgressLabel, .slotPlanningURL: false
+                .slotCodeFreezeNth, .slotCodeFreezeWeekday, .slotEarlyAccessNth, .slotEarlyAccessWeekday, .slotWarnDays, .inProgressLabel, .slotPlanningURL: false
             }
         }
     }
@@ -201,8 +213,10 @@ public struct TeamValues: Codable, Hashable, Sendable {
             case .ignoredMergeRequestPrefix: ignoredMergeRequestPrefix
             case .typeLabelPrefix: typeLabelPrefix
             case .slotReleaseWeekday: slotReleaseWeekday
-            case .slotCodeFreezeDays: slotCodeFreezeDays
-            case .slotEarlyAccessDays: slotEarlyAccessDays
+            case .slotCodeFreezeNth: slotCodeFreezeNth
+            case .slotCodeFreezeWeekday: slotCodeFreezeWeekday
+            case .slotEarlyAccessNth: slotEarlyAccessNth
+            case .slotEarlyAccessWeekday: slotEarlyAccessWeekday
             case .slotWarnDays: slotWarnDays
             case .inProgressLabel: inProgressLabel
             case .slotPlanningURL: slotPlanningURL
@@ -218,8 +232,10 @@ public struct TeamValues: Codable, Hashable, Sendable {
             case .ignoredMergeRequestPrefix: ignoredMergeRequestPrefix = newValue
             case .typeLabelPrefix: typeLabelPrefix = newValue
             case .slotReleaseWeekday: slotReleaseWeekday = newValue
-            case .slotCodeFreezeDays: slotCodeFreezeDays = newValue
-            case .slotEarlyAccessDays: slotEarlyAccessDays = newValue
+            case .slotCodeFreezeNth: slotCodeFreezeNth = newValue
+            case .slotCodeFreezeWeekday: slotCodeFreezeWeekday = newValue
+            case .slotEarlyAccessNth: slotEarlyAccessNth = newValue
+            case .slotEarlyAccessWeekday: slotEarlyAccessWeekday = newValue
             case .slotWarnDays: slotWarnDays = newValue
             case .inProgressLabel: inProgressLabel = newValue
             case .slotPlanningURL: slotPlanningURL = newValue

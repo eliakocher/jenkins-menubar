@@ -421,9 +421,11 @@ public final class SettingsStore {
             let parts = value.split(separator: "/", omittingEmptySubsequences: false)
             let isPath = parts.count >= 2 && parts.allSatisfy { !$0.isEmpty } && !value.contains { $0.isWhitespace }
             return isPath ? nil : "Enter the project's path, like group/project"
-        case .slotReleaseWeekday:
+        case .slotReleaseWeekday, .slotCodeFreezeWeekday, .slotEarlyAccessWeekday:
             return SlotRules.weekday(of: value) == nil ? "Enter a weekday, like Monday, or a number from 1 (Monday) to 7" : nil
-        case .slotCodeFreezeDays, .slotEarlyAccessDays, .slotWarnDays:
+        case .slotCodeFreezeNth, .slotEarlyAccessNth:
+            return SlotRules.nth(of: value) == nil ? "Enter a number from 1 to 12, like 4" : nil
+        case .slotWarnDays:
             return SlotRules.days(of: value) == nil ? "Enter a number of days from 0 to 365" : nil
         case .slotPlanningURL:
             return TeamValues(slotPlanningURL: value).slotPlanning == nil ? "Enter a URL that starts with https:// or http://" : nil

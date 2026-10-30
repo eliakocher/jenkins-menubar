@@ -155,7 +155,7 @@ struct SlotCard: View {
                 Spacer(minLength: 8)
                 Text(verbatim: slot.countdown)
                     .font(.headline)
-                    .foregroundStyle(slot.state == .past ? .orange : .primary)
+                    .foregroundStyle(slot.state == .overdue ? .orange : .primary)
             }
             Text(verbatim: summary)
                 .font(.subheadline)
@@ -165,8 +165,8 @@ struct SlotCard: View {
 
     private var summary: String {
         var parts = [slot.progressText]
-        if slot.state == .past {
-            parts.append("overdue: \(slot.openItems.count) open")
+        if slot.state == .overdue {
+            parts.append("\(slot.openItems.count) still open")
         }
         if slot.flagCount > 0 {
             parts.append("\(slot.flagCount) flagged")

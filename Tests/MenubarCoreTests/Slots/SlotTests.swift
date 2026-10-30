@@ -79,22 +79,32 @@ struct SlotTests {
 
     // MARK: - SLOT-01
 
-    @Test("SLOT-01 a slot name is the ISO week of its year, on the team's weekday")
+    @Test("SLOT-01 a slot name is the ISO week of its release: 2026.51 releases on Monday, freezes on the 4th Friday before, opens early access on the 2nd Monday before")
     func weekOfYear() throws {
         let dates = try #require(Self.dates("2026.51"))
         #expect(dates.release == Self.day(2026, 12, 14, hour: 0))
-        #expect(dates.codeFreeze == Self.day(2026, 11, 30, hour: 0))
-        #expect(dates.earlyAccess == Self.day(2026, 12, 7, hour: 0))
-        let friday = try #require(Self.dates("2026.51", Self.team(TeamValues(slotReleaseWeekday: "Friday"))))
-        #expect(friday.release == Self.day(2026, 12, 18, hour: 0))
+        #expect(dates.codeFreeze == Self.day(2026, 11, 20, hour: 0))
+        #expect(dates.earlyAccess == Self.day(2026, 11, 30, hour: 0))
+        // the release weekday is the team's
+        let thursday = try #require(Self.dates("2026.51", Self.team(TeamValues(slotReleaseWeekday: "Thursday"))))
+        #expect(thursday.release == Self.day(2026, 12, 17, hour: 0))
+        #expect(thursday.codeFreeze == Self.day(2026, 11, 20, hour: 0))
+        #expect(thursday.earlyAccess == Self.day(2026, 12, 7, hour: 0))
     }
 
     @Test("SLOT-01 weeks across the year end: week 1 can start in the year before, week 53 only exists in long years")
     func yearEnds() throws {
-        #expect(try #require(Self.dates("2026.01")).release == Self.day(2025, 12, 29, hour: 0))
+        // 2026.01 releases on Mon Dec 29, 2025; the 4th Friday before is Dec 5 and the 2nd Monday before Dec 15
+        let first = try #require(Self.dates("2026.01"))
+        #expect(first.release == Self.day(2025, 12, 29, hour: 0))
+        #expect(first.codeFreeze == Self.day(2025, 12, 5, hour: 0))
+        #expect(first.earlyAccess == Self.day(2025, 12, 15, hour: 0))
+        // 2027.03 releases on Mon Jan 18, 2027; the code freeze is on Fri Dec 25, 2026
+        let holiday = try #require(Self.dates("2027.03"))
+        #expect(holiday.release == Self.day(2027, 1, 18, hour: 0))
+        #expect(holiday.codeFreeze == Self.day(2026, 12, 25, hour: 0))
+        #expect(holiday.earlyAccess == Self.day(2027, 1, 4, hour: 0))
         #expect(try #require(Self.dates("2027.01")).release == Self.day(2027, 1, 4, hour: 0))
-        // the code freeze of week 1 lies in the year before
-        #expect(try #require(Self.dates("2026.01")).codeFreeze == Self.day(2025, 12, 15, hour: 0))
         // 2026 and 2020 have 53 ISO weeks; 2027 and 2025 have 52
         #expect(try #require(Self.dates("2026.53")).release == Self.day(2026, 12, 28, hour: 0))
         #expect(try #require(Self.dates("2020.53")).release == Self.day(2020, 12, 28, hour: 0))
@@ -104,33 +114,43 @@ struct SlotTests {
         #expect(try #require(Self.dates("2025.52", Self.team(TeamValues(slotReleaseWeekday: "7")))).release == Self.day(2025, 12, 28, hour: 0))
     }
 
-    @Test("SLOT-01 the offsets are the team's days before the release")
-    func offsets() throws {
-        let team = Self.team(TeamValues(slotCodeFreezeDays: "10", slotEarlyAccessDays: "3"))
+    @Test("SLOT-01 the Nth weekday before the release is the team's, and a release on that weekday counts a week back")
+    func anchors() throws {
+        let team = Self.team(TeamValues(
+            slotCodeFreezeNth: "1", slotCodeFreezeWeekday: "Monday", slotEarlyAccessNth: "3", slotEarlyAccessWeekday: "Wed"))
         let dates = try #require(Self.dates("2026.51", team))
-        #expect(dates.codeFreeze == Self.day(2026, 12, 4, hour: 0))
-        #expect(dates.earlyAccess == Self.day(2026, 12, 11, hour: 0))
-        let none = try #require(Self.dates("2026.51", Self.team(TeamValues(slotCodeFreezeDays: "0"))))
-        #expect(none.codeFreeze == none.release)
+        // the release is a Monday, so the 1st Monday before is a week back
+        #expect(dates.codeFreeze == Self.day(2026, 12, 7, hour: 0))
+        // Wednesdays before Dec 14: Dec 9, Dec 2, Nov 25
+        #expect(dates.earlyAccess == Self.day(2026, 11, 25, hour: 0))
     }
 
     @Test("SLOT-01 an empty or invalid rule value reads as its default")
     @MainActor
     func defaults() {
-        let rules = SlotRules(team: TeamValues(slotReleaseWeekday: "someday", slotCodeFreezeDays: "-3", slotEarlyAccessDays: "x", slotWarnDays: "999"))
+        let rules = SlotRules(team: TeamValues(
+            slotReleaseWeekday: "someday", slotCodeFreezeNth: "0", slotCodeFreezeWeekday: "x", slotEarlyAccessNth: "13",
+            slotEarlyAccessWeekday: "9", slotWarnDays: "999"))
         #expect(rules == SlotRules())
-        #expect(SlotRules(team: TeamValues()) == SlotRules(releaseWeekday: 1, codeFreezeDays: 14, earlyAccessDays: 7, warnDays: 3))
+        #expect(
+            SlotRules(team: TeamValues())
+                == SlotRules(
+                    releaseWeekday: 1, codeFreeze: .init(nth: 4, weekday: 5), earlyAccess: .init(nth: 2, weekday: 1), warnDays: 3))
         #expect(SlotRules.weekday(of: "wed") == 3)
         #expect(SlotRules.weekday(of: " Sunday ") == 7)
         #expect(SlotRules.weekday(of: "0") == nil)
         #expect(SlotRules.weekday(of: "8") == nil)
+        #expect(SlotRules.nth(of: "12") == 12)
+        #expect(SlotRules.nth(of: "13") == nil)
         #expect(SlotRules.days(of: "365") == 365)
         #expect(SlotRules.days(of: "366") == nil)
         // Settings says what is wrong with a typed value, and nothing for an empty one
         #expect(SettingsStore.issue(of: "someday", for: .slotReleaseWeekday) != nil)
-        #expect(SettingsStore.issue(of: "-1", for: .slotCodeFreezeDays) != nil)
+        #expect(SettingsStore.issue(of: "x", for: .slotCodeFreezeWeekday) != nil)
+        #expect(SettingsStore.issue(of: "0", for: .slotCodeFreezeNth) != nil)
+        #expect(SettingsStore.issue(of: "-1", for: .slotWarnDays) != nil)
         #expect(SettingsStore.issue(of: "ftp://planning", for: .slotPlanningURL) != nil)
-        #expect(SettingsStore.issue(of: "", for: .slotCodeFreezeDays) == nil)
+        #expect(SettingsStore.issue(of: "", for: .slotCodeFreezeNth) == nil)
     }
 
     @Test("SLOT-01 parses slot labels strictly")
@@ -157,29 +177,29 @@ struct SlotTests {
         }
         #expect(states(on: Self.day(2026, 10, 29)) == ["2026.45": .current, "2026.48": .upcoming, "2026.51": .upcoming])
         #expect(states(on: Self.day(2026, 11, 2)) == ["2026.45": .current, "2026.48": .upcoming, "2026.51": .upcoming])
-        // after the release, the slot is past, and still shown while it has open items
-        #expect(states(on: Self.day(2026, 11, 3)) == ["2026.45": .past, "2026.48": .current, "2026.51": .upcoming])
+        // after the release, the slot is overdue, and still shown while it has open items
+        #expect(states(on: Self.day(2026, 11, 3)) == ["2026.45": .overdue, "2026.48": .current, "2026.51": .upcoming])
     }
 
-    @Test("SLOT-02 a past slot shows only while it has open committed items")
-    func pastSlots() {
+    @Test("SLOT-02 an overdue slot shows only while it has open committed items")
+    func overdueSlots() {
         let done = Self.item(1, slot: "2026.45", closed: true)
         let open = Self.item(2, slot: "2026.48")
         let plan = Self.plan([done, open], today: Self.day(2026, 11, 30))
         #expect(plan.slots.map(\.name.description) == ["2026.48"])
         let overdue = Self.plan([done, Self.item(3, slot: "2026.45")], today: Self.day(2026, 11, 30))
         #expect(overdue.slots.map(\.name.description) == ["2026.45"])
-        #expect(overdue.slots[0].state == .past)
+        #expect(overdue.slots[0].state == .overdue)
     }
 
     @Test("SLOT-02 the countdown names the next date")
     func countdown() throws {
         let dates = try #require(Self.dates("2026.51"))
         func text(_ today: Date) -> String { dates.countdown(from: today, calendar: Self.calendar) }
-        #expect(text(Self.day(2026, 11, 27)) == "Code freeze in 3 days")
-        #expect(text(Self.day(2026, 11, 29)) == "Code freeze tomorrow")
-        #expect(text(Self.day(2026, 11, 30)) == "Code freeze today")
-        #expect(text(Self.day(2026, 12, 1)) == "Early access in 6 days")
+        #expect(text(Self.day(2026, 11, 17)) == "Code freeze in 3 days")
+        #expect(text(Self.day(2026, 11, 19)) == "Code freeze tomorrow")
+        #expect(text(Self.day(2026, 11, 20)) == "Code freeze today")
+        #expect(text(Self.day(2026, 11, 24)) == "Early access in 6 days")
         #expect(text(Self.day(2026, 12, 8)) == "Release in 6 days")
         #expect(text(Self.day(2026, 12, 14)) == "Release today")
         #expect(text(Self.day(2026, 12, 15)) == "Released yesterday")
@@ -218,7 +238,7 @@ struct SlotTests {
 
     private static func flags(
         _ items: [WorkItem], _ mergeRequests: [Int: [RelatedMergeRequest]] = [:], builds: [Int: BuildSignal] = [:],
-        today: Date = day(2026, 11, 20), team: TeamValues = team()
+        today: Date = day(2026, 11, 1), team: TeamValues = team()
     ) -> [String: [SlotFlag.Kind]] {
         Dictionary(
             uniqueKeysWithValues: plan(items, mergeRequests: mergeRequests, builds: builds, today: today, team: team).slots
@@ -242,7 +262,7 @@ struct SlotTests {
         #expect(flags["acme/shop#4"] == [])
         #expect(flags["acme/shop#5"] == [])
         // the fix opens the item
-        let plan = Self.plan([inProgress], mergeRequests: [1: [Self.mergeRequest(11, .merged)]], today: Self.day(2026, 11, 20))
+        let plan = Self.plan([inProgress], mergeRequests: [1: [Self.mergeRequest(11, .merged)]], today: Self.day(2026, 11, 1))
         #expect(plan.slots[0].items[0].flags[0].fixURL == inProgress.webURL)
     }
 
@@ -262,14 +282,14 @@ struct SlotTests {
         let plan = Self.plan(
             [item, Self.item(2), Self.item(3)],
             mergeRequests: [1: [Self.mergeRequest(11, .opened)], 2: [Self.mergeRequest(12, .opened)], 3: [Self.mergeRequest(13, .opened)]],
-            builds: [11: .red, 12: .green, 13: .running], today: Self.day(2026, 11, 20))
+            builds: [11: .red, 12: .green, 13: .running], today: Self.day(2026, 11, 1))
         let items = plan.slots[0].items
         #expect(items.map { $0.flags.map(\.kind) } == [[.redPipeline], [], []])
         #expect(items[0].flags[0].fixURL == Self.buildURL(11))
         // without a known build, the fix is the merge request
         let noURL = SlotPlan.make(
             workItems: [item], mergeRequests: { _ in [Self.mergeRequest(11, .opened)] },
-            build: { _ in BuildReality(signal: .red) }, team: Self.team(), today: Self.day(2026, 11, 20), calendar: Self.calendar)
+            build: { _ in BuildReality(signal: .red) }, team: Self.team(), today: Self.day(2026, 11, 1), calendar: Self.calendar)
         #expect(noURL.slots[0].items[0].flags[0].fixURL == Self.mergeRequest(11, .opened).webURL)
     }
 
@@ -277,9 +297,9 @@ struct SlotTests {
     func noMergeRequest() {
         let items = [Self.item(1), Self.item(2), Self.item(3), Self.item(4, closed: true)]
         let mergeRequests = [2: [Self.mergeRequest(12, .opened)], 3: [Self.mergeRequest(13, .closed)]]
-        // the code freeze of 2026.51 is Nov 30; warning days 3 means from Nov 27
-        #expect(Self.flags(items, mergeRequests, today: Self.day(2026, 11, 26))["acme/shop#1"] == [])
-        let flags = Self.flags(items, mergeRequests, today: Self.day(2026, 11, 27))
+        // the code freeze of 2026.51 is Nov 20; warning days 3 means from Nov 17
+        #expect(Self.flags(items, mergeRequests, today: Self.day(2026, 11, 16))["acme/shop#1"] == [])
+        let flags = Self.flags(items, mergeRequests, today: Self.day(2026, 11, 17))
         #expect(flags["acme/shop#1"] == [.noMergeRequest])
         #expect(flags["acme/shop#2"] == [])
         // a closed merge request is no work on it
@@ -288,17 +308,17 @@ struct SlotTests {
         #expect(flags["acme/shop#4"] == [])
         // the team's warning days
         let wider = Self.team(TeamValues(slotWarnDays: "10"))
-        #expect(Self.flags(items, mergeRequests, today: Self.day(2026, 11, 20), team: wider)["acme/shop#1"] == [.noMergeRequest])
+        #expect(Self.flags(items, mergeRequests, today: Self.day(2026, 11, 10), team: wider)["acme/shop#1"] == [.noMergeRequest])
         // after the freeze it stays, while the slot isn't past
         #expect(Self.flags(items, mergeRequests, today: Self.day(2026, 12, 10))["acme/shop#1"] == [.noMergeRequest])
         // an answer GitLab hasn't given yet says nothing
         let unanswered = SlotPlan.make(
             workItems: [Self.item(1)], mergeRequests: { _ in nil }, build: { _ in nil }, team: Self.team(),
-            today: Self.day(2026, 11, 28), calendar: Self.calendar)
+            today: Self.day(2026, 11, 18), calendar: Self.calendar)
         #expect(unanswered.slots[0].items[0].flags.isEmpty)
         // the merge requests that only mention the item don't count
         let ignored = Self.team(TeamValues(ignoredMergeRequestPrefix: "Change"))
-        #expect(Self.flags([Self.item(1)], [1: [Self.mergeRequest(11, .opened)]], today: Self.day(2026, 11, 28), team: ignored)["acme/shop#1"] == [.noMergeRequest])
+        #expect(Self.flags([Self.item(1)], [1: [Self.mergeRequest(11, .opened)]], today: Self.day(2026, 11, 18), team: ignored)["acme/shop#1"] == [.noMergeRequest])
     }
 
     @Test("SLOT-03 a done item with a red build is flagged")
@@ -314,7 +334,7 @@ struct SlotTests {
     func order() {
         let plan = Self.plan(
             [Self.item(1), Self.item(2)], mergeRequests: [1: [Self.mergeRequest(11, .opened)], 2: [Self.mergeRequest(12, .opened)]],
-            builds: [12: .red], today: Self.day(2026, 11, 20))
+            builds: [12: .red], today: Self.day(2026, 11, 1))
         #expect(plan.slots[0].items.map(\.workItem.reference) == ["acme/shop#2", "acme/shop#1"])
         #expect(plan.slots[0].flagCount == 1)
         #expect(plan.slots[0].items[0].mergeRequests[0].build?.signal == .red)
@@ -345,28 +365,28 @@ struct SlotTests {
             SlotAlerts.notices(
                 of: Self.plan(items, mergeRequests: mergeRequests, today: today), warnDays: 3, announced: announced)
         }
-        #expect(notices(on: Self.day(2026, 11, 26)).isEmpty)
-        let notice = notices(on: Self.day(2026, 11, 27)).first
+        #expect(notices(on: Self.day(2026, 11, 16)).isEmpty)
+        let notice = notices(on: Self.day(2026, 11, 17)).first
         #expect(notice?.title == "Code freeze in 3 days")
         #expect(notice?.body == "2 committed items have no merged MR")
         #expect(notice?.subtitle == "Slot 2026.51")
         #expect(notice?.url == AppRoute.open(.slots).url)
-        #expect(notices(on: Self.day(2026, 11, 29)).first?.title == "Code freeze tomorrow")
-        #expect(notices(on: Self.day(2026, 11, 30)).first?.title == "Code freeze today")
+        #expect(notices(on: Self.day(2026, 11, 19)).first?.title == "Code freeze tomorrow")
+        #expect(notices(on: Self.day(2026, 11, 20)).first?.title == "Code freeze today")
         // after the freeze, and once announced, nothing more
-        #expect(notices(on: Self.day(2026, 12, 1)).isEmpty)
-        #expect(notices(on: Self.day(2026, 11, 28), announced: ["2026.51"]).isEmpty)
+        #expect(notices(on: Self.day(2026, 11, 21)).isEmpty)
+        #expect(notices(on: Self.day(2026, 11, 18), announced: ["2026.51"]).isEmpty)
         // nothing to say when everything is merged
         let merged = Self.plan(
-            [Self.item(1)], mergeRequests: [1: [Self.mergeRequest(11, .merged)]], today: Self.day(2026, 11, 28))
+            [Self.item(1)], mergeRequests: [1: [Self.mergeRequest(11, .merged)]], today: Self.day(2026, 11, 18))
         #expect(SlotAlerts.notices(of: merged, warnDays: 3, announced: []).isEmpty)
         // one item reads in the singular
-        let single = Self.plan([Self.item(1)], today: Self.day(2026, 11, 28))
+        let single = Self.plan([Self.item(1)], today: Self.day(2026, 11, 18))
         #expect(SlotAlerts.notices(of: single, warnDays: 3, announced: []).first?.body == "1 committed item has no merged MR")
         // and waits for GitLab's answers
         let unanswered = SlotPlan.make(
             workItems: [Self.item(1)], mergeRequests: { _ in nil }, build: { _ in nil }, team: Self.team(),
-            today: Self.day(2026, 11, 28), calendar: Self.calendar)
+            today: Self.day(2026, 11, 18), calendar: Self.calendar)
         #expect(SlotAlerts.notices(of: unanswered, warnDays: 3, announced: []).isEmpty)
     }
 
@@ -377,7 +397,7 @@ struct SlotTests {
         let defaults = try #require(UserDefaults(suiteName: "SlotTests.\(UUID().uuidString)"))
         let effects = FakeEffects()
         let log = ActivityLog(folder: folder.url)
-        let plan = Self.plan([Self.item(1)], today: Self.day(2026, 11, 28))
+        let plan = Self.plan([Self.item(1)], today: Self.day(2026, 11, 18))
         #expect(Preferences().slotAlerts == false)
         await SlotAlerts.announce(
             plan, team: Self.team(), preferences: Preferences(), defaults: defaults, effects: effects, log: log)
@@ -396,7 +416,8 @@ struct SlotTests {
     @Test("SLOT-05 the slot values are team values: kept in a team file, empty in an older one, with a planning URL only for web pages")
     func teamValues() throws {
         let team = TeamValues(
-            slotReleaseWeekday: "Friday", slotCodeFreezeDays: "10", slotEarlyAccessDays: "3", slotWarnDays: "5",
+            slotReleaseWeekday: "Thursday", slotCodeFreezeNth: "3", slotCodeFreezeWeekday: "Friday", slotEarlyAccessNth: "1",
+            slotEarlyAccessWeekday: "Monday", slotWarnDays: "5",
             inProgressLabel: "wip", slotPlanningURL: "https://planning.example.com/slots")
         let decoded = try JSONDecoder().decode(TeamValues.self, from: JSONEncoder().encode(team))
         #expect(decoded == team)
