@@ -124,7 +124,7 @@ struct AITests {
 
         // A structured answer in a code fence, as text only, still reads; a wrong verdict reads as unclear.
         let fenced = ClaudeRun(text: "```json\n{\"cause\":\"c\",\"fix\":\"f\",\"verdict\":\"maybe\"}\n```")
-        #expect(fenced.decoded(BuildExplanation.self) == BuildExplanation(cause: "c", fix: "f", verdict: .unclear))
+        #expect(fenced.decoded(BuildExplanation.self) == BuildExplanation(verdict: .unclear, cause: "c", nextStep: "f"))
         #expect(throws: (any Error).self) { try ClaudeRun.parse(Data("Invalid API key · Please run /login".utf8)) }
     }
 
@@ -255,70 +255,7 @@ struct AITests {
         #expect(SecretRedactor().redact(facts) == facts)
     }
 
-    // MARK: - AI-02 Explain a failed build
-
-    @Test("AI-02 the failed build's prompt has its stages, tests, the changes since the last green build and the log's end")
-    func explainBuildPrompt() {
-        let prompt = ClaudePrompt.explainBuild(Self.failedBuild)
-        #expect(prompt.useCase == .explainBuild)
-        #expect(prompt.schema?.contains("\"verdict\"") == true)
-        let text = prompt.text
-        #expect(text.contains("Build: MR-42 #7 \"Add cart discount\", result FAILURE"))
-        #expect(text.contains("Failed stages: Unit tests"))
-        #expect(text.contains("Tests: 1 of 120 failed"))
-        #expect(text.contains("- com.example.cart.CartServiceTest.appliesDiscount (regression: passed in the build before): expected:<90> but was:<100>"))
-        #expect(text.contains("Changes since the last green build (#5), newest first:"))
-        #expect(text.contains("- 1a2b3c4d5e #7 Jane Doe: Apply discount after tax"))
-        #expect(text.hasSuffix("[INFO] BUILD FAILURE"))
-
-        // A long log keeps its end, from a line's start; long lists are cut with a count.
-        var long = Self.failedBuild
-        long.logTail = (1...5000).map { "line \($0) of the build" }.joined(separator: "\n")
-        long.failedTests = (1...40).map { FailedTest(className: "a.B", name: "t\($0)", status: .failed) }
-        long.changes = []
-        long.lastGreen = nil
-        let cut = ClaudePrompt.explainBuild(long).text
-        #expect(cut.contains("[… earlier lines left out …]\nline "))
-        #expect(cut.hasSuffix("line 5000 of the build"))
-        #expect(!cut.contains("line 1 of the build"))
-        #expect(cut.contains("- and 15 more"))
-        #expect(cut.contains("Changes: none known (no green build in the job's recent history)"))
-        #expect(cut.count < BuildFailureFacts.logCharacters + 3000)
-    }
-
-    @Test("AI-02 reads the end of the console log and the changes since the last green build from Jenkins")
-    func readsFailureFromJenkins() async throws {
-        let stub = StubTransport()
-        let log = (1...20000).map { "step \($0)" }.joined(separator: "\n") + "\n[INFO] BUILD FAILURE\n"
-        stub.answer(path: "/job/project/job/MR-42/7/consoleText", body: log)
-        stub.answer(path: "/job/project/job/MR-42/api/json", body: """
-            {"lastSuccessfulBuild": {"number": 5},
-             "builds": [
-               {"number": 8, "changeSets": [{"items": [{"commitId": "c8", "msg": "Later", "author": {"fullName": "Kim Park"}}]}]},
-               {"number": 7, "changeSets": [{"items": [
-                  {"commitId": "c71", "msg": "First of seven", "author": {"fullName": "Jane Doe"}},
-                  {"commitId": "c72", "msg": "Second of seven\\n\\nwith a body", "author": {"fullName": "Jane Doe"}}]}]},
-               {"number": 6, "changeSets": [], "changeSet": {"items": [{"commitId": "c6", "msg": "Six", "author": null}]}},
-               {"number": 5, "changeSets": [{"items": [{"commitId": "c5", "msg": "Green", "author": {"fullName": "Sam Lee"}}]}]}
-             ]}
-            """)
-        let client = JenkinsClient(
-            jobURL: URL(string: "https://ci.example.com/job/project/")!, token: "dG9rZW4=", transport: stub)
-
-        let tail = try await client.consoleTail(job: "MR-42", number: 7)
-        #expect(tail.hasSuffix("[INFO] BUILD FAILURE\n"))
-        #expect(tail.utf8.count <= JenkinsClient.consoleTailBytes)
-        #expect(tail.hasPrefix("step "))
-
-        let (changes, green) = try await client.changesSinceLastGreen(job: "MR-42", number: 7)
-        #expect(green == 5)
-        #expect(changes.map(\.commit) == ["c72", "c71", "c6"])
-        #expect(changes.map(\.message) == ["Second of seven", "First of seven", "Six"])
-        #expect(changes.last?.author == "Someone")
-        let request = try #require(stub.requests(path: "/job/project/job/MR-42/api/json").first)
-        #expect(request.url.query?.contains("lastSuccessfulBuild%5Bnumber%5D") == true)
-        #expect(request.headers["Authorization"] == "Basic dG9rZW4=")
-    }
+    // MARK: - AI-02 Explain a failed build: in WhyDidItFailTests
 
     // MARK: - AI-03 Summarize a discussion
 
@@ -602,7 +539,8 @@ struct AITests {
             message: "expected:<90> but was:<100>")],
         changes: [BuildChange(commit: "1a2b3c4d5e6f", author: "Jane Doe", message: "Apply discount after tax", build: 7)],
         lastGreen: 5,
-        logTail: "[ERROR] Tests run: 120, Failures: 1\n[ERROR] CartServiceTest.appliesDiscount:42 expected:<90> but was:<100>\n[INFO] BUILD FAILURE\n")
+        log: FailureLog.narrow(
+            "[ERROR] Tests run: 120, Failures: 1\n[ERROR] CartServiceTest.appliesDiscount:42 expected:<90> but was:<100>\n[INFO] BUILD FAILURE\n"))
 
     static let someFacts = DigestFacts(
         myMergeRequests: ["group/project!42 \"Add cart discount\", pipeline failed"],

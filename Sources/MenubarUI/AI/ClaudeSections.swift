@@ -1,9 +1,9 @@
 import MenubarCore
 import SwiftUI
 
-/// The failed build detail's Claude section (AI-02, AI-05): "Why Did It Fail?" with Claude's card, the likely cause,
-/// the fix and real or flaky, and "Open in Claude Code". Hidden while the Claude features are off or `claude` isn't
-/// installed, and in the gallery.
+/// The failed build detail's Claude section (AI-02, AI-05): one row with "Why Did It Fail?" as its primary action and
+/// "Open in Claude Code" next to it, and Claude's investigation as a card below. Hidden while the Claude features are
+/// off or `claude` isn't installed, and in the gallery.
 struct ExplainBuildSection: View {
     let build: Build
     /// the build's page, which Claude Code's prompt links
@@ -17,16 +17,27 @@ struct ExplainBuildSection: View {
             let state = model.ai.state(of: subject)
             let failedTests: [FailedTest]? =
                 if case .loaded(let tests) = model.failedTests.state(of: build.id) { tests } else { nil }
+            let hints: [FlakyHint] =
+                if case .loaded(let hints) = model.flakyHints.state(of: build.id) { hints } else { [] }
             Section {
-                HStack(spacing: 8) {
-                    Button("Why Did It Fail?") {
-                        Task { await model.ai.explain(build, failedTests: failedTests) }
+                VStack(alignment: .leading, spacing: 6) {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            buttons(model, state: state, failedTests: failedTests, hints: hints)
+                            Spacer(minLength: 0)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            buttons(model, state: state, failedTests: failedTests, hints: hints)
+                        }
                     }
-                    .disabled(state.isBusy)
-                    .help("Ask Claude for the likely cause and a fix, from the end of the log, the failed tests and the changes")
-                    OpenInClaudeCodeButton(context: .build(build, page: page, failedTests: failedTests ?? []))
+                    if state == .idle {
+                        Text("Claude reads the failed tests, the errors in the log and the commits since the last green build.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                .buttonStyle(.bordered)
+                .padding(.vertical, 2)
                 ClaudeCodeLaunchLine(context: .build(build, page: page, failedTests: []))
                 AIAnswerRows(
                     state: state, send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
@@ -40,25 +51,112 @@ struct ExplainBuildSection: View {
             }
         }
     }
+
+    @ViewBuilder
+    private func buttons(_ model: AppModel, state: AIAnswerState, failedTests: [FailedTest]?, hints: [FlakyHint]) -> some View {
+        Button {
+            Task { await model.ai.explain(build, failedTests: failedTests, flakyHints: hints) }
+        } label: {
+            Label("Why Did It Fail?", systemImage: "sparkles")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(state.isBusy)
+        .help("Ask Claude for the root cause, the evidence in the log, the suspect commits and the next step")
+        OpenInClaudeCodeButton(context: .build(build, page: page, failedTests: failedTests ?? []))
+    }
 }
 
-/// Claude's card for a failed build: the verdict as a badge, then the cause and the fix.
+/// Claude's investigation of a failed build (AI-02), in the order a developer reads it: the verdict, the diagnosis and
+/// where it failed; the root cause; the evidence lines from the log in monospace, collapsible; the suspect commits; the
+/// next step.
 struct BuildExplanationCard: View {
     let explanation: BuildExplanation
 
+    @ViewState private var showsEvidence = true
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            StatusBadge(text: explanation.verdict.title, symbol: symbol, tint: tint)
-            labeled("Likely cause", explanation.cause)
-            labeled("Fix", explanation.fix)
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                StatusBadge(text: explanation.verdict.title, symbol: symbol, tint: tint)
+                if !explanation.headline.isEmpty {
+                    Text(verbatim: explanation.headline)
+                        .font(.headline)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !explanation.failedAt.isEmpty {
+                    Label {
+                        Text(verbatim: explanation.failedAt)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "mappin.and.ellipse")
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            part("Root Cause") {
+                Text(verbatim: explanation.cause)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !explanation.evidence.isEmpty {
+                DisclosureGroup(isExpanded: $showsEvidence) {
+                    evidence
+                        .padding(.top, 4)
+                } label: {
+                    heading(explanation.evidence.count == 1 ? "Evidence" : "Evidence (\(explanation.evidence.count) lines)")
+                }
+            }
+            if !explanation.suspects.isEmpty {
+                part("Suspect Commits") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(explanation.suspects.enumerated()), id: \.offset) { _, suspect in
+                            SuspectRow(suspect: suspect)
+                        }
+                    }
+                }
+            }
+            if !explanation.nextStep.isEmpty {
+                part("Next Step") {
+                    Label {
+                        Text(verbatim: explanation.nextStep)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } icon: {
+                        Image(systemName: "arrow.forward.circle")
+                            .foregroundStyle(.tint)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The evidence lines as they are in the log: monospaced, one per line, in a quiet box that scrolls sideways.
+    private var evidence: some View {
+        ScrollView(.horizontal) {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(explanation.evidence.enumerated()), id: \.offset) { _, line in
+                    Text(verbatim: line)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .font(.system(.callout, design: .monospaced))
+            .textSelection(.enabled)
+            .padding(8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
     }
 
     private var symbol: String {
         switch explanation.verdict {
         case .real: "xmark.octagon"
         case .flaky: "arrow.triangle.2.circlepath"
+        case .infrastructure: "server.rack"
         case .unclear: "questionmark.circle"
         }
     }
@@ -67,18 +165,47 @@ struct BuildExplanationCard: View {
         switch explanation.verdict {
         case .real: .red
         case .flaky: .orange
+        case .infrastructure: .blue
         case .unclear: .secondary
         }
     }
 
-    private func labeled(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.callout.weight(.semibold))
+    private func heading(_ title: String) -> some View {
+        Text(title)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    private func part(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            heading(title)
+            content()
+        }
+    }
+}
+
+/// A suspect commit: its short hash in monospace, the message, and the author with why it is suspect.
+private struct SuspectRow: View {
+    let suspect: BuildExplanation.Suspect
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(verbatim: String(suspect.commit.prefix(8)))
+                .font(.system(.callout, design: .monospaced))
                 .foregroundStyle(.secondary)
-            Text(verbatim: text)
                 .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: suspect.message.isEmpty ? suspect.commit : suspect.message)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                let byline = [suspect.author, suspect.why].filter { !$0.isEmpty }.joined(separator: " · ")
+                if !byline.isEmpty {
+                    Text(verbatim: byline)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 }

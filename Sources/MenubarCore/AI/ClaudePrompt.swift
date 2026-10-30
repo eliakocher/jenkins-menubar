@@ -27,16 +27,6 @@ public struct ClaudePrompt: Hashable, Sendable {
         return prompt
     }
 
-    /// Cuts a text to its last characters, from the start of a line: what the end of a long log needs.
-    static func tail(_ text: String, characters: Int) -> String {
-        guard text.count > characters else {
-            return text
-        }
-        let end = text.suffix(characters)
-        let fromLine = end.firstIndex(of: "\n").map { end[end.index(after: $0)...] } ?? end
-        return "[… earlier lines left out …]\n" + fromLine
-    }
-
     /// Cuts a text to its first characters, with an ellipsis.
     static func head(_ text: String, characters: Int) -> String {
         text.count > characters ? String(text.prefix(characters)) + "…" : text
@@ -68,8 +58,9 @@ public struct BuildChange: Hashable, Sendable {
     }
 }
 
-/// What a failed build tells, for "Why Did It Fail?" (AI-02): the build, its failed stages and tests, the changes since
-/// the last green build, and the end of its console log.
+/// What a failed build tells, for "Why Did It Fail?" (AI-02), gathered the way a developer investigates one: the build
+/// and where it failed, its failed tests with their messages, the log narrowed to its error markers, whether the stages
+/// failed before, and the suspect commits since the last green build.
 public struct BuildFailureFacts: Hashable, Sendable {
     /// the MR or branch title
     public var title: String
@@ -86,12 +77,15 @@ public struct BuildFailureFacts: Hashable, Sendable {
     public var changes: [BuildChange]
     /// the last successful build's number; `nil` when Jenkins knows none
     public var lastGreen: Int?
-    /// the end of the console log
-    public var logTail: String
+    /// the console log, narrowed to its error markers
+    public var log: FailureLog
+    /// what the job's recent builds say of the failed stages (PIPE-10); empty when unknown
+    public var flakyHints: [FlakyHint]
 
     public init(
         title: String, job: String, number: Int, result: String, failedStages: [String] = [], testCounts: TestCounts? = nil,
-        failedTests: [FailedTest] = [], changes: [BuildChange] = [], lastGreen: Int? = nil, logTail: String = ""
+        failedTests: [FailedTest] = [], changes: [BuildChange] = [], lastGreen: Int? = nil, log: FailureLog = FailureLog(),
+        flakyHints: [FlakyHint] = []
     ) {
         self.title = title
         self.job = job
@@ -102,67 +96,181 @@ public struct BuildFailureFacts: Hashable, Sendable {
         self.failedTests = failedTests
         self.changes = changes
         self.lastGreen = lastGreen
-        self.logTail = logTail
+        self.log = log
+        self.flakyHints = flakyHints
     }
 
-    /// how much of the log's end is sent: about 4,000 tokens
-    public static let logCharacters = 14_000
     /// how many failed tests and changes are listed
     public static let listedTests = 25
     public static let listedChanges = 25
+
+    /// Gathers a failed build's facts from Jenkins (AI-02), in the order of an investigation: the build and its failed
+    /// stages from the check; the failed tests, the detail's when it has them, else the test report; the console log,
+    /// narrowed to its error markers (``FailureLog``); the commits since the last green build. The requests go at once.
+    /// Only the log is needed: without the tests or the commits the facts say so.
+    ///
+    /// - Parameters:
+    ///   - build: the failed build
+    ///   - failedTests: the failed tests when the detail has them; `nil` reads them
+    ///   - flakyHints: what the job's recent builds say of the failed stages, when the detail has it
+    ///   - client: the Jenkins client of the build's project
+    /// - Returns: the facts
+    public static func gather(
+        _ build: Build, failedTests: [FailedTest]?, flakyHints: [FlakyHint] = [], client: JenkinsClient
+    ) async throws -> BuildFailureFacts {
+        async let log = client.failureLog(job: build.job, number: build.number)
+        async let changes = try? client.changesSinceLastGreen(job: build.job, number: build.number)
+        async let read = failedTests == nil ? (try? client.failedTests(job: build.job, number: build.number)) : nil
+        let narrowed: FailureLog
+        do {
+            narrowed = try await log
+        } catch let error as JenkinsError {
+            throw AIGatherError("Couldn't read the console log: \(error.problem.message)")
+        }
+        let found = await changes
+        let readTests = await read
+        let tests = failedTests ?? readTests ?? []
+        return BuildFailureFacts(
+            title: build.title ?? build.label, job: build.label, number: build.number,
+            result: build.result?.rawValue ?? "FAILURE", failedStages: build.failedStages ?? [], testCounts: build.testCounts,
+            failedTests: tests, changes: found?.changes ?? [], lastGreen: found?.lastGreen, log: narrowed,
+            flakyHints: flakyHints)
+    }
 }
 
 extension ClaudePrompt {
-    /// the system prompt of "Why Did It Fail?"
+    /// the system prompt of "Why Did It Fail?": the method of an investigation, and the answer's parts
     static let explainBuildInstructions = """
-        You explain failed CI builds to the developer who owns them, briefly and concretely. Answer only from the facts \
-        given; say so when they don't show the cause. "cause": the likely cause in at most three short sentences, naming \
-        the failing test, stage or log line. "fix": the most likely fix in one or two sentences. "verdict": "real" for a \
-        failure the changes or the code explain, "flaky" for one that looks like timing, infrastructure, network or an \
-        unrelated test, "unclear" when the facts don't tell.
+        You investigate a failed CI build for the developer who owns it. Answer only from the facts given: the build \
+        and its failed stages, the failed tests with their messages, the log lines with error markers (with their line \
+        numbers and stage), the end of the log, the stages' recent history, and the commits since the last green build.
+        Method: find the first error that explains the failure; later errors, the build tool's summary and its final \
+        failure line usually follow from it. Judge it: "real" when the code or a change explains it (a compiler error, a \
+        failed assertion, an exception in changed code); "flaky" when it looks like timing, ordering or an unrelated \
+        test, or the history shows it failing before or passing on the same commit; "infrastructure" when the machine, \
+        network, agent, a registry or a service failed, or a step timed out with nothing in the code to blame; \
+        "unclear" when the facts don't tell. A failure with no failed test may come from a log check or a teardown, not \
+        a test. Name as suspects only commits whose message fits the failing code; none for flaky or infrastructure.
+        Be brief. "headline": the diagnosis, at most 12 words. "failedAt": the stage and the test or step, in a few \
+        words. "cause": at most three short sentences. "evidence": 1 to 5 lines copied character for character from \
+        the log excerpts or the failed tests, nothing added or explained, the most telling first. "suspects": each \
+        commit's hash as given, its author, its message, and why in one short sentence. "nextStep": the one thing to \
+        do next, in one or two sentences.
         """
 
-    /// the answer's shape of "Why Did It Fail?"
+    /// the answer's shape of "Why Did It Fail?", with the limits the answer keeps best when the schema says them
     static let explainBuildSchema = """
-        {"type":"object","properties":{"cause":{"type":"string"},"fix":{"type":"string"},\
-        "verdict":{"type":"string","enum":["real","flaky","unclear"]}},"required":["cause","fix","verdict"]}
+        {"type":"object","properties":{"headline":{"type":"string","description":"at most 12 words"},\
+        "verdict":{"type":"string","enum":["real","flaky","infrastructure","unclear"]},\
+        "failedAt":{"type":"string","description":"the stage and the test or step, a few words"},\
+        "cause":{"type":"string","description":"at most three short sentences"},\
+        "evidence":{"type":"array","items":{"type":"string","description":"one line of the log excerpts or of a \
+        failed test's message, copied exactly, without its line number or any comment"}},\
+        "suspects":{"type":"array","items":{"type":"object","properties":{"commit":{"type":"string"},\
+        "author":{"type":"string"},"message":{"type":"string"},"why":{"type":"string","description":"one short sentence"}},\
+        "required":["commit","author","message","why"]}},\
+        "nextStep":{"type":"string","description":"one or two sentences"}},\
+        "required":["headline","verdict","failedAt","cause","evidence","suspects","nextStep"]}
         """
 
-    /// Returns the prompt of "Why Did It Fail?" (AI-02).
+    /// Returns the prompt of "Why Did It Fail?" (AI-02), its parts in the order of an investigation: the build with
+    /// its failed stages, where in the log they start and first show an error, and their history; the failed tests;
+    /// the log's marked lines with their line numbers, then its end; the suspect commits.
     ///
     /// - Parameter facts: the failed build's facts
     /// - Returns: the prompt, not redacted yet
     public static func explainBuild(_ facts: BuildFailureFacts) -> ClaudePrompt {
-        var lines = ["A Jenkins build failed. Explain why.", ""]
-        lines.append("Build: \(facts.job) #\(facts.number) \"\(facts.title)\", result \(facts.result)")
+        var lines = ["A Jenkins build failed. Find the root cause.", ""]
+
+        lines.append("# Build")
+        lines.append("\(facts.job) #\(facts.number) \"\(facts.title)\", result \(facts.result)")
         if !facts.failedStages.isEmpty {
-            lines.append("Failed stages: \(facts.failedStages.joined(separator: ", "))")
+            let first = facts.log.firstMarkedLine(inStages: facts.failedStages)
+            let stages = facts.failedStages.map { stage in
+                var places: [String] = []
+                if let start = facts.log.stageStarts[stage] {
+                    places.append("starts at log line \(start)")
+                }
+                if let line = first[stage] {
+                    places.append("first error marker at line \(line)")
+                }
+                return places.isEmpty ? stage : "\(stage) (\(places.joined(separator: ", ")))"
+            }
+            lines.append("Failed stages: \(stages.joined(separator: "; "))")
         }
         if let counts = facts.testCounts {
             lines.append("Tests: \(counts.failed) of \(counts.total) failed")
         }
-        if !facts.failedTests.isEmpty {
-            lines.append("")
-            lines.append("Failed tests:")
-            for test in facts.failedTests.prefix(BuildFailureFacts.listedTests) {
-                let name = test.className.isEmpty ? test.name : "\(test.className).\(test.name)"
-                let status = test.status == .regression ? " (regression: passed in the build before)" : ""
-                let message = test.message.map { ": " + $0.replacingOccurrences(of: "\n", with: " / ") } ?? ""
-                lines.append("- \(name)\(status)\(message)")
+        for hint in facts.flakyHints {
+            switch hint {
+            case .passedOnSameCommit(let stage, let build):
+                lines.append("History: stage \"\(stage)\" passed in build #\(build) of the same commit")
+            case .failedBefore(let stage, let failed, let of):
+                lines.append("History: stage \"\(stage)\" failed in \(failed) of the last \(of) builds")
             }
-            if facts.failedTests.count > BuildFailureFacts.listedTests {
-                lines.append("- and \(facts.failedTests.count - BuildFailureFacts.listedTests) more")
+        }
+
+        lines.append("")
+        lines.append(facts.failedTests.isEmpty ? "# Failed tests: none reported" : "# Failed tests (\(facts.failedTests.count))")
+        for test in facts.failedTests.prefix(BuildFailureFacts.listedTests) {
+            let name = test.className.isEmpty ? test.name : "\(test.className).\(test.name)"
+            var notes: [String] = []
+            if test.status == .regression {
+                notes.append("regression: passed in the build before")
+            } else if let age = test.age, age > 1 {
+                notes.append("failing for \(age) builds in a row")
+            }
+            let note = notes.isEmpty ? "" : " (\(notes.joined(separator: ", ")))"
+            let message = test.message.map { ": " + $0.replacingOccurrences(of: "\n", with: " / ") } ?? ""
+            lines.append("- \(name)\(note)\(message)")
+        }
+        if facts.failedTests.count > BuildFailureFacts.listedTests {
+            lines.append("- and \(facts.failedTests.count - BuildFailureFacts.listedTests) more")
+        }
+
+        lines.append("")
+        let log = facts.log
+        if log.excerpts.isEmpty {
+            lines.append("# Error markers in the log: none found in \(log.lineCount) lines")
+        } else {
+            var header = "# Error markers in the log (\(log.lineCount) lines, \(log.markedCount) distinct marked"
+            header += log.leftOut > 0 ? ", \(log.leftOut) left out)" : ")"
+            lines.append(header)
+            lines.append("Each excerpt: its marked lines with \">\", the others are context.")
+            let width = String(log.excerpts.last?.lastLine ?? 0).count
+            for excerpt in log.excerpts {
+                var title = "## line \(excerpt.marked.map(String.init).joined(separator: ", "))"
+                if let stage = excerpt.stage {
+                    title += ", stage \"\(stage)\""
+                }
+                title += ", " + excerpt.kinds.map(\.title).joined(separator: ", ")
+                if excerpt.repeats > 1 {
+                    title += ", seen \(excerpt.repeats) times"
+                }
+                lines.append(title)
+                // Jenkins's own lines tell nothing: the numbers keep the places.
+                for (offset, line) in excerpt.lines.enumerated() where !line.hasPrefix("[Pipeline] ") {
+                    let number = excerpt.firstLine + offset
+                    let mark = excerpt.marked.contains(number) ? ">" : " "
+                    let padded = String(repeating: " ", count: max(0, width - String(number).count)) + String(number)
+                    lines.append("\(mark)\(padded) | \(line)")
+                }
             }
         }
         lines.append("")
+        lines.append("# End of the log")
+        let end = log.tail.trimmingCharacters(in: .whitespacesAndNewlines)
+        lines.append(end.isEmpty ? (log.excerpts.isEmpty ? "(empty)" : "(the excerpts above reach the end)") : end)
+
+        lines.append("")
         if let green = facts.lastGreen {
             lines.append(facts.changes.isEmpty
-                ? "Changes since the last green build (#\(green)): none"
-                : "Changes since the last green build (#\(green)), newest first:")
+                ? "# Suspect commits: none since the last green build (#\(green))"
+                : "# Suspect commits: since the last green build (#\(green)), newest first")
         } else {
             lines.append(facts.changes.isEmpty
-                ? "Changes: none known (no green build in the job's recent history)"
-                : "Changes of the recent builds (no green build in the job's recent history), newest first:")
+                ? "# Suspect commits: none known (no green build in the job's recent history)"
+                : "# Suspect commits: the recent builds' (no green build in the job's recent history), newest first")
         }
         for change in facts.changes.prefix(BuildFailureFacts.listedChanges) {
             lines.append("- \(change.commit.prefix(10)) #\(change.build) \(change.author): \(head(change.message, characters: 200))")
@@ -170,10 +278,6 @@ extension ClaudePrompt {
         if facts.changes.count > BuildFailureFacts.listedChanges {
             lines.append("- and \(facts.changes.count - BuildFailureFacts.listedChanges) more")
         }
-        lines.append("")
-        lines.append("End of the console log:")
-        let log = facts.logTail.trimmingCharacters(in: .whitespacesAndNewlines)
-        lines.append(log.isEmpty ? "(not available)" : tail(log, characters: BuildFailureFacts.logCharacters))
         return ClaudePrompt(
             useCase: .explainBuild, instructions: explainBuildInstructions, text: lines.joined(separator: "\n"),
             schema: explainBuildSchema)

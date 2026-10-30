@@ -1,26 +1,27 @@
 import Foundation
 
 extension JenkinsClient {
-    /// the most of a console log read: its end is what explains a failure
-    static let consoleTailBytes = 64 * 1024
+    /// the most of a console log scanned: its end, when it is longer
+    static let consoleScanBytes = 32 * 1024 * 1024
 
-    /// Returns the end of a build's console log, for "Why Did It Fail?" (AI-02).
+    /// Returns a failed build's console log narrowed to its error markers, for "Why Did It Fail?" (AI-02;
+    /// ``FailureLog/narrow(_:)``).
     ///
-    /// Jenkins's `consoleText` has no ranges, so the whole log is read once, with the job list's longer time limit, and
-    /// only its last ``consoleTailBytes`` kept, from the start of a line.
+    /// Jenkins's `consoleText` has no ranges, so the whole log is read once, with the job list's longer time limit; a
+    /// log longer than ``consoleScanBytes`` is scanned from that far before its end, from the start of a line.
     ///
     /// - Parameters:
     ///   - job: the job's name as in Jenkins URLs
     ///   - number: the build number
-    /// - Returns: the end of the log
-    public func consoleTail(job: String, number: Int) async throws -> String {
+    /// - Returns: the narrowed log
+    public func failureLog(job: String, number: Int) async throws -> FailureLog {
         let body = try await getText("/job/\(Self.safe(job))/\(number)/consoleText", timeout: timeouts.jenkinsJobList)
-        let tail = body.count > Self.consoleTailBytes ? body.suffix(Self.consoleTailBytes) : body[...]
-        var text = String(decoding: tail, as: UTF8.self)
-        if body.count > Self.consoleTailBytes, let lineBreak = text.firstIndex(of: "\n") {
+        let cut = body.count > Self.consoleScanBytes
+        var text = String(decoding: cut ? body.suffix(Self.consoleScanBytes) : body[...], as: UTF8.self)
+        if cut, let lineBreak = text.firstIndex(of: "\n") {
             text = String(text[text.index(after: lineBreak)...])
         }
-        return text
+        return FailureLog.narrow(text)
     }
 
     /// Returns the commits since the job's last green build, up to and with a build, newest first (AI-02).

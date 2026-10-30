@@ -134,44 +134,133 @@ public struct ClaudeRun: Hashable, Sendable {
     }
 }
 
-/// "Why Did It Fail?": the likely cause, the fix, and real failure or flaky (AI-02).
+/// "Why Did It Fail?": the investigation of a failed build, in the order a developer reads it (AI-02): a one-line
+/// diagnosis, real failure or flaky or infrastructure, where it failed, the root cause, the log lines that show it, the
+/// suspect commits, and the next step.
 public struct BuildExplanation: Codable, Hashable, Sendable {
     /// Claude's verdict on the failure.
     public enum Verdict: String, Codable, Hashable, Sendable {
+        /// the code or the changes explain it
         case real
+        /// timing, order or an unrelated test: it failed before, or passed on the same commit
         case flaky
+        /// the machine, the network or a service around the build
+        case infrastructure
         case unclear
 
-        /// "Real failure", "Likely flaky", "Unclear"
+        /// "Real failure", "Likely flaky", "Infrastructure"
         public var title: String {
             switch self {
             case .real: "Real failure"
             case .flaky: "Likely flaky"
+            case .infrastructure: "Infrastructure"
             case .unclear: "Real or flaky: unclear"
             }
         }
     }
 
-    public var cause: String
-    public var fix: String
-    public var verdict: Verdict
+    /// A commit that may have caused the failure, and why.
+    public struct Suspect: Codable, Hashable, Sendable {
+        /// the commit hash as given, usually its first 10 characters
+        public var commit: String
+        public var author: String
+        /// the commit message's first line
+        public var message: String
+        /// why it is suspect, in a sentence
+        public var why: String
 
-    public init(cause: String, fix: String, verdict: Verdict) {
-        self.cause = cause
-        self.fix = fix
+        public init(commit: String, author: String, message: String, why: String) {
+            self.commit = commit
+            self.author = author
+            self.message = message
+            self.why = why
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case commit, author, message, why
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            commit = (try? container.decode(String.self, forKey: .commit)) ?? ""
+            author = (try? container.decode(String.self, forKey: .author)) ?? ""
+            message = (try? container.decode(String.self, forKey: .message)) ?? ""
+            why = (try? container.decode(String.self, forKey: .why)) ?? ""
+        }
+    }
+
+    /// the diagnosis in one line
+    public var headline: String
+    public var verdict: Verdict
+    /// the stage, test or step where it failed; empty when the facts don't tell
+    public var failedAt: String
+    /// the root cause, in a few sentences
+    public var cause: String
+    /// log lines that show the cause, as they are in the log
+    public var evidence: [String]
+    public var suspects: [Suspect]
+    /// what to do next
+    public var nextStep: String
+
+    public init(
+        headline: String = "", verdict: Verdict, failedAt: String = "", cause: String, evidence: [String] = [],
+        suspects: [Suspect] = [], nextStep: String
+    ) {
+        self.headline = headline
         self.verdict = verdict
+        self.failedAt = failedAt
+        self.cause = cause
+        self.evidence = evidence
+        self.suspects = suspects
+        self.nextStep = nextStep
     }
 
     private enum CodingKeys: String, CodingKey {
-        case cause, fix, verdict
+        case headline, verdict, failedAt, cause, evidence, suspects, nextStep
+        // The first answers' name of the next step.
+        case fix
     }
 
-    // A verdict outside the schema reads as unclear, not as a failed answer.
+    // A verdict outside the schema reads as unclear, and a missing part as empty, not as a failed answer; only the
+    // cause is needed.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         cause = try container.decode(String.self, forKey: .cause)
-        fix = try container.decode(String.self, forKey: .fix)
+        headline = (try? container.decode(String.self, forKey: .headline)) ?? ""
         verdict = (try? container.decode(Verdict.self, forKey: .verdict)) ?? .unclear
+        failedAt = (try? container.decode(String.self, forKey: .failedAt)) ?? ""
+        evidence = ((try? container.decode([String].self, forKey: .evidence)) ?? [])
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        suspects = (try? container.decode([Suspect].self, forKey: .suspects)) ?? []
+        nextStep = (try? container.decode(String.self, forKey: .nextStep))
+            ?? (try? container.decode(String.self, forKey: .fix)) ?? ""
+    }
+
+    /// Returns the explanation with only the evidence lines that are in what was sent, so the card never shows a line
+    /// as the log's that the log doesn't have. A line number or `Line 12:` in front is taken off first.
+    ///
+    /// - Parameter sent: the facts as sent
+    /// - Returns: the explanation with its evidence checked
+    public func keepingEvidence(in sent: String) -> BuildExplanation {
+        var checked = self
+        checked.evidence = evidence.compactMap { line in
+            let text = line.replacingOccurrences(
+                of: #"^\s*(>?\s*\d+\s*\|\s?|[Ll]ine \d+:\s*)"#, with: "", options: .regularExpression)
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            return !trimmed.isEmpty && sent.contains(trimmed) ? text : nil
+        }
+        return checked
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(headline, forKey: .headline)
+        try container.encode(verdict, forKey: .verdict)
+        try container.encode(failedAt, forKey: .failedAt)
+        try container.encode(cause, forKey: .cause)
+        try container.encode(evidence, forKey: .evidence)
+        try container.encode(suspects, forKey: .suspects)
+        try container.encode(nextStep, forKey: .nextStep)
     }
 }
 

@@ -12,7 +12,7 @@ branch is made up: the hosts are `jenkins.example.com` and `gitlab.example.com`,
 | `job-without-build.json` | same | `job-finished.json` with `lastBuild: null` |
 | `describe-running.json`, `describe-finished.json`, `describe-failed.json` | `/job/MR-1/7/wfapi/describe` | hand-written, in the format of the Pipeline Stage View plugin's REST API and the fields the old plugin read |
 | `test-counts.json`, `test-counts-none.json` | `/job/MR-1/7/api/json?tree=actions[failCount,totalCount]` | hand-written, with the fields the old `jenkins-watch` read |
-| `test-report.json` | `/job/MR-1/7/testReport/api/json?tree=suites[cases[className,name,status,errorDetails]]` | hand-written, in the format of the JUnit plugin's `TestResult`: PASSED, FAILED, REGRESSION, SKIPPED and FIXED cases, a multi-line and a missing error message, a case without a class or status, a suite without cases (PIPE-03) |
+| `test-report.json` | `/job/MR-1/7/testReport/api/json?tree=suites[cases[className,name,status,errorDetails,age]]` | hand-written, in the format of the JUnit plugin's `TestResult`: PASSED, FAILED, REGRESSION, SKIPPED and FIXED cases, a multi-line and a missing error message, a case without a class or status, a suite without cases (PIPE-03) |
 | `account.json` | `/api/json?tree=name` | hand-written |
 | `error-401.html`, `error-404.html`, `error-500.html` | any | hand-written error pages |
 | `build-parameters.json`, `build-without-parameters.json` | `/job/MR-1/7/api/json?tree=actions[parameters[name,value]]` | hand-written, in the format of Jenkins' `ParametersAction`: a string, a boolean, a password without a value, a run parameter (PIPE-09) |

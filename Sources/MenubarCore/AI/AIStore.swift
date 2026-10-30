@@ -58,7 +58,7 @@ public struct AIAnswer: Hashable, Sendable {
 public enum AIAnswerState: Hashable, Sendable {
     /// nothing asked
     case idle
-    /// the facts are being gathered: the console log, the threads
+    /// the facts are being gathered: the failed tests and the console log, the threads
     case preparing
     /// the first send of a use case: what will be sent shows, and waits for Send
     case review(ClaudePrompt)
@@ -227,18 +227,22 @@ public final class AIStore {
 
     // MARK: - The use cases
 
-    /// "Why Did It Fail?" (AI-02): reads the end of the console log and the changes since the last green build from
-    /// Jenkins, adds the failed stages and tests, and asks Claude for the likely cause, the fix and real or flaky.
+    /// "Why Did It Fail?" (AI-02): gathers the failed tests, the log narrowed to its error markers and the commits since
+    /// the last green build from Jenkins (``BuildFailureFacts/gather(_:failedTests:flakyHints:client:)``), adds the
+    /// failed stages and their history, and asks Claude for the root cause, the evidence, the suspect commits, real or
+    /// flaky or infrastructure, and the next step.
     ///
     /// - Parameters:
     ///   - build: the failed build
     ///   - failedTests: the failed tests when the detail has them; read from Jenkins otherwise
-    public func explain(_ build: Build, failedTests: [FailedTest]?) async {
+    ///   - flakyHints: what the job's recent builds say of the failed stages, when the detail has it
+    public func explain(_ build: Build, failedTests: [FailedTest]?, flakyHints: [FlakyHint] = []) async {
         await ask(.build(build.id)) { [jenkins] in
             guard let jenkins else {
                 throw AIGatherError("Jenkins isn't set up")
             }
-            return .explainBuild(try await Self.buildFacts(build, failedTests: failedTests, services: jenkins))
+            let facts = try await Self.buildFacts(build, failedTests: failedTests, flakyHints: flakyHints, services: jenkins)
+            return .explainBuild(facts)
         }
     }
 
@@ -422,7 +426,7 @@ public final class AIStore {
         switch prompt.useCase {
         case .explainBuild:
             guard let explanation = run.decoded(BuildExplanation.self) else { return nil }
-            answer.explanation = explanation
+            answer.explanation = explanation.keepingEvidence(in: prompt.text)
         case .summarizeThreads:
             guard let summary = run.decoded(ThreadsSummary.self) else { return nil }
             answer.summary = summary
@@ -457,34 +461,16 @@ public final class AIStore {
         return secrets
     }
 
-    /// Reads what a failed build tells: the end of its log, the changes since the last green build and its failed
-    /// tests, from Jenkins, at once.
+    /// Reads what a failed build tells from Jenkins, with the client of the build's project.
     private nonisolated static func buildFacts(
-        _ build: Build, failedTests: [FailedTest]?, services: PipelinesServices
+        _ build: Build, failedTests: [FailedTest]?, flakyHints: [FlakyHint], services: PipelinesServices
     ) async throws -> BuildFailureFacts {
         let project = services.team.project(build.project) ?? services.team.primaryProject()
         let token = await services.token(.jenkins)
         let client = try JenkinsClient.make(
             project: project, token: token, transport: services.recorder(for: project), timeouts: services.timeouts
         ).get()
-        async let log = client.consoleTail(job: build.job, number: build.number)
-        async let changes = try? client.changesSinceLastGreen(job: build.job, number: build.number)
-        let logTail: String
-        do {
-            logTail = try await log
-        } catch let error as JenkinsError {
-            throw AIGatherError("Couldn't read the console log: \(error.problem.message)")
-        }
-        let found = await changes
-        var tests = failedTests ?? []
-        if failedTests == nil {
-            tests = (try? await client.failedTests(job: build.job, number: build.number)) ?? []
-        }
-        return BuildFailureFacts(
-            title: build.title ?? build.label, job: build.label, number: build.number,
-            result: build.result?.rawValue ?? "FAILURE", failedStages: build.failedStages ?? [], testCounts: build.testCounts,
-            failedTests: tests, changes: found?.changes ?? [], lastGreen: found?.lastGreen,
-            logTail: logTail)
+        return try await BuildFailureFacts.gather(build, failedTests: failedTests, flakyHints: flakyHints, client: client)
     }
 
     // MARK: - The morning digest

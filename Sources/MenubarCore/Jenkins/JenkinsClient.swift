@@ -128,8 +128,8 @@ public struct JenkinsClient: Sendable {
 
     /// Returns the failed tests of a build, from its test report (PIPE-03).
     ///
-    /// The request keeps only the class, name, status and error message of each case. A test counts as failed when
-    /// its status is FAILED or REGRESSION. The tests keep the order of the report.
+    /// The request keeps only the class, name, status, error message and age of each case. A test counts as failed
+    /// when its status is FAILED or REGRESSION. The tests keep the order of the report.
     ///
     /// - Parameters:
     ///   - job: the job's name as in Jenkins URLs
@@ -140,7 +140,7 @@ public struct JenkinsClient: Sendable {
         do {
             answer = try await get(
                 "/job/\(Self.safe(job))/\(number)/testReport/api/json"
-                    + "?tree=suites%5Bcases%5BclassName,name,status,errorDetails%5D%5D",
+                    + "?tree=suites%5Bcases%5BclassName,name,status,errorDetails,age%5D%5D",
                 timeout: timeouts.jenkins, notFound: .gone, timedOut: .unreachable(.jenkins))
         } catch let error as JenkinsError where error.problem == .gone {
             // A build with test counts from another kind of report has no `testReport` page.
@@ -152,7 +152,7 @@ public struct JenkinsClient: Sendable {
             }
             return FailedTest(
                 className: testCase.className ?? "", name: testCase.name ?? "", status: status,
-                message: FailedTest.preview(of: testCase.errorDetails))
+                message: FailedTest.preview(of: testCase.errorDetails), age: testCase.age.flatMap { $0 > 0 ? $0 : nil })
         }
     }
 
@@ -386,6 +386,7 @@ private struct TestReportAnswer: Decodable {
         var name: String?
         var status: String?
         var errorDetails: String?
+        var age: Int?
     }
 
     var suites: [Suite?]?

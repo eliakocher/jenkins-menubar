@@ -18,12 +18,15 @@ public struct FailedTest: Hashable, Sendable {
     public var status: Status
     /// the first lines of the error message, see ``preview(of:)``; `nil` when the report has none
     public var message: String?
+    /// how many builds in a row it has failed, this one included (Jenkins' `age`); `nil` when the report doesn't say
+    public var age: Int?
 
-    public init(className: String, name: String, status: Status, message: String? = nil) {
+    public init(className: String, name: String, status: Status, message: String? = nil, age: Int? = nil) {
         self.className = className
         self.name = name
         self.status = status
         self.message = message
+        self.age = age
     }
 
     /// the class without its package, like `CartServiceTest`; empty when the report has no class

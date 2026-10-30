@@ -42,7 +42,7 @@ struct FailedTestTests {
             ])
         let request = try #require(stub.requests.first)
         #expect(stub.requests.count == 1)
-        #expect(request.url.query(percentEncoded: false) == "tree=suites[cases[className,name,status,errorDetails]]")
+        #expect(request.url.query(percentEncoded: false) == "tree=suites[cases[className,name,status,errorDetails,age]]")
         #expect(request.headers == ["Authorization": "Basic \(Values.token)"])
     }
 
