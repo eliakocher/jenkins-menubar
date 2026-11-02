@@ -87,7 +87,7 @@ struct PanelModelTests {
         #expect(model.problems.first?.help == "Opens Settings → Projects")
     }
 
-    @Test("OD-05 offline shows the cached data without other problems or spinners")
+    @Test("OD-05 offline shows the cached data without other problems or loading states")
     func offline() {
         let f = Self.fixtures
         var workItems = f.typicalWorkItems
@@ -105,14 +105,14 @@ struct PanelModelTests {
         #expect(model.workItems?.problem == nil)
     }
 
-    @Test("OD-01 panel shows placeholders before the first load")
-    func placeholders() {
+    @Test("OD-01 panel shows skeletons before the first load")
+    func skeletons() {
         let f = Self.fixtures
         let model = PanelModel(f.panel(
             hasLoaded: false, isChecking: true, lastChecked: false,
             mergeRequests: PanelData.MergeRequests(isLoading: true), workItems: PanelData.WorkItems(isLoading: true)))
         #expect(model.myBuilds?.isPlaceholder == true)
-        // Nothing is known yet: no text, only the spinner.
+        // Nothing is known yet: no text, only skeletons.
         #expect(model.mergeRequests?.text == nil)
         #expect(model.mergeRequests?.isLoading == true)
         #expect(model.workItems?.text == nil)

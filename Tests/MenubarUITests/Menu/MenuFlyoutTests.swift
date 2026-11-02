@@ -91,8 +91,8 @@ struct MenuFlyoutTests {
         #expect(MenuFlyout(f.panel(mine: f.typicalBuilds), area: .pipelines).hasSymbolColumn)
     }
 
-    @Test("APP-06 a flyout without data says why, and placeholders before the first load")
-    func notesAndPlaceholders() {
+    @Test("APP-06 a flyout without data says why, and shows skeletons before the first load")
+    func notesAndSkeletons() {
         let f = Self.fixtures
         let noToken = MenuFlyout(
             f.panel(mergeRequests: PanelData.MergeRequests(problem: .noToken(.gitLab))), area: .mergeRequests)

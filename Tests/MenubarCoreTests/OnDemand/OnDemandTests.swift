@@ -147,8 +147,8 @@ struct OnDemandTests {
         #expect(world.stub.requests.isEmpty)
     }
 
-    @Test("OD-01 loading section shows a spinner")
-    func spinner() async throws {
+    @Test("OD-01 a loading section reports its loading state until the answer arrives")
+    func loadingState() async throws {
         let world = try World()
         world.stub.answer(operation: "MergeRequests", after: .seconds(2), body: try FixtureFiles.string("GitLab/merge-requests.json"))
         let store = world.mergeRequestsStore()
