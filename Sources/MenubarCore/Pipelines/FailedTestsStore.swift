@@ -50,6 +50,11 @@ public final class FailedTestsStore {
         if case .loaded? = states[build] {
             return
         }
+        // Only a finished build has a test report to show, and it never changes: a kept one asks nothing (OD-07).
+        if let kept = services.details?.load(.failedTests, key: build.detailKey) {
+            states[build] = .loaded(kept.value)
+            return
+        }
         asking.insert(build)
         states[build] = .loading
         let project = services.team.project(build.project) ?? services.team.primaryProject()
@@ -67,5 +72,18 @@ public final class FailedTestsStore {
         }.value
         asking.remove(build)
         states[build] = tests.map(FailedTestsState.loaded) ?? .failed
+        if let tests {
+            services.details?.save(tests, updatedAt: nil, as: .failedTests, key: build.detailKey)
+        }
     }
+}
+
+extension DetailKind where Value == [FailedTest] {
+    /// a finished build's failed tests, which never change (OD-07)
+    public static var failedTests: DetailKind { DetailKind("failed-tests") }
+}
+
+extension BuildID {
+    /// the key of the build's details in the ``DetailCache``: its project, job and number
+    public var detailKey: String { "\(project.rawValue)/\(job)#\(number)" }
 }

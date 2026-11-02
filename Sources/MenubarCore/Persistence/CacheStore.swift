@@ -51,7 +51,7 @@ extension CacheFile where Value == [Int] {
 }
 
 /// Keeps the cached answers of every project, each in its own file in the project's caches folder,
-/// `~/Library/Caches/menubar-monitor/<ProjectID>/<name>.json`.
+/// `~/Library/Caches/MegaMonitor/<ProjectID>/<name>.json`.
 ///
 /// Caches can be thrown away at any time: a missing or corrupt file just means the next load starts from nothing.
 public struct CacheStore: Sendable {

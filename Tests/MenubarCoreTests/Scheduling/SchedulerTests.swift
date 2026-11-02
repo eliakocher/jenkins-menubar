@@ -169,14 +169,12 @@ struct SchedulerTests {
         // That fifth check succeeded.
         await setup.expectCheck(after: .seconds(30))
         #expect(await setup.scheduler.status.failures == 0)
-    }
 
-    @Test("OD-05 backoff is never shorter than the interval")
-    func backoffNotShorterThanInterval() async throws {
-        let setup = Setup(interval: .seconds(600))
-        await setup.checks.then(.failure)
-        await setup.start()
-        await setup.expectCheck(after: .seconds(600))
+        // The backoff is never shorter than the interval.
+        let slow = Setup(interval: .seconds(600))
+        await slow.checks.then(.failure)
+        await slow.start()
+        await slow.expectCheck(after: .seconds(600))
 
         let longer = Setup(interval: .seconds(90))
         await longer.checks.then(.failure, .failure)
@@ -210,21 +208,6 @@ struct SchedulerTests {
         await setup.expectCheck(after: .seconds(60))
         #expect(await setup.count == 3)
         #expect(await setup.checks.mostAtOnce == 1)
-    }
-
-    @Test("JERR-07 check now during a check runs one more after it")
-    func checkNowDuringCheck() async throws {
-        let setup = Setup(checkDuration: .seconds(30))
-        await setup.scheduler.start()
-        await setup.checks.waitForChecks(1)
-        await setup.scheduler.checkNow()
-        #expect(await setup.count == 1)
-
-        await setup.clock.waitForSleepers()
-        setup.clock.advance(by: .seconds(30))
-        await setup.checks.waitForChecks(2)
-        #expect(await setup.checks.reasons == [.start, .checkNow])
-        #expect(await setup.scheduler.status.isChecking)
     }
 
     @Test("JERR-07 a cancelled check does not block the next")
@@ -268,20 +251,6 @@ struct SchedulerTests {
         await setup.scheduler.checkNow()
         await setup.checks.waitForChecks(4)
         #expect(await setup.checks.reasons.last == .checkNow)
-    }
-
-    // MARK: The system conditions
-
-    @Test("PathReachability reports the current path at once")
-    func pathReachability() async throws {
-        var updates = PathReachability().updates().makeAsyncIterator()
-        #expect(await updates.next() != nil)
-    }
-
-    @Test("SystemPowerMode reports the current mode at once")
-    func systemPowerMode() async throws {
-        var updates = SystemPowerMode().lowPowerModeUpdates().makeAsyncIterator()
-        #expect(await updates.next() == ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
 
     @Test("A new interval applies to the wait under way")

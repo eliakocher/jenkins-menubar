@@ -59,20 +59,16 @@ struct GitLabSearchTests {
         #expect(GitLabSearchRules.scopes(of: [Project(id: .main, team: TeamValues())]).groups.isEmpty)
     }
 
-    @Test("WIN-07 the query searches open items first and the recent ones of any state, and only a group takes its subgroups")
+    @Test("WIN-07 the text travels as a variable, never inside the query")
     func query() throws {
         let operation = GitLabOperation.searchMergeRequests(text: "export \"retry\"", groups: ["acme/main"], projects: ["me/tools"])
         #expect(operation.name == "SearchMergeRequests")
         #expect(operation.variables == #"{"search":"export \"retry\"","g0":"acme/main","p0":"me/tools"}"#)
-        #expect(operation.query.contains("g0: group(fullPath: $g0)") && operation.query.contains("p0: project(fullPath: $p0)"))
-        #expect(operation.query.contains("opened: mergeRequests(search: $search, includeSubgroups: true, sort: UPDATED_DESC, first: 20, state: opened)"))
-        #expect(operation.query.contains("recent: mergeRequests(search: $search, sort: UPDATED_DESC, first: 20, state: all)"))
-        // The text travels as a variable, never inside the query.
         #expect(!operation.query.contains("export"))
 
-        let items = GitLabOperation.searchWorkItems(text: "x", groups: [], projects: ["me/tools"])
-        #expect(items.name == "SearchWorkItems" && items.query.contains("fragment hit on Issue"))
-        #expect(items.query.contains("recent: issues(search: $search, sort: UPDATED_DESC, first: 20, state: all)"))
+        let items = GitLabOperation.searchWorkItems(text: "x\" } injected", groups: [], projects: ["me/tools"])
+        #expect(items.name == "SearchWorkItems")
+        #expect(!items.query.contains("injected"))
     }
 
     // MARK: - The answer

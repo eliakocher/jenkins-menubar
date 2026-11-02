@@ -175,7 +175,7 @@ struct MenuPaneModel: Sendable {
         }
         let committed = lists.committed?.count ?? 0
         if committed > 0 {
-            if let slot = slot(of: lists.committed?.items ?? [], prefix: team.slotLabelPrefix, colors: state.labelColors) {
+            if let slot = slot(of: lists.committed?.items ?? [], prefix: team.slotPrefix, colors: state.labelColors) {
                 area.summary.append(.pill(slot))
                 if let countdown = countdown(of: slot, team: team, now: data.now) {
                     area.summary.append(.note(countdown))
@@ -197,7 +197,7 @@ struct MenuPaneModel: Sendable {
     ///
     /// - Returns: the text; `nil` when the label isn't a slot name with dates
     static func countdown(of slot: LabelPillModel, team: TeamValues, now: Date, calendar: Calendar = .current) -> String? {
-        guard let name = SlotName(label: slot.title, prefix: team.slotLabelPrefix),
+        guard let name = SlotName(label: slot.title, prefix: team.slotPrefix),
             let dates = SlotRules(team: team).dates(of: name, calendar: calendar)
         else { return nil }
         return dates.countdown(from: now, calendar: calendar)

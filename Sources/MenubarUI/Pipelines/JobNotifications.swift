@@ -49,21 +49,37 @@ struct NotificationsBell: View {
     }
 }
 
-/// "Notifications for This Job": Default, Always Notify or Never Notify, as a submenu of the build's menus.
+/// "Notifications for This Job": Default, Always Notify or Never Notify, as a submenu of the build's menus, or as a
+/// button of the detail's action row (`asButton`) that shows a bell, crossed out while the job is muted.
 struct JobNotificationsMenu: View {
     let notifications: JobNotifications
+    var asButton = false
     let set: @MainActor (NotificationPolicy.JobSetting?) -> Void
 
     var body: some View {
-        Menu("Notifications for This Job") {
-            Picker("Notifications for This Job", selection: selection) {
-                Text(verbatim: notifications.defaultTitle).tag(NotificationPolicy.JobSetting?.none)
-                Text("Always Notify").tag(NotificationPolicy.JobSetting?.some(.always))
-                Text("Never Notify").tag(NotificationPolicy.JobSetting?.some(.never))
+        if asButton {
+            Menu {
+                choices
+            } label: {
+                Label("Notifications", systemImage: notifications.isMuted ? "bell.slash" : "bell")
             }
-            .pickerStyle(.inline)
-            .labelsHidden()
+            .menuIndicator(.hidden)
+            .help("Notifications for This Job")
+        } else {
+            Menu("Notifications for This Job") {
+                choices
+            }
         }
+    }
+
+    private var choices: some View {
+        Picker("Notifications for This Job", selection: selection) {
+            Text(verbatim: notifications.defaultTitle).tag(NotificationPolicy.JobSetting?.none)
+            Text("Always Notify").tag(NotificationPolicy.JobSetting?.some(.always))
+            Text("Never Notify").tag(NotificationPolicy.JobSetting?.some(.never))
+        }
+        .pickerStyle(.inline)
+        .labelsHidden()
     }
 
     private var selection: Binding<NotificationPolicy.JobSetting?> {

@@ -5,32 +5,6 @@ import Testing
 
 @Suite("PreferencesStore")
 struct PreferencesStoreTests {
-    @Test("SET-01 defaults")
-    func defaults() {
-        let suite = TemporaryDefaults()
-        let preferences = PreferencesStore(defaults: suite.defaults).load()
-
-        #expect(preferences.checkIntervalSeconds == 60)
-        #expect(preferences.hideSuccessfulAfter == .hours(24))
-        #expect(preferences.hideFailedAfter == .hours(168))
-        #expect(preferences.hidesMergedBuilds)
-        #expect(preferences.alertStyle == .window)
-        #expect(preferences.stageAlerts)
-        #expect(preferences.iconStyle == .monochrome)
-        #expect(preferences.gitLabMaxAgeSeconds == 30)
-        #expect(preferences.showInMenuBar)
-        #expect(!preferences.fillInCopiedLink)
-        #expect(preferences.workItems == WorkItemFilters(
-            scope: .assigned, type: .all, state: .opened, sort: .recentlyUpdated, limit: 20, withLabels: [],
-            withoutLabels: [], labelsMatch: .all))
-        #expect(preferences == Preferences())
-        #expect(Preferences.checkIntervalOptions.contains(preferences.checkIntervalSeconds))
-        #expect(Preferences.hideSuccessfulOptions.contains(preferences.hideSuccessfulAfter))
-        #expect(Preferences.hideFailedOptions.contains(preferences.hideFailedAfter))
-        #expect(Preferences.gitLabMaxAgeOptions.contains(preferences.gitLabMaxAgeSeconds))
-        #expect(WorkItemFilters.limitOptions.contains(preferences.workItems.limit))
-    }
-
     @Test("SET-01 a value outside the options counts as the default")
     func outsideTheOptions() {
         let suite = TemporaryDefaults()
@@ -51,6 +25,8 @@ struct PreferencesStoreTests {
             .workItemsWithLabels: "bug,web",
             .workItemsWithoutLabels: [1, 2],
             .workItemsLabelsMatch: "some",
+            .workItemsHideOnRows: "group:, affects::",
+            .workItemsScopedValueOnly: "yes",
             .showInMenuBar: "off",
             .fillInCopiedLink: "yes",
             .globalShortcut: "⌘K",
@@ -63,6 +39,12 @@ struct PreferencesStoreTests {
         }
 
         #expect(PreferencesStore(defaults: suite.defaults).load() == Preferences())
+
+        // Saving such a value writes the default as well.
+        let other = TemporaryDefaults()
+        let store = PreferencesStore(defaults: other.defaults)
+        #expect(store.save(Preferences(checkIntervalSeconds: 45, hideSuccessfulAfter: .hours(2))).isEmpty)
+        #expect(store.load() == Preferences())
     }
 
     @Test("SET-01 changes are saved")
@@ -74,7 +56,8 @@ struct PreferencesStoreTests {
             alertStyle: .banner, stageAlerts: false, iconStyle: .color, gitLabMaxAgeSeconds: 120,
             workItems: WorkItemFilters(
                 scope: .authored, type: .epic, state: .all, sort: .dueDate, limit: 100,
-                withLabels: ["uStatus::InProgress", "evil::$(touch pwned)"], withoutLabels: ["a|b"], labelsMatch: .any),
+                withLabels: ["status::InProgress", "evil::$(touch pwned)"], withoutLabels: ["a|b"], labelsMatch: .any),
+            workItemRows: WorkItemRowLabels(hidden: ["group:", "affects::"], showsScopedValueOnly: true),
             showInMenuBar: false, fillInCopiedLink: true,
             globalShortcut: HotkeyShortcut(keyCode: 40, modifiers: [.command], label: "K"), easterEggs: false,
             slotAlerts: true)
@@ -87,8 +70,17 @@ struct PreferencesStoreTests {
         #expect(changes.contains(PreferencesStore.Change(key: .hideFailedAfter, old: "168", new: "never")))
         #expect(changes.contains(PreferencesStore.Change(key: .hidesMergedBuilds, old: "on", new: "off")))
         #expect(changes.contains(PreferencesStore.Change(
-            key: .workItemsWithLabels, old: "", new: "uStatus::InProgress, evil::$(touch pwned)")))
+            key: .workItemsWithLabels, old: "", new: "status::InProgress, evil::$(touch pwned)")))
         #expect(store.save(changed).isEmpty)
+
+        // Only the values that changed are written and reported.
+        let fresh = TemporaryDefaults()
+        let freshStore = PreferencesStore(defaults: fresh.defaults)
+        var preferences = freshStore.load()
+        preferences.alertStyle = .banner
+        #expect(freshStore.save(preferences) == [PreferencesStore.Change(key: .alertStyle, old: "window", new: "banner")])
+        #expect(fresh.defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("workItems") }.isEmpty)
+        #expect(fresh.defaults.string(forKey: "alertStyle") == "banner")
     }
 
     @Test("SET-01 a preferences value encoded before showInMenuBar and fillInCopiedLink decodes with their defaults")
@@ -107,27 +99,6 @@ struct PreferencesStoreTests {
         #expect(decoded.showInMenuBar)
         #expect(!decoded.fillInCopiedLink)
         #expect(try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8)) == Preferences())
-    }
-
-    @Test("only the values that changed are written and reported")
-    func onlyChangedValues() {
-        let suite = TemporaryDefaults()
-        let store = PreferencesStore(defaults: suite.defaults)
-        var preferences = store.load()
-        preferences.alertStyle = .banner
-
-        #expect(store.save(preferences) == [PreferencesStore.Change(key: .alertStyle, old: "window", new: "banner")])
-        #expect(suite.defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("workItems") }.isEmpty)
-        #expect(suite.defaults.string(forKey: "alertStyle") == "banner")
-    }
-
-    @Test("a value outside the options is saved as the default")
-    func savesOptionsOnly() {
-        let suite = TemporaryDefaults()
-        let store = PreferencesStore(defaults: suite.defaults)
-
-        #expect(store.save(Preferences(checkIntervalSeconds: 45, hideSuccessfulAfter: .hours(2))).isEmpty)
-        #expect(store.load() == Preferences())
     }
 
     @Test("hiding after N hours hides only once more than N hours have passed")

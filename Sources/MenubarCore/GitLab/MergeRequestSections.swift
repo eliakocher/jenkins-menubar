@@ -92,7 +92,8 @@ extension MergeRequest {
     }
 
     /// Returns the details of the MR, joined with " · ": the short reference, the badge text, "by <author>" when it
-    /// isn't mine, "updated 5m ago", "3 files +10 −2", and "pipeline success" when there is a pipeline (MR-03).
+    /// isn't mine, "updated 5m ago", "3 files +10 −2", and "pipeline success" when there is a pipeline and the badge
+    /// doesn't already name it ("Pipeline failed") (MR-03).
     ///
     /// - Parameters:
     ///   - me: my GitLab username
@@ -100,14 +101,15 @@ extension MergeRequest {
     ///   - now: the time to count the age from
     /// - Returns: the details, the row's tooltip in the panel and its detail in the window
     public func details(me: String, project: String, now: Date) -> String {
-        var parts = [shortReference(project: project), MergeRequestStatus.of(self, me: me).text]
+        let status = MergeRequestStatus.of(self, me: me)
+        var parts = [shortReference(project: project), status.text]
         if author.username != me, !author.name.isEmpty {
             parts.append("by \(author.name)")
         }
         parts.append("updated \(GitLabText.age(since: updatedAt, now: now)) ago")
         let stats = diffStats ?? DiffStats(additions: 0, deletions: 0, fileCount: 0)
         parts.append("\(stats.fileCount) file\(stats.fileCount == 1 ? "" : "s") +\(stats.additions) −\(stats.deletions)")
-        if let pipelineStatus {
+        if let pipelineStatus, !MergeRequestStatus.textNamesPipeline(status.text) {
             parts.append("pipeline \(pipelineStatus.rawValue.lowercased())")
         }
         return parts.joined(separator: " · ")

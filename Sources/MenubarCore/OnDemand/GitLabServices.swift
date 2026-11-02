@@ -24,6 +24,8 @@ public struct GitLabServices: Sendable {
     public var problems: ProblemTracker?
     /// my GitLab username as the background check knows it (PIPE-01, OD-04); `nil` makes a work items load ask GitLab
     public var gitLabUsername: @Sendable () async -> String?
+    /// where the opened details are kept on disk, so they show at once after a relaunch (OD-07); `nil` keeps none
+    public var details: DetailCache?
 
     public init(
         transport: any HTTPTransport,
@@ -37,7 +39,8 @@ public struct GitLabServices: Sendable {
         capture: RequestCapture? = nil,
         checkTimes: CheckTimes? = nil,
         problems: ProblemTracker? = nil,
-        gitLabUsername: @escaping @Sendable () async -> String? = { nil }
+        gitLabUsername: @escaping @Sendable () async -> String? = { nil },
+        details: DetailCache? = nil
     ) {
         self.transport = transport
         self.clock = clock
@@ -51,6 +54,7 @@ public struct GitLabServices: Sendable {
         self.checkTimes = checkTimes
         self.problems = problems
         self.gitLabUsername = gitLabUsername
+        self.details = details
     }
 
     /// Returns the problems the GitLab caches still hold from the last run, for `ProblemTracker(log:current:)`, so they

@@ -160,6 +160,7 @@ public final class OpenedItemsStore {
         default:
             break
         }
+        restoreKept(id)
         states[id] = .loading
         if item.kind == .build {
             await loadBuild(item)
@@ -196,11 +197,13 @@ public final class OpenedItemsStore {
             mergeRequests[id] = mergeRequest
             setTitle(mergeRequest.title, of: id)
             states[id] = .loaded(now())
+            keep(id)
         case .success(.workItem(let workItem, let related)):
             workItems[id] = workItem
             self.related[id] = related
             setTitle(workItem.displayTitle, of: id)
             states[id] = .loaded(now())
+            keep(id)
         case .failure(let error):
             states[id] = .failed(error.problem)
         }
@@ -268,6 +271,7 @@ public final class OpenedItemsStore {
             builds[id] = build
             setTitle(build.title ?? build.label, of: id)
             states[id] = .loaded(now())
+            keep(id)
         case .failure(let error):
             states[id] = .failed(error.problem)
         }
@@ -285,6 +289,25 @@ public final class OpenedItemsStore {
             return nil
         }
         return RelatedMergeRequestsCache.Entry(workItemUpdatedAt: workItem.updatedAt, fetchedAt: now, mergeRequests: mergeRequests)
+    }
+
+    /// Shows the item as it was kept on disk, before its first load of this launch (OD-07).
+    private func restoreKept(_ id: OpenedItem.ID) {
+        guard mergeRequests[id] == nil, workItems[id] == nil, builds[id] == nil,
+            let kept = (services?.details ?? pipelinesServices?.details)?.load(.openedItem, key: id)?.value
+        else {
+            return
+        }
+        mergeRequests[id] = kept.mergeRequest
+        workItems[id] = kept.workItem
+        related[id] = kept.related
+        builds[id] = kept.build
+    }
+
+    /// Keeps the item on disk, so it shows at once after a relaunch (OD-07).
+    private func keep(_ id: OpenedItem.ID) {
+        let kept = OpenedItemSnapshot(mergeRequest: mergeRequests[id], workItem: workItems[id], related: related[id], build: builds[id])
+        (services?.details ?? pipelinesServices?.details)?.save(kept, updatedAt: nil, as: .openedItem, key: id)
     }
 
     private func setTitle(_ title: String, of id: OpenedItem.ID) {
@@ -308,4 +331,17 @@ public final class OpenedItemsStore {
             defaults.set(data, forKey: Self.defaultsKey)
         }
     }
+}
+
+/// An opened item as the ``DetailCache`` keeps it (OD-07).
+public struct OpenedItemSnapshot: Codable, Sendable {
+    public var mergeRequest: MergeRequest?
+    public var workItem: WorkItem?
+    public var related: RelatedMergeRequestsCache.Entry?
+    public var build: Build?
+}
+
+extension DetailKind where Value == OpenedItemSnapshot {
+    /// an item under "Opened", as last loaded (OD-07)
+    public static var openedItem: DetailKind { DetailKind("opened-item") }
 }

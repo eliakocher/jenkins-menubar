@@ -8,40 +8,53 @@ struct JenkinsSettingsForm: View {
 
     var body: some View {
         Form {
+            SettingsPaneHeader(pane: .pipelines)
             Section {
-                Picker("Check Jenkins every", selection: $preferences.checkIntervalSeconds) {
+                Picker(selection: $preferences.checkIntervalSeconds) {
                     ForEach(Preferences.checkIntervalOptions, id: \.self) { seconds in
                         Text(SettingsOptionTitles.seconds(seconds)).tag(seconds)
                     }
+                } label: {
+                    SettingsRowLabel(
+                        "Check Jenkins every",
+                        "Pauses while the Mac sleeps or is offline, runs half as often in Low Power Mode, and waits "
+                            + "longer after Jenkins was unreachable")
                 }
                 .pickerStyle(.menu)
-            } footer: {
-                SettingsFooter(
-                    "Checks pause while the Mac sleeps or is offline, run half as often in Low Power Mode, and wait "
-                        + "longer after Jenkins was unreachable.")
+                .settingsAnchor(.checkInterval)
+            } header: {
+                SettingsSectionHeader("Checking")
             }
             Section {
-                Picker("Hide successful builds after", selection: $preferences.hideSuccessfulAfter) {
+                Picker(selection: $preferences.hideSuccessfulAfter) {
                     ForEach(Preferences.hideSuccessfulOptions, id: \.self) { value in
                         Text(SettingsOptionTitles.hideAfter(value)).tag(value)
                     }
+                } label: {
+                    SettingsRowLabel("Hide successful builds after", "Running builds never hide by time")
                 }
                 .pickerStyle(.menu)
-                Picker("Hide failed builds after", selection: $preferences.hideFailedAfter) {
+                .settingsAnchor(.hideBuilds)
+                Picker(selection: $preferences.hideFailedAfter) {
                     ForEach(Preferences.hideFailedOptions, id: \.self) { value in
                         Text(SettingsOptionTitles.hideAfter(value)).tag(value)
                     }
+                } label: {
+                    SettingsRowLabel(
+                        "Hide failed builds after", "Failed also covers unstable, aborted and other results")
                 }
                 .pickerStyle(.menu)
-                Toggle("Hide the builds of merged merge requests", isOn: $preferences.hidesMergedBuilds)
-                    .settingsSwitch()
+                Toggle(isOn: $preferences.hidesMergedBuilds) {
+                    SettingsRowLabel(
+                        "Hide the builds of merged merge requests", "Also hides their running builds; branch builds always stay")
+                }
+                .settingsSwitch()
             } header: {
-                Text("Finished Builds")
-            } footer: {
-                SettingsFooter("“Failed” covers unstable, aborted and other results. Running builds never hide by time.")
+                SettingsSectionHeader("Finished Builds")
             }
         }
         .formStyle(.grouped)
+        .revealsSettingsFields()
     }
 }
 

@@ -22,6 +22,8 @@ public struct Preferences: Codable, Hashable, Sendable {
     public var gitLabMaxAgeSeconds: Int
     /// which work items load (WI-02, WI-03)
     public var workItems: WorkItemFilters
+    /// which labels a work item row shows and how (WI-04); display only, so a change doesn't reload the work items
+    public var workItemRows: WorkItemRowLabels
     /// whether the status icon is in the menu bar; with it off, the checks and alerts go on (APP-01)
     public var showInMenuBar: Bool
     /// whether Watch a Build… fills in a link from the clipboard by itself, with macOS's prompt (WATCH-01)
@@ -42,8 +44,9 @@ public struct Preferences: Codable, Hashable, Sendable {
         alertStyle: AlertStyle = .window,
         stageAlerts: Bool = true,
         iconStyle: IconStyle = .monochrome,
-        gitLabMaxAgeSeconds: Int = 30,
+        gitLabMaxAgeSeconds: Int = 60,
         workItems: WorkItemFilters = WorkItemFilters(),
+        workItemRows: WorkItemRowLabels = WorkItemRowLabels(),
         showInMenuBar: Bool = true,
         fillInCopiedLink: Bool = false,
         globalShortcut: HotkeyShortcut? = nil,
@@ -59,6 +62,7 @@ public struct Preferences: Codable, Hashable, Sendable {
         self.iconStyle = iconStyle
         self.gitLabMaxAgeSeconds = gitLabMaxAgeSeconds
         self.workItems = workItems
+        self.workItemRows = workItemRows
         self.showInMenuBar = showInMenuBar
         self.fillInCopiedLink = fillInCopiedLink
         self.globalShortcut = globalShortcut
@@ -68,7 +72,7 @@ public struct Preferences: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds, alertStyle
-        case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, showInMenuBar, fillInCopiedLink
+        case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
         case globalShortcut, easterEggs, slotAlerts
     }
 
@@ -90,6 +94,7 @@ public struct Preferences: Codable, Hashable, Sendable {
             iconStyle: try value(.iconStyle, defaults.iconStyle),
             gitLabMaxAgeSeconds: try value(.gitLabMaxAgeSeconds, defaults.gitLabMaxAgeSeconds),
             workItems: try value(.workItems, defaults.workItems),
+            workItemRows: try value(.workItemRows, defaults.workItemRows),
             showInMenuBar: try value(.showInMenuBar, defaults.showInMenuBar),
             fillInCopiedLink: try value(.fillInCopiedLink, defaults.fillInCopiedLink),
             globalShortcut: try? container.decodeIfPresent(HotkeyShortcut.self, forKey: .globalShortcut),
@@ -105,7 +110,7 @@ public struct Preferences: Codable, Hashable, Sendable {
     ]
     /// immediately, 1 day, 3 days, 1 week (default), 2 weeks, never
     public static let hideFailedOptions: [HideAfter] = [.immediately, .hours(24), .hours(72), .hours(168), .hours(336), .never]
-    /// 15 s, 30 s (default), 1, 2 or 5 min
+    /// 15 s, 30 s, 1 min (default since Task 7.06, was 30 s), 2 or 5 min
     public static let gitLabMaxAgeOptions = [15, 30, 60, 120, 300]
 
     /// When finished builds hide by themselves (HIDE-02). Stored as `immediately`, `never` or the number of hours.

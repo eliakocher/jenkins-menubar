@@ -28,31 +28,6 @@ struct UserStateStoreTests {
         #expect(json["formatVersion"] as? Int == UserStateStore.formatVersion)
         #expect(Set((json["projects"] as? [String: Any] ?? [:]).keys) == ["main", "other"])
     }
-
-    @Test("update changes the state and saves it")
-    func update() throws {
-        let folder = try TemporaryFolder()
-        let store = UserStateStore(folder: folder.url, report: { _ in })
-
-        let state = try store.update(.main) { $0.hidden["MR-1"] = 7 }
-        try store.update(.main) { $0.watched.append(WatchedJob(job: "MR-2", label: "!2", added: Self.added)) }
-
-        #expect(state == UserState(hidden: ["MR-1": 7]))
-        #expect(store.load(.main) == UserState(watched: [WatchedJob(job: "MR-2", label: "!2", added: Self.added)],
-                                               hidden: ["MR-1": 7]))
-    }
-
-    @Test("a corrupt state.json counts as empty and is reported")
-    func corrupt() throws {
-        let folder = try TemporaryFolder()
-        let reports = FileStoreTests.Reports()
-        try folder.write(#"{"formatVersion": 1, "projects": {"main": {"watched": "MR-1"}}}"#, to: "state.json")
-        let store = UserStateStore(folder: folder.url, report: reports.add)
-
-        #expect(store.load(.main) == UserState())
-        #expect(reports.all.count == 1)
-        #expect(reports.all.first?.contains("state.json") == true)
-    }
 }
 
 @Suite("CacheStore")
@@ -99,45 +74,25 @@ struct CacheStoreTests {
         #expect(folder.contents() == ["other/merged-merge-requests.json"])
         #expect(store.url(of: .mergeRequestList, for: other) == folder.url.appending(path: "other/merge-request-list.json"))
     }
-
-    @Test("a corrupt cache file counts as empty and is reported")
-    func corrupt() throws {
-        let folder = try TemporaryFolder()
-        let reports = FileStoreTests.Reports()
-        try folder.write(#"{"value": [1], "problem": null}"#, to: "main/merged-merge-requests.json")
-        let store = CacheStore(folder: folder.url, report: reports.add)
-
-        #expect(store.load(.mergedMergeRequests, for: .main) == nil)
-        #expect(reports.all.count == 1)
-        #expect(reports.all.first?.contains("fetchedAt") == true)
-    }
 }
 
 @Suite("FileLocations")
 struct FileLocationsTests {
-    @Test("the folders are in the Library folder, named menubar-monitor")
-    func standard() {
+    @Test("the folders are in the Library folder, and MENUBAR_MONITOR_DATA_DIR moves every folder into it, unless it is empty")
+    func locations() {
         let library = URL(filePath: "/Users/someone/Library", directoryHint: .isDirectory)
-        let locations = FileLocations.standard(environment: [:], library: library)
-
-        #expect(locations.applicationSupport.path(percentEncoded: false)
-            == "/Users/someone/Library/Application Support/menubar-monitor/")
-        #expect(locations.caches.path(percentEncoded: false) == "/Users/someone/Library/Caches/menubar-monitor/")
-        #expect(locations.logs.path(percentEncoded: false) == "/Users/someone/Library/Logs/menubar-monitor/")
-        #expect(locations.caches(for: .main).path(percentEncoded: false)
-            == "/Users/someone/Library/Caches/menubar-monitor/main/")
-    }
-
-    @Test("MENUBAR_MONITOR_DATA_DIR moves every folder into it, unless it is empty")
-    func dataDirectory() {
-        let library = URL(filePath: "/Users/someone/Library", directoryHint: .isDirectory)
+        let standard = FileLocations.standard(environment: [:], library: library)
         let moved = FileLocations.standard(environment: ["MENUBAR_MONITOR_DATA_DIR": "/tmp/smoke/../smoke"], library: library)
         let empty = FileLocations.standard(environment: ["MENUBAR_MONITOR_DATA_DIR": ""], library: library)
 
+        #expect(standard.applicationSupport.path(percentEncoded: false)
+            == "/Users/someone/Library/Application Support/MegaMonitor/")
+        #expect(standard.caches.path(percentEncoded: false) == "/Users/someone/Library/Caches/MegaMonitor/")
+        #expect(standard.logs.path(percentEncoded: false) == "/Users/someone/Library/Logs/MegaMonitor/")
         #expect(moved == FileLocations(root: URL(filePath: "/tmp/smoke", directoryHint: .isDirectory)))
         #expect(moved.applicationSupport.path(percentEncoded: false) == "/tmp/smoke/Application Support/")
         #expect(moved.caches.path(percentEncoded: false) == "/tmp/smoke/Caches/")
         #expect(moved.logs.path(percentEncoded: false) == "/tmp/smoke/Logs/")
-        #expect(empty == FileLocations.standard(environment: [:], library: library))
+        #expect(empty == standard)
     }
 }

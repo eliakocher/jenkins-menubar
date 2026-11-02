@@ -170,6 +170,11 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
     var openTitle: String
     /// whether I wrote it, so a line can leave out "by …"
     var isMine: Bool
+    /// "5m ago", at the right end of the row's first line
+    var age: String
+    /// what follows ``lead`` on the row's second line, least important last: "by Sam Lee" (not for mine),
+    /// "3 files +10 −2" and "pipeline success" (none without a pipeline, or when the badge names it); with the age they are ``rest``
+    var more: [String]
 
     var id: MergeRequest.ID { mergeRequest.id }
 
@@ -191,6 +196,19 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
         rest = details.hasPrefix(lead + " · ") ? String(details.dropFirst(lead.count + 3)) : ""
         openTitle = "Open Merge Request \(shortReference) in GitLab"
         isMine = mergeRequest.author.username == me
+        let ageText = GitLabText.age(since: mergeRequest.updatedAt, now: now)
+        age = "\(ageText) ago"
+        // `MergeRequest.details`' parts, with the age apart, since the window's row puts it at the right end.
+        var more: [String] = []
+        if !isMine, !mergeRequest.author.name.isEmpty {
+            more.append("by \(mergeRequest.author.name)")
+        }
+        let stats = mergeRequest.diffStats ?? MergeRequest.DiffStats(additions: 0, deletions: 0, fileCount: 0)
+        more.append("\(stats.fileCount) file\(stats.fileCount == 1 ? "" : "s") +\(stats.additions) −\(stats.deletions)")
+        if let pipeline = mergeRequest.pipelineStatus, !MergeRequestStatus.textNamesPipeline(status.text) {
+            more.append("pipeline \(pipeline.rawValue.lowercased())")
+        }
+        self.more = more
     }
 
     /// Returns whether the row matches a search: its title, its short reference or its author's name, ignoring case
@@ -277,6 +295,8 @@ struct MergeRequestDetailModel: Sendable {
     struct JenkinsBuildFact: Hashable, Sendable {
         /// the build's job, which "Show in Pipelines" selects
         var job: String
+        /// the build's number
+        var number: Int
         var state: BuildState
         /// "!16 #3 · FAILURE", running "!14 #3 · running"
         var text: String
@@ -285,6 +305,7 @@ struct MergeRequestDetailModel: Sendable {
 
         init(_ build: Build) {
             job = build.job
+            number = build.number
             state = BuildState(build)
             text = "\(build.label) #\(String(build.number)) · \(state.resultText ?? "running")"
             chip = "Jenkins #\(String(build.number)) · \((state.resultText ?? "running").capitalized)"
@@ -346,11 +367,12 @@ struct MergeRequestDetailModel: Sendable {
         let me = me ?? data.mergeRequests.list?.username ?? ""
         let project = data.team.gitLabProject
         self.mergeRequest = mergeRequest
-        status = MergeRequestStatus.of(mergeRequest, me: me)
         openTitle = "Open Merge Request \(mergeRequest.shortReference(project: project)) in GitLab"
         projectName = Self.projectName(of: mergeRequest.reference)
         pipeline = mergeRequest.pipelineStatus.map(PipelineFact.init)
         jenkinsBuild = Self.build(of: mergeRequest, in: data.builds).map(JenkinsBuildFact.init)
+        // The Jenkins chip tells the pipeline, so the badge doesn't say it again (MR-14).
+        status = MergeRequestStatus.of(mergeRequest, me: me, saysPipeline: jenkinsBuild == nil)
         // An MR is watched in its own project; one of a project not set up offers nothing (plan Phase 13).
         watch = data.jenkins.project(of: mergeRequest).map {
             MergeRequestWatch.of(mergeRequest, me: me, myJobs: data.myJobs, watchedJobs: data.watchedJobs, project: $0)

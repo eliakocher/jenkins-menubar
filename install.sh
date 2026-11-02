@@ -3,12 +3,18 @@
 # Command Line Tools are needed. An older ~/Applications/menubar-monitor.app (the app's name before MegaMonitor) is
 # quit and removed by the build (scripts/migrate-old-bundle.sh), which leaves open at login on if it was on. The app remembers this checkout and offers "Update Ready — Rebuild" when it changes.
 #
+# The app's identity was menubar-monitor until Task 7.12 (bundle id local.menubar-monitor, keychain service and
+# folders menubar-monitor). A copy that still runs under it is quit here; the new app copies the former preferences,
+# tokens and folders at its first launch and leaves the originals, which --retire-old deletes after a yes.
+#
 #   ./install.sh [--dry-run]
 #   ./install.sh --retire-old [--dry-run]
 #
 #   --retire-old  after the trial, removes the old jenkins-menubar: unlinks its SwiftBar plugin, removes SwiftBar's
 #                 login item (unless other plugins still need SwiftBar), removes the ~/bin/jenkins-watch link,
-#                 unregisters the old helper app and, once you confirm, deletes the old caches, logs and keychain items
+#                 unregisters the old helper app and, once you confirm, deletes the old caches, logs and keychain
+#                 items; then, once you confirm again, the former identity's preferences, folders and keychain items
+#                 that MegaMonitor has copied
 #   --dry-run     prints the commands that would change something, and changes nothing
 set -euo pipefail
 
@@ -76,7 +82,40 @@ old_logs=$HOME/Library/Logs/jenkins-menubar
 old_service=jenkins-menubar
 old_helper_id=local.jenkins-menubar.notifier
 accounts='JENKINS_MCP_BASIC_AUTH GITLAB_TOKEN'
-import_marker="$HOME/Library/Application Support/menubar-monitor/legacy-import.json"
+
+# The app's identity, and the former one it copies its data from at its first launch (IdentityMigration).
+new_id=local.megamonitor
+new_service=megamonitor
+former_id=local.menubar-monitor
+former_service=menubar-monitor
+former_folders=(
+	"$HOME/Library/Application Support/menubar-monitor"
+	"$HOME/Library/Caches/menubar-monitor"
+	"$HOME/Library/Logs/menubar-monitor"
+)
+
+# The import from the old tool ran when its marker is in the app's folder, or in the former identity's.
+import_ran() {
+	[[ -e "$HOME/Library/Application Support/MegaMonitor/legacy-import.json" ||
+		-e "$HOME/Library/Application Support/menubar-monitor/legacy-import.json" ]]
+}
+
+# identity_moved: whether the app copied the former identity's preferences and folders (the key it sets once all
+# copies read back).
+identity_moved() {
+	[[ $(defaults read "$new_id" identityMigration.filesDone 2>/dev/null || true) == 1 ]]
+}
+
+# former_identity_present: whether anything of the former identity is left: its preferences or a folder.
+former_identity_present() {
+	local folder
+	for folder in "${former_folders[@]}"; do
+		if [[ -d $folder ]]; then
+			return 0
+		fi
+	done
+	defaults read "$former_id" >/dev/null 2>&1
+}
 
 # swiftbar_plugin_folder: SwiftBar's plugin folder, or nothing.
 swiftbar_plugin_folder() {
@@ -132,11 +171,17 @@ install_app() {
 	if [[ -d $HOME/Applications/menubar-monitor.app ]]; then
 		echo '• found the old menubar-monitor.app: the build removes it and keeps open at login as it was'
 	fi
+	if ! identity_moved && defaults read "$former_id" >/dev/null 2>&1; then
+		echo '• MegaMonitor copies its settings, tokens and folders from menubar-monitor at its first launch; the'
+		echo '  originals stay until ./install.sh --retire-old'
+		echo '• macOS asks for the notification permission once more: it belongs to the bundle id, which is new'
+	fi
 	change "$root/build.sh" --install
 
 	step 'Start'
 	# A running copy keeps running the old code, and open would only bring it forward. The executable was called
-	# menubar-monitor before the rename, so a copy that still runs under that name is quit as well.
+	# menubar-monitor before the rename, so a copy that still runs under that name is quit as well; a copy under the
+	# former bundle id runs as MegaMonitor, so it quits with the first.
 	local running
 	for running in MegaMonitor menubar-monitor; do
 		if pgrep -x "$running" >/dev/null; then
@@ -280,7 +325,7 @@ unregister_helper() {
 
 delete_old_data() {
 	step 'Old caches, logs and keychain items'
-	if [[ ! -e $import_marker ]]; then
+	if ! import_ran; then
 		echo "• MegaMonitor hasn't imported from the old tool yet: open it once, then run this again to delete them."
 		return
 	fi
@@ -296,7 +341,7 @@ delete_old_data() {
 			continue
 		fi
 		# The import copied the tokens; one it couldn't copy stays, so it isn't lost.
-		if security find-generic-password -s menubar-monitor -a "$account" >/dev/null 2>&1; then
+		if security find-generic-password -s "$new_service" -a "$account" >/dev/null 2>&1; then
 			delete_accounts="$delete_accounts $account"
 			found=$found"  the keychain item $old_service $account"$'\n'
 		else
@@ -340,6 +385,83 @@ delete_old_data() {
 	echo '✓ deleted them'
 }
 
+# former_tokens_present: whether the former keychain service still holds a token.
+former_tokens_present() {
+	local account
+	for account in $accounts; do
+		if security find-generic-password -s "$former_service" -a "$account" >/dev/null 2>&1; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+# delete_former_identity: after a yes, deletes what the former identity menubar-monitor left, once the app copied it:
+# the preferences and the folders once the app's copies read back, and each keychain item MegaMonitor has a copy of.
+# Open at login can't be removed by a script; System Settings → General → Login Items shows a stale entry, if any.
+delete_former_identity() {
+	step 'The former identity menubar-monitor'
+	if ! former_identity_present && ! former_tokens_present; then
+		echo '✓ nothing left'
+		return
+	fi
+	if ! identity_moved; then
+		echo "• MegaMonitor hasn't copied its data from menubar-monitor yet: open it once, then run this again to delete them."
+		return
+	fi
+	local found='' folder delete_folders=() account delete_accounts='' domain=false answer=''
+	for folder in "${former_folders[@]}"; do
+		if [[ -d $folder ]]; then
+			delete_folders+=("$folder")
+			found=$found"  $folder"$'\n'
+		fi
+	done
+	if defaults read "$former_id" >/dev/null 2>&1; then
+		domain=true
+		found=$found"  the preferences of $former_id"$'\n'
+	fi
+	for account in $accounts; do
+		if ! security find-generic-password -s "$former_service" -a "$account" >/dev/null 2>&1; then
+			continue
+		fi
+		if security find-generic-password -s "$new_service" -a "$account" >/dev/null 2>&1; then
+			delete_accounts="$delete_accounts $account"
+			found=$found"  the keychain item $former_service $account"$'\n'
+		else
+			echo "• keeps the keychain item $former_service $account: MegaMonitor has no copy of it yet"
+		fi
+	done
+	if [[ -z $found ]]; then
+		echo '✓ nothing left'
+		return
+	fi
+	echo 'Left from menubar-monitor (MegaMonitor has its own copies):'
+	printf '%s' "$found"
+	printf 'Delete them? [y/N] '
+	read -r answer || true
+	if [[ ! -t 0 ]]; then
+		echo
+	fi
+	case $answer in
+	[yY] | [yY][eE][sS]) ;;
+	*)
+		echo '• kept them'
+		return
+		;;
+	esac
+	for folder in ${delete_folders[@]+"${delete_folders[@]}"}; do
+		change rm -rf "$folder"
+	done
+	for account in $delete_accounts; do
+		change_quietly security delete-generic-password -s "$former_service" -a "$account"
+	done
+	if $domain; then
+		change defaults delete "$former_id"
+	fi
+	echo '✓ deleted them'
+	echo '• if System Settings → General → Login Items lists MegaMonitor twice, the older entry can go'
+}
+
 retire_old_tool() {
 	if [[ ! -d $app ]]; then
 		echo "✗ MegaMonitor isn't installed: run ./install.sh first, and retire the old tool after the trial." >&2
@@ -351,6 +473,7 @@ retire_old_tool() {
 	remove_jenkins_watch
 	unregister_helper
 	delete_old_data
+	delete_former_identity
 
 	step 'Left to you'
 	local folder

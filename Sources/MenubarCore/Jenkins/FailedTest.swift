@@ -1,10 +1,10 @@
 import Foundation
 
 /// A test of a build's test report that failed, with the start of its error message (PIPE-03).
-public struct FailedTest: Hashable, Sendable {
+public struct FailedTest: Codable, Hashable, Sendable {
     /// How a failed test counts in Jenkins' test report. Any other status, such as PASSED, SKIPPED or FIXED, isn't a
     /// failure.
-    public enum Status: String, Hashable, Sendable {
+    public enum Status: String, Codable, Hashable, Sendable {
         /// failing, as in the build before
         case failed = "FAILED"
         /// failing, and passing in the build before

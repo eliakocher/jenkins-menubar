@@ -1,75 +1,195 @@
 import MenubarCore
 import SwiftUI
 
-/// The Slots section (SLOT-02, SLOT-03): a roadmap of the release slots with today, then each slot with the countdown to
-/// its next date, its dates as steps, and its committed work items with their merge requests, builds and flags. It reads the plan from the app,
-/// refreshed every minute, and fills the window like Activity does.
+/// The Slots section (SLOT-02, SLOT-03, SLOT-09): a roadmap of the release slots with today, then each slot with the
+/// countdown to its next date, its dates as steps, and its work items in columns with their merge requests, builds and
+/// flags. It uses the whole width, as far as the Content Width setting allows. A click on an item shows its detail,
+/// Work Items' own, beside the list. It reads the plan from the app, refreshed every minute.
 public struct SlotsView: View {
     @Environment(AppModel.self) private var model
     @Environment(WindowRouter.self) private var router
     @Environment(\.openURL) private var openURL
-    @ViewState private var chip: SlotChip = .me
+    /// the chips' ids (SLOT-07), comma-separated, kept across sections and launches; the old single id reads too, and a
+    /// chip that is gone falls back, see `SlotChipSelection.restored`
+    @AppStorage("slots.chip") private var storedChip = SlotChip.me.id
+    /// which slot cards the user opened or closed (SLOT-15); the others follow the default, the current slot open
+    @AppStorage("slots.expanded") private var storedExpansion = ""
+    @Binding private var selection: WorkItem.ID?
     private let searchText: String
 
-    /// - Parameter searchText: the window's search text; empty shows everything
-    public init(searchText: String) {
+    /// - Parameters:
+    ///   - selection: the selected work item, by its full reference
+    ///   - searchText: the window's search text; empty shows everything
+    public init(selection: Binding<WorkItem.ID?>, searchText: String) {
+        _selection = selection
         self.searchText = searchText
     }
 
     public var body: some View {
         content
+            .environment(\.slotOpenInTab) { openInTab($0) }
             .task {
                 await model.slotLabels.load()
                 await model.slotItems.load(slots: model.slotNamesToLoad())
             }
+            .task(id: selection) {
+                // A work item of someone else isn't among the loaded ones: its merge requests are asked for on selection.
+                if let selection, let item = workItem(selection) {
+                    await model.workItems.loadRelatedMergeRequests(of: item)
+                }
+            }
+    }
+
+    /// The chips to show for the remembered ids. While the items load, the chips don't tell yet whether a squad or a
+    /// team is gone, so the remembered chips stand; the ids are only written when a chip is clicked.
+    private func selection(among chips: [SlotChip]) -> SlotChipSelection {
+        let settled = model.workItems.lists != nil && !model.slotItems.isLoading
+        return settled ? SlotChipSelection.restored(id: storedChip, among: chips) : SlotChipSelection(id: storedChip)
     }
 
     private var content: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
+        let chips = model.slotChips
+        let selected = selection(among: chips)
+        return TimelineView(.periodic(from: .now, by: 60)) { context in
             SlotsContent(
                 model: SlotsListModel(
-                    plan: model.slotPlan(chip: chip, now: context.date), team: model.pipelines.project.team,
+                    plan: model.slotPlan(chips: selected, now: context.date), team: model.pipelines.project.team,
                     hasLoaded: model.workItems.lists != nil, needsToken: model.workItems.problem == .noToken(.gitLab),
                     query: searchText, labelsProblem: model.slotLabels.problem ?? model.slotItems.problem,
-                    groupItems: model.slotItems.items.count, isLoadingGroup: model.slotItems.isLoading),
-                chips: model.slotChips, chip: $chip,
-                today: context.date, actions: .live(model: model, router: router, openURL: openURL))
+                    groupItems: model.slotItems.items.count, isLoadingGroup: model.slotItems.isLoading,
+                    commitmentsProblem: model.slotItems.commitmentsProblem),
+                chips: chips, selectedChips: Binding(get: { selected }, set: { storedChip = $0.id }),
+                suggestedTeams: model.slotSuggestedTeams,
+                expansion: Binding(get: { SlotExpansion(id: storedExpansion) }, set: { storedExpansion = $0.id }),
+                selection: $selection,
+                today: context.date, actions: .live(model: model, router: router, openURL: openURL),
+                knows: { workItem($0) != nil }, retry: retry
+            ) { id in
+                // The detail is Work Items' own, for an item the group query has and my own work items don't.
+                WorkItemDetailView(selection: id, fallback: workItem(id))
+            }
+        }
+    }
+
+    /// The work item with the reference: one of the slot group's, else one of my own.
+    private func workItem(_ id: WorkItem.ID) -> WorkItem? {
+        model.slotItems.items.first { $0.id == id } ?? model.workItems.lists?.all.first { $0.id == id }
+    }
+
+    /// Opens a work item under "Opened" in the sidebar, full window, and shows it there. Not Work Items: that lists only
+    /// the items assigned to me or created by me, and "Opened" takes any item. Epics have no page of that kind here.
+    private func openInTab(_ id: WorkItem.ID) {
+        guard let item = workItem(id), !item.isEpic, let iid = item.iid.flatMap({ Int($0) }),
+            let sign = item.reference.lastIndex(of: "#")
+        else { return }
+        let opened = model.opened.open(
+            kind: .workItem, project: String(item.reference[..<sign]), iid: iid, webURL: item.webURL)
+        router.show(.opened(opened))
+    }
+
+    private func retry() {
+        Task {
+            await model.slotLabels.load(force: true)
+            await model.slotItems.load(slots: model.slotNamesToLoad(), force: true)
         }
     }
 }
 
-/// The Slots section drawn from plain values, for the window and the gallery.
-struct SlotsContent: View {
+/// The Slots section drawn from plain values, for the window and the gallery: the list, and the detail of the selected
+/// item that `detail` makes.
+struct SlotsContent<Detail: View>: View {
     let model: SlotsListModel
     var chips: [SlotChip] = []
-    @Binding var chip: SlotChip
+    @Binding var selectedChips: SlotChipSelection
+    /// the team value the squad labels suggest, for "Suggest Members"; empty offers none
+    var suggestedTeams = ""
+    /// which slot cards are open (SLOT-15)
+    @Binding var expansion: SlotExpansion
+    @Binding var selection: WorkItem.ID?
     let today: Date
     let actions: GitLabSectionActions
+    /// whether an item with the reference exists, so a restored selection of a gone item shows no detail
+    var knows: (WorkItem.ID) -> Bool = { _ in true }
+    /// loads the slots again, for "Try Again"; `nil` shows no button
+    var retry: (() -> Void)?
+    @Environment(\.slotOpenInTab) private var openInTab
+    @Environment(SettingsStore.self) private var settings: SettingsStore?
+    private let detail: (WorkItem.ID) -> Detail
+
+    init(
+        model: SlotsListModel, chips: [SlotChip] = [], selectedChips: Binding<SlotChipSelection>, suggestedTeams: String = "",
+        expansion: Binding<SlotExpansion> = .constant(SlotExpansion()), selection: Binding<WorkItem.ID?>, today: Date,
+        actions: GitLabSectionActions, knows: @escaping (WorkItem.ID) -> Bool = { _ in true }, retry: (() -> Void)? = nil,
+        @ViewBuilder detail: @escaping (WorkItem.ID) -> Detail
+    ) {
+        self.model = model
+        self.chips = chips
+        _selectedChips = selectedChips
+        self.suggestedTeams = suggestedTeams
+        _expansion = expansion
+        _selection = selection
+        self.today = today
+        self.actions = actions
+        self.knows = knows
+        self.retry = retry
+        self.detail = detail
+    }
+
+    /// the selected item, while it exists
+    private var shownSelection: WorkItem.ID? {
+        selection.flatMap { knows($0) ? $0 : nil }
+    }
 
     var body: some View {
+        SlotDetailSplit(
+            isShown: shownSelection != nil, title: title, close: { selection = nil },
+            openInTab: openInTab.flatMap { open in shownSelection.map { id in { open(id) } } },
+            list: { list },
+            detail: {
+                if let shownSelection {
+                    detail(shownSelection)
+                }
+            })
+    }
+
+    /// "#31 Rework the color tokens" over the detail
+    private var title: String {
+        guard let item = model.item(selection)?.workItem else {
+            return selection.map { $0.split(separator: "/").last.map(String.init) ?? $0 } ?? ""
+        }
+        return item.shortReference(project: model.project)
+    }
+
+    private var list: some View {
         ScrollViewReader { scroller in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    if !chips.isEmpty, model.empty != .noPrefix {
-                        SlotChipBar(chips: chips, chip: $chip, isLoading: model.isLoadingGroup)
-                    }
-                    if let url = model.planningURL, model.empty == nil {
-                        Button("Open Slot Planning") { actions.open(url) }
-                            .buttonStyle(.link)
+                    toolbarRow
+                    if let note = model.labelsNote, model.empty == nil {
+                        problemRow(note)
                     }
                     if model.empty == .notLoaded {
                         // Work Items hasn't answered yet: the roadmap and two slot cards as bars.
                         SlotsSkeleton()
                     }
-                    if model.empty == nil, !model.slots.isEmpty {
-                        SlotRoadmap(slots: model.slots, today: today) { name in
+                    if model.empty == nil, model.slots.contains(where: { $0.dates != nil }) {
+                        SlotRoadmap(slots: model.slots.filter { $0.dates != nil }, today: today) { name in
+                            // The card a click on the roadmap goes to opens, so there is something to see.
+                            if let slot = model.slots.first(where: { $0.name == name }) {
+                                setExpanded(slot, true)
+                            }
                             withAnimation(.smooth) { scroller.scrollTo(name, anchor: .top) }
                         }
                         .padding(.bottom, 4)
                     }
                     ForEach(model.slots) { slot in
-                        SlotCard(slot: slot, today: today, project: model.project, statusPrefix: model.statusPrefix, actions: actions)
-                            .id(slot.name)
+                        SlotCard(
+                            slot: slot, today: today, project: model.project, statusPrefix: model.statusPrefix,
+                            typePrefix: model.typePrefix, selection: selection,
+                            select: { selection = $0 }, actions: actions,
+                            isExpanded: isExpanded(slot), setExpanded: { setExpanded(slot, $0) }
+                        )
+                        .id(slot.name)
                     }
                     if model.empty == nil {
                         Text(verbatim: footnote)
@@ -79,9 +199,7 @@ struct SlotsContent: View {
                             .padding(.top, 4)
                     }
                 }
-                .padding(16)
-                .frame(maxWidth: 760, alignment: .leading)
-                .frame(maxWidth: .infinity)
+                .pageContentWidth()
             }
         }
         .overlay {
@@ -89,16 +207,79 @@ struct SlotsContent: View {
                 emptyView(empty)
             }
         }
+        // An item that is selected, from a click or from "Show in Slots", has its card open.
+        .onChange(of: selection, initial: true) {
+            if let id = selection, let slot = model.slots.first(where: { $0.allItems.contains { $0.id == id } }),
+                !isExpanded(slot)
+            {
+                setExpanded(slot, true)
+            }
+        }
+    }
+
+    /// Whether a slot's card is open: the user's choice, else the default; every card while the search has a text, so the
+    /// matching items show.
+    private func isExpanded(_ slot: SlotSummary) -> Bool {
+        model.isSearching || expansion.isExpanded(name: slot.name.description, state: slot.state)
+    }
+
+    private func setExpanded(_ slot: SlotSummary, _ open: Bool) {
+        withAnimation(.smooth(duration: 0.2)) {
+            expansion = expansion.setting(open, name: slot.name.description, state: slot.state)
+        }
+    }
+
+    /// the chips, and the planning tool's page as a link at the far end
+    @ViewBuilder
+    private var toolbarRow: some View {
+        let showsChips = !chips.isEmpty && model.empty != .noPrefix
+        let planning = model.empty == nil ? model.planningURL : nil
+        if showsChips || planning != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 12) {
+                    if showsChips {
+                        SlotChipBar(chips: chips, selection: $selectedChips, isLoading: model.isLoadingGroup)
+                    }
+                    Spacer(minLength: 0)
+                    if let planning {
+                        Button("Open Slot Planning in the Browser") { actions.open(planning) }
+                            .buttonStyle(.link)
+                            .font(.callout)
+                    }
+                }
+                if showsChips, chips.contains(where: { if case .squad = $0 { true } else { false } }) {
+                    SlotSquadHint(suggestion: suggestedTeams)
+                }
+            }
+        }
+    }
+
+    private func problemRow(_ note: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text(verbatim: note)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if let retry {
+                Button("Try Again", action: retry)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private var footnote: String {
         var text = model.groupItems > 0
-            ? "The slots are every slot label GitLab has. The items in them are the slot group's \(model.groupItems) issues of the shown slots and your work items; merge requests and builds only for yours."
+            ? "The slots are every slot label GitLab has. The items in them are the slot group's \(model.groupItems) issues of the shown slots, by their scheduled slot, and your work items; merge requests and builds only for yours. Progress and load count done items too, as the team's planning tool does."
             : "The slots are every slot label GitLab has. The work items in them are the ones Work Items loads, so your own by its filter, with the builds the app watches."
         if model.withoutSlot > 0 {
             text += " \(model.withoutSlot) without a slot label aren't shown."
         }
-        if let note = model.labelsNote {
+        if let note = model.commitmentsNote {
             text += " \(note)."
         }
         return text
@@ -132,7 +313,11 @@ struct SlotsContent: View {
             } description: {
                 Text("GitLab has no slot labels and none of the loaded work items has one like \(Text(verbatim: "slot::2026.51")).")
             } actions: {
-                Button("Filters…") { actions.openSettings(.gitLab) }
+                // The slot label prefixes live in Settings → Team, Slot Planning (the scheduled slot) and Slot Schedule.
+                Button("Slot Settings…") {
+                    settings?.reveal(.slotPlanning)
+                    actions.openSettings(.team)
+                }
             }
         case .findsNothing(let text):
             ContentUnavailableView.search(text: text)
@@ -142,27 +327,31 @@ struct SlotsContent: View {
 
 // MARK: - A slot
 
-/// One slot: its label, state and countdown, its three dates as steps, and the committed work items.
+/// One slot: its header, always shown, and when it is open its dates as steps, its people and its work items in columns.
 struct SlotCard: View {
     let slot: SlotSummary
     let today: Date
     let project: String
     var statusPrefix = ""
+    var typePrefix = ""
+    var selection: WorkItem.ID?
+    var select: (WorkItem.ID) -> Void = { _ in }
     let actions: GitLabSectionActions
+    /// whether the card is open (SLOT-15)
+    var isExpanded = true
+    /// opens or closes the card
+    var setExpanded: (Bool) -> Void = { _ in }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            SlotMilestoneRow(dates: slot.dates, today: today, tint: slot.state == .overdue ? .orange : .accentColor)
-            SlotLoadLine(slot: slot)
-            if !slot.items.isEmpty || !slot.planned.isEmpty {
-                Divider()
-                ForEach(slot.epicGroups) { group in
-                    SlotEpicSection(group: group, project: project, statusPrefix: statusPrefix, actions: actions)
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            SlotHeader(slot: slot, isExpanded: isExpanded, setExpanded: setExpanded)
+            if isExpanded {
+                content
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
+                    .transition(.opacity)
             }
         }
-        .padding(14)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             if slot.state == .current {
@@ -172,194 +361,93 @@ struct SlotCard: View {
         .accessibilityElement(children: .contain)
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                LabelPill(label: LabelPillModel(slot.label), style: .value)
-                    .font(.headline)
-                Text(verbatim: slot.state.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(slot.state == .current ? Color.accentColor : .secondary)
-                Spacer(minLength: 8)
-                Text(verbatim: slot.countdown)
-                    .font(.headline)
-                    .foregroundStyle(slot.state == .overdue ? .orange : .primary)
+    private var content: some View {
+        // No items at all: the dates and people first, then the quiet note; else the summary on top.
+        let isEmpty = slot.allItems.isEmpty && slot.problemCount == 0
+        return VStack(alignment: .leading, spacing: 12) {
+            if !isEmpty {
+                Text(verbatim: summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
-            Text(verbatim: summary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            if let dates = slot.dates {
+                HStack(alignment: .center, spacing: 6) {
+                    SlotMilestoneRow(dates: dates, today: today, tint: slot.state == .overdue ? .orange : .accentColor)
+                    // The dates come from the slot schedule: the weekdays of the release, the code freeze and early access.
+                    SettingsGearButton(field: .slotSchedule)
+                        .controlSize(.small)
+                }
+            }
+            SlotPeopleLine(slot: slot)
+            if isEmpty {
+                Text(verbatim: slot.progressText)
+                    .font(.subheadline)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            if !slot.items.isEmpty || !slot.planned.isEmpty {
+                Divider()
+                // The columns when the card is wide enough for them, else the facts under each title.
+                ViewThatFits(in: .horizontal) {
+                    table(.regular)
+                    table(.compact)
+                }
+                // The rows have their own padding; the card's is trimmed so their highlight reaches near its edge.
+                .padding(.horizontal, -6)
+            }
+        }
+    }
+
+    private func table(_ layout: SlotRowLayout) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if layout == .regular {
+                SlotColumnHeader()
+            }
+            // The commitments first, the tree's top, each with its items here by epic; then the rest.
+            ForEach(slot.commitments) { commitment in
+                SlotCommitmentSection(commitment: commitment, actions: actions)
+                ForEach(commitment.groups) { group in
+                    SlotEpicSection(
+                        group: group, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
+                        selection: selection, select: select, actions: actions
+                    )
+                    .padding(.leading, 14)
+                }
+            }
+            if !slot.commitments.isEmpty, !slot.otherGroups.isEmpty {
+                Text("Not in a commitment")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 14)
+            }
+            ForEach(slot.otherGroups) { group in
+                SlotEpicSection(
+                    group: group, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
+                    selection: selection, select: select, actions: actions)
+            }
         }
     }
 
     private var summary: String {
         var parts = [slot.progressText]
+        if slot.points > 0 {
+            parts.append("\(Int((slot.progress * 100).rounded())) % by weight")
+        }
         if slot.state == .overdue {
             parts.append("\(slot.openItems.count) still open")
+        }
+        if slot.uncommittedCount > 0 {
+            parts.append("\(slot.uncommittedCount) planned")
         }
         if slot.flagCount > 0 {
             parts.append("\(slot.flagCount) flagged")
         }
-        if slot.uncommittedCount > 0 {
-            parts.append("\(slot.uncommittedCount) not committed")
+        if slot.problemCount > 0 {
+            parts.append(slot.problemCount == 1 ? "1 problem" : "\(slot.problemCount) problems")
         }
         return parts.joined(separator: " · ")
-    }
-}
-
-// MARK: - A work item
-
-/// One committed work item: its state, title, merge requests with their builds, and its flags.
-struct SlotItemRow: View {
-    let item: SlotItem
-    let project: String
-    var statusPrefix = ""
-    let actions: GitLabSectionActions
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: stateSymbol)
-                .foregroundStyle(item.isDone ? Color.green : item.isInProgress ? Color.accentColor : .secondary)
-                .frame(width: 18)
-                .help(item.isDone ? "Done" : item.isInProgress ? "In progress" : "Open")
-            VStack(alignment: .leading, spacing: 4) {
-                Button {
-                    actions.follow(item.workItem.webURL)
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(verbatim: item.workItem.title)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Text(verbatim: item.workItem.shortReference(project: project))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .contextMenu {
-                    Button("Open in GitLab") { actions.open(item.workItem.webURL) }
-                    Button("Copy Link") { actions.copy(item.workItem.webURL) }
-                }
-                mergeRequests
-                ForEach(item.flags) { flag in
-                    SlotFlagLine(flag: flag, actions: actions)
-                }
-            }
-            Spacer(minLength: 0)
-            SlotItemFacts(item: item, statusPrefix: statusPrefix)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private var stateSymbol: String {
-        item.isDone ? "checkmark.circle.fill" : item.isInProgress ? "circle.lefthalf.filled" : "circle"
-    }
-
-    @ViewBuilder
-    private var mergeRequests: some View {
-        if item.mergeRequests.isEmpty {
-            if item.mergeRequestsLoaded, !item.workItem.isEpic, item.isCommitted {
-                Text(verbatim: "No merge request")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        } else {
-            HStack(spacing: 10) {
-                ForEach(item.mergeRequests) { mergeRequest in
-                    SlotMergeRequestChip(mergeRequest: mergeRequest, project: project, actions: actions)
-                }
-            }
-        }
-    }
-}
-
-/// A merge request as "!12" with its state and its build's state.
-struct SlotMergeRequestChip: View {
-    let mergeRequest: SlotMergeRequest
-    let project: String
-    let actions: GitLabSectionActions
-
-    var body: some View {
-        Button {
-            actions.follow(mergeRequest.mergeRequest.webURL)
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: mergeSymbol)
-                    .foregroundStyle(mergeColor)
-                Text(verbatim: GitLabText.shortReference(mergeRequest.mergeRequest.reference, project: project))
-                if let build = mergeRequest.build {
-                    Image(systemName: BuildState(build.signal).symbol)
-                        .foregroundStyle(BuildState(build.signal).color ?? .secondary)
-                }
-            }
-            .font(.caption)
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(help)
-    }
-
-    private var mergeSymbol: String {
-        switch mergeRequest.mergeRequest.state {
-        case .merged: "arrow.triangle.merge"
-        case .closed: "xmark.circle"
-        default: "arrow.triangle.pull"
-        }
-    }
-
-    private var mergeColor: Color {
-        switch mergeRequest.mergeRequest.state {
-        case .merged: .purple
-        case .closed: .secondary
-        default: .green
-        }
-    }
-
-    private var help: String {
-        let state = mergeRequest.mergeRequest.state.rawValue.capitalized
-        let build = mergeRequest.build.map { build in
-            let name = switch build.signal {
-            case .green: "green"
-            case .red: "red"
-            case .running: "running"
-            }
-            return ", build \(build.label.map { $0 + " " } ?? "")\(name)"
-        }
-        return "\(mergeRequest.mergeRequest.title): \(state)\(build ?? ", no build known")"
-    }
-}
-
-/// A flag with its fix as a link.
-struct SlotFlagLine: View {
-    let flag: SlotFlag
-    let actions: GitLabSectionActions
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: flag.kind.symbol)
-            Text(verbatim: flag.kind.text)
-            Button(flag.fixTitle) { actions.follow(flag.fixURL) }
-                .buttonStyle(.link)
-        }
-        .font(.caption.weight(.medium))
-        .foregroundStyle(color)
-    }
-
-    private var color: Color {
-        switch flag.kind {
-        case .readyToVerify: .green
-        case .redPipeline, .doneWithRedBuild: .red
-        case .noMergeRequest: .orange
-        }
-    }
-}
-
-extension BuildState {
-    /// The state a slot's build signal shows as.
-    init(_ signal: BuildSignal) {
-        switch signal {
-        case .green: self = .successful
-        case .red: self = .failed
-        case .running: self = .running
-        }
     }
 }
 

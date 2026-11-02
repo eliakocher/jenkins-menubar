@@ -3,8 +3,11 @@ import SwiftUI
 
 /// The sort menu in the Discussion card's header, the same in the merge request's and the work item's (MR-07, WIN-02):
 /// Newest First or Oldest First by each thread's last activity, and "Open First", which puts the open threads before the
-/// resolved ones. The choice is remembered per user; the cards read it with ``DiscussionOrder``.
+/// resolved ones. The choice is remembered per user; the cards read it with ``DiscussionOrder``. It always shows, so the
+/// header keeps its shape, and is greyed out while there is nothing to order (fewer than two threads).
 struct CommentSortMenu: View {
+    /// how many threads the card holds
+    let threadCount: Int
     @AppStorage(CommentThreadOrder.sortKey) private var sort: CommentThreadSort = .oldestFirst
     @AppStorage(CommentThreadOrder.openFirstKey) private var openFirst = true
 
@@ -23,7 +26,11 @@ struct CommentSortMenu: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Sort the threads: \(sort.title)\(openFirst ? ", open first" : "")")
+        .disabled(threadCount < 2)
+        .help(
+            threadCount < 2
+                ? "Sorting needs at least two threads"
+                : "Sort the threads: \(sort.title)\(openFirst ? ", open first" : "")")
         .accessibilityLabel("Sort Threads")
     }
 }

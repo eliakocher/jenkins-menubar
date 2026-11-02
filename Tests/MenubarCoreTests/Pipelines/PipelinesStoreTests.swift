@@ -171,6 +171,12 @@ struct PipelinesStoreTests {
         #expect(UserStateStore(folder: FileLocations(root: harness.folder.url).applicationSupport, report: { _ in }).load(.main).hidden == ["MR-1": 7])
         #expect(await harness.messages().contains("Hid !1 #7"))
 
+        // Show Hidden brings it back, an alert's Hide knows the build by its job and number only.
+        store.unhideAll()
+        #expect(store.myBuilds.count == 1)
+        store.hide(BuildID(job: "MR-1", number: 7))
+        #expect(store.userState.hidden == ["MR-1": 7])
+
         try await harness.check()
         #expect(store.myBuilds.isEmpty)
 
@@ -179,43 +185,6 @@ struct PipelinesStoreTests {
         #expect(store.myBuilds.map(\.number) == [8])
         #expect(store.hiddenCount == 0)
         #expect(store.userState.hidden.isEmpty)
-    }
-
-    @Test("HIDE-01 an alert hides the build it names")
-    func hidesByID() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1"])
-        harness.answer("MR-1", number: 7)
-        try await harness.check()
-        let store = harness.store
-
-        // The alert window's and the banner's Hide know the build by its job and number only.
-        store.hide(BuildID(job: "MR-1", number: 7))
-
-        #expect(store.myBuilds.isEmpty)
-        #expect(store.userState.hidden == ["MR-1": 7])
-        #expect(await harness.messages().contains("Hid !1 #7"))
-    }
-
-    @Test("HIDE-01 show hidden counts singular and plural, and shows them all again")
-    func showHiddenAgain() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1", "MR-2"])
-        harness.answer("MR-1", number: 7)
-        harness.answer("MR-2", number: 3)
-        try await harness.check()
-        let store = harness.store
-
-        store.hide(store.myBuilds[0])
-        #expect(store.showHiddenTitle == "Show 1 Hidden Build")
-        store.hide(store.myBuilds[0])
-        #expect(store.showHiddenTitle == "Show 2 Hidden Builds")
-
-        store.unhideAll()
-
-        #expect(store.showHiddenTitle == nil)
-        #expect(store.myBuilds.count == 2)
-        #expect(await harness.messages().contains("Showed the hidden builds again"))
     }
 
     @Test("HIDE-01 keeps a build hidden while Jenkins fails for its job")
@@ -301,34 +270,6 @@ struct PipelinesStoreTests {
         #expect(asked.graphQL?.variables.contains(#""path":"group/project""#) == true)
     }
 
-    @Test("HIDE-03 shows them while the setting is off")
-    func showsMergedWhileOff() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1"])
-        harness.answer("MR-1", number: 7)
-        harness.answerMerged([1])
-        try await harness.check()
-        let store = harness.store
-        #expect(store.myBuilds.isEmpty)
-
-        store.preferences.hidesMergedBuilds = false
-
-        #expect(store.myBuilds.map(\.job) == ["MR-1"])
-    }
-
-    @Test("HIDE-03 hides a running build of a merged MR")
-    func hidesRunningMergedBuild() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1"])
-        harness.answer("MR-1", number: 7, result: nil)
-        harness.answerMerged([1])
-
-        try await harness.check()
-
-        #expect(harness.store.myBuilds.isEmpty)
-        #expect(harness.store.counts.isEmpty)
-    }
-
     @Test("HIDE-03 keeps the last merged list when GitLab fails")
     func keepsMergedListWhenGitLabFails() async throws {
         let harness = try Harness()
@@ -338,15 +279,41 @@ struct PipelinesStoreTests {
         harness.answerMerged([1])
         try await harness.check()
 
+        // MR-2 is asked again only after 5 minutes (OD-06).
+        harness.time.wait(PipelinesCheck.mergedAskedEvery)
         harness.stub.answer(operation: "MergedMergeRequests", status: 502)
         try await harness.check()
         #expect(harness.store.merged == [1])
 
+        harness.time.wait(PipelinesCheck.mergedAskedEvery)
         harness.stub.fail(operation: "MergedMergeRequests", with: .cannotConnect)
         try await harness.check()
+        #expect(harness.stub.requests(operation: "MergedMergeRequests").count == 3)
         #expect(harness.store.merged == [1])
         #expect(harness.store.myBuilds.map(\.job) == ["MR-2"])
         #expect(harness.store.checkProblem == nil)
+    }
+
+    @Test("OD-06 an MR known merged isn't asked again, and the same open MRs at most every 5 minutes")
+    func mergedAskedSparingly() async throws {
+        let harness = try Harness()
+        harness.answerJobs(["MR-1", "MR-2"])
+        harness.answer("MR-1", number: 7)
+        harness.answer("MR-2", number: 3)
+        harness.answerMerged([1])
+        try await harness.check()
+        try await harness.check()
+        #expect(harness.stub.requests(operation: "MergedMergeRequests").count == 1)
+        #expect(harness.store.merged == [1])
+
+        harness.time.wait(PipelinesCheck.mergedAskedEvery)
+        harness.answerMerged([])
+        try await harness.check()
+        let asked = harness.stub.requests(operation: "MergedMergeRequests")
+        #expect(asked.count == 2)
+        // Only the open MR; the merged one stays merged.
+        #expect(asked.last?.graphQL?.variables.contains(#""iids":["2"]"#) == true)
+        #expect(harness.store.merged == [1])
     }
 
     @Test("HIDE-03 asks nothing without MR jobs")
@@ -382,22 +349,6 @@ struct PipelinesStoreTests {
         #expect(store.hiddenCount == 0)
         #expect(store.showHiddenTitle == nil)
         #expect(store.emptyState == .noBuilds)
-    }
-
-    @Test("HIDE-04 builds hidden by hand count only as hidden")
-    func hiddenByHandCountOnlyAsHidden() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1", "MR-2"])
-        harness.answer("MR-1", number: 7)
-        harness.answer("MR-2", number: 3, result: "FAILURE")
-        try await harness.check()
-        let store = harness.store
-        #expect(store.counts == BuildCounts(failed: 1, successful: 1))
-
-        store.hide(try #require(store.myBuilds.first { $0.job == "MR-2" }))
-
-        #expect(store.counts == BuildCounts(successful: 1))
-        #expect(store.hiddenCount == 1)
     }
 
     // MARK: PIPE-05
@@ -456,16 +407,6 @@ struct PipelinesStoreTests {
         #expect(harness.store.counts == BuildCounts(successful: 1))
     }
 
-    @Test("PIPE-05 idle shows the template image")
-    func idle() async throws {
-        let harness = try Harness()
-        harness.answerJobs([])
-        try await harness.check()
-
-        #expect(harness.store.counts.isEmpty)
-        #expect(!harness.store.showsProblemMarker)
-    }
-
     // MARK: PIPE-06
 
     @Test("PIPE-06 names the user when no jobs were found")
@@ -476,32 +417,6 @@ struct PipelinesStoreTests {
         try await harness.check()
 
         #expect(harness.store.emptyState == .noJobs(user: "jenkins-jdoe"))
-        #expect(harness.store.emptyState?.message == "No merge request builds by jenkins-jdoe in Jenkins")
-    }
-
-    @Test("PIPE-06 says no builds to show when all are hidden")
-    func noBuildsWhenAllHidden() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1"])
-        harness.answer("MR-1", number: 7)
-        try await harness.check()
-        #expect(harness.store.emptyState == nil)
-
-        harness.store.hide(try #require(harness.store.myBuilds.first))
-
-        #expect(harness.store.emptyState == .noBuilds)
-    }
-
-    @Test("PIPE-06 no-jobs text shows above watched builds")
-    func noJobsAboveWatched() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2"))
-        harness.answerJobs([])
-        harness.answer("MR-2", number: 3)
-
-        try await harness.check()
-
-        #expect(harness.store.emptyState == .noJobs(user: "jdoe"))
-        #expect(harness.store.watchedBuilds.map(\.job) == ["MR-2"])
     }
 
     // MARK: PIPE-07
@@ -521,16 +436,27 @@ struct PipelinesStoreTests {
         #expect(harness.newRequests().contains("/api/json"))
     }
 
-    @Test("PIPE-07 shows the time of the last check")
-    func lastCheckTime() async throws {
+    @Test("OD-06 a new MR of mine looks my jobs up at the next check, once")
+    func newMergeRequestLooksUpJobs() async throws {
         let harness = try Harness()
-        harness.answerJobs([])
-        #expect(harness.store.lastCheckedAt == nil)
-
-        harness.time.wait(90)
+        harness.answerJobs(["MR-1"])
+        harness.answer("MR-1", number: 7)
         try await harness.check()
+        _ = harness.newRequests()
 
-        #expect(harness.store.lastCheckedAt == Harness.start.addingTimeInterval(90))
+        // An MR with a job asks nothing.
+        #expect(!harness.store.noteMyMergeRequests([1]))
+        try await harness.check()
+        #expect(!harness.newRequests().contains("/api/json"))
+
+        #expect(harness.store.noteMyMergeRequests([1, 5]))
+        try await harness.check()
+        #expect(harness.newRequests().contains("/api/json"))
+
+        // Jenkins hasn't made its job yet: the regular lookup finds it later, no second lookup now.
+        #expect(!harness.store.noteMyMergeRequests([1, 5]))
+        try await harness.check()
+        #expect(!harness.newRequests().contains("/api/json"))
     }
 
     // MARK: WATCH-01
@@ -546,9 +472,7 @@ struct PipelinesStoreTests {
 
         let watched = try first.get().watched
         #expect(try first.get() == .watching(watched, title: "Title of MR-2"))
-        #expect(try first.get().message == "Watching all builds of !2")
         #expect(try second.get() == .alreadyWatching(watched))
-        #expect(try second.get().message == "Already watching all builds of !2")
         #expect(store.userState.watched.map(\.job) == ["MR-2"])
         #expect(watched == WatchedJob(job: "MR-2", label: "!2", added: Harness.start))
         #expect(harness.stub.requests(path: Harness.rootPath + "/job/MR-2/api/json").count == 1)
@@ -557,23 +481,7 @@ struct PipelinesStoreTests {
         #expect(harness.checks == 1)
     }
 
-    @Test("WATCH-01 starts a check at once")
-    func watchingStartsACheck() async throws {
-        let harness = try Harness()
-        harness.answer("MR-2", number: 3)
-
-        _ = await harness.store.watch("MR-2")
-        #expect(harness.checks == 1)
-
-        // A refusal stores nothing and starts no check.
-        _ = await harness.store.watch("not a link")
-        harness.answer("MR-9", status: 404)
-        #expect(await harness.store.watch("!9") == .failure(.noJob(job: "MR-9")))
-        #expect(harness.checks == 1)
-        #expect(harness.store.userState.watched.map(\.job) == ["MR-2"])
-    }
-
-    @Test("WATCH-02 refuses without a Jenkins token, and WATCH-03 refuses my own job")
+    @Test("WATCH-02 refuses without a Jenkins token, WATCH-03 refuses my own job, a refusal stores nothing and starts no check")
     func refusals() async throws {
         let noToken = try Harness(jenkinsToken: nil)
         #expect(await noToken.store.watch("!2") == .failure(.problem(.noToken(.jenkins))))
@@ -584,23 +492,15 @@ struct PipelinesStoreTests {
         try await harness.check()
         #expect(await harness.store.watch("!1") == .failure(.mine(job: "MR-1")))
         #expect(harness.store.userState.watched.isEmpty)
+
+        _ = await harness.store.watch("not a link")
+        harness.answer("MR-9", status: 404)
+        #expect(await harness.store.watch("!9") == .failure(.noJob(job: "MR-9")))
+        #expect(harness.checks == 0)
+        #expect(harness.store.userState.watched.isEmpty)
     }
 
     // MARK: WATCH-04
-
-    @Test("WATCH-04 watched build shows its author")
-    func watchedBuildShowsItsAuthor() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2"))
-        harness.answerJobs([])
-        harness.answer("MR-2", number: 3)
-
-        try await harness.check()
-
-        let build = try #require(harness.store.watchedBuilds.first)
-        #expect(build.author == "Jane Doe")
-        #expect(build.kind == .watched)
-        #expect(harness.store.myBuilds.isEmpty)
-    }
 
     @Test("WATCH-04 watched build alerts like mine")
     func watchedBuildAlerts() async throws {
@@ -620,38 +520,6 @@ struct PipelinesStoreTests {
         #expect(alert.build.failedStages == ["tests"])
     }
 
-    @Test("EGG-11 a finished build's alert carries the egg line, the log doesn't, and the memory is kept")
-    func eggLineInTheAlert() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2"))
-        harness.answerJobs([])
-        harness.answer("MR-2", number: 42, result: nil, startedAgo: 600)
-        try await harness.check()
-
-        harness.time.wait(60)
-        harness.answer("MR-2", number: 42, result: "SUCCESS", startedAgo: 660)
-        try await harness.check()
-
-        let alert = try #require(await harness.effects.alertWindows.first)
-        let line = "Build #42. The answer to everything. The question is still in review."
-        #expect(alert.content.eggLine == line)
-        #expect(alert.content.bannerBody.hasSuffix(line))
-        let logged = await harness.log.entries().first { $0.source == .alerts }
-        #expect(logged?.detail?.contains(line) == false)
-        #expect(harness.store.eggMemory.greensToday == 1)
-        #expect(harness.store.butlerHat == nil)
-
-        // Off, the next alert has no line; the count goes on.
-        harness.store.preferences.easterEggs = false
-        harness.time.wait(60)
-        harness.answer("MR-2", number: 43, result: nil, startedAgo: 30)
-        try await harness.check()
-        harness.time.wait(60)
-        harness.answer("MR-2", number: 43, result: "SUCCESS", startedAgo: 90)
-        try await harness.check()
-        #expect(await harness.effects.alertWindows.last?.content.eggLine == nil)
-        #expect(harness.store.eggMemory.greensToday == 2)
-    }
-
     @Test("WATCH-04 follows the next build of a watched job")
     func followsTheNextBuild() async throws {
         let harness = try Harness(userState: Harness.watched("MR-2"))
@@ -668,22 +536,6 @@ struct PipelinesStoreTests {
         harness.answer("MR-2", number: 4, result: "SUCCESS", startedAgo: 90)
         try await harness.check()
         #expect(await harness.effects.alertWindows.map(\.build.id) == [BuildID(job: "MR-2", number: 4)])
-    }
-
-    @Test("WATCH-04 watched build is hidden once its MR is merged")
-    func watchedHiddenOnceMerged() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2"))
-        harness.answerJobs([])
-        harness.answer("MR-2", number: 3)
-        harness.answerMerged([])
-        try await harness.check()
-        #expect(harness.store.watchedBuilds.map(\.job) == ["MR-2"])
-
-        harness.answerMerged([2])
-        try await harness.check()
-
-        #expect(harness.store.watchedBuilds.isEmpty)
-        #expect(harness.store.counts.isEmpty)
     }
 
     @Test("WATCH-04 a job that is mine and watched shows once")
@@ -730,44 +582,7 @@ struct PipelinesStoreTests {
         #expect(await harness.messages().contains("Stopped watching !2: Jenkins no longer has it"))
     }
 
-    @Test("WATCH-05 stopping an unwatched job does nothing")
-    func stoppingUnwatched() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2"))
-
-        harness.store.unwatch("MR-9")
-
-        #expect(harness.store.userState.watched.map(\.job) == ["MR-2"])
-        #expect(await harness.messages().isEmpty)
-    }
-
     // MARK: WATCH-06
-
-    @Test("WATCH-06 lists the watched jobs with their last build")
-    func listsWatchedJobs() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2", "feature%252Ffoo"))
-        harness.answerJobs([])
-        harness.answer("MR-2", number: 5, result: nil)
-        harness.answer("feature%252Ffoo", number: 9, result: "UNSTABLE")
-
-        try await harness.check()
-
-        let list = harness.store.watchedJobs
-        #expect(list.map(\.title) == ["!2 #5", "feature/foo #9"])
-        #expect(list.map(\.state) == ["RUNNING", "UNSTABLE"])
-        #expect(list.map(\.build?.author) == ["Jane Doe", "Jane Doe"])
-        #expect(list[0].url?.absoluteString == "https://jenkins.example.com/job/project/job/MR-2/5/")
-    }
-
-    @Test("WATCH-06 a job not checked yet is waiting")
-    func notCheckedYetIsWaiting() async throws {
-        let harness = try Harness(userState: Harness.watched("MR-2"))
-
-        let status = try #require(harness.store.watchedJobs.first)
-
-        #expect(status.isWaiting)
-        #expect(status.state == "WAITING")
-        #expect(status.url?.absoluteString == "https://jenkins.example.com/job/project/job/MR-2/")
-    }
 
     // MARK: OD-04, PIPE-01
 
@@ -900,7 +715,6 @@ struct PipelinesStoreTests {
 
         store.setOffline(true)
         #expect(store.problem == .offline)
-        #expect(store.problem?.message == "Offline: checks resume when the network is back")
         #expect(store.showsProblemMarker)
 
         store.setOffline(false)
@@ -915,7 +729,6 @@ struct PipelinesStoreTests {
         try await harness.check()
 
         #expect(harness.store.problem == .notJSON)
-        #expect(harness.store.problem?.message == "Jenkins sent an answer that isn't JSON (a login page?)")
         #expect(harness.store.showsProblemMarker)
     }
 

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import MenubarCore
 import Observation
@@ -139,6 +140,10 @@ public final class WindowRouter {
     @ObservationIgnored private var surfacesByHost: [String: Set<Surface>] = [:]
     /// the calls to the scheduler, in the order the hosts made them
     @ObservationIgnored private var reports: Task<Void, Never>?
+    /// the scheduler of the last report, told when the app comes to the front or leaves it (OD-06)
+    @ObservationIgnored private weak var attentionScheduler: Scheduler?
+    /// the observers of the app's activation, made at the first report
+    @ObservationIgnored private var activationObservers: [any NSObjectProtocol] = []
 
     /// Creates the router.
     ///
@@ -169,7 +174,7 @@ public final class WindowRouter {
         opener(route)
     }
 
-    /// Opens the main window at a section, or brings it forward there: `menubar-monitor://open/<section>` (APP-03), and
+    /// Opens the main window at a section, or brings it forward there: `megamonitor://open/<section>` (APP-03), and
     /// the View menu's ⌘1 to ⌘4 while another window is key.
     ///
     /// - Parameter section: the section to show
@@ -250,6 +255,16 @@ public final class WindowRouter {
         focusList()
     }
 
+    /// Shows a work item in Slots, as the work item detail's "Show in Slots" does: the section changes and the item is
+    /// selected, which clears the search. The window is open already.
+    ///
+    /// - Parameter workItem: the work item's id, its full reference
+    public func showInSlots(_ workItem: WorkItem.ID) {
+        selection.slots = workItem
+        section = .slots
+        focusList()
+    }
+
     /// Shows a checkout in Workspaces, as the tag on a merge request or a build does (WS-07): the section changes as on
     /// ⌘5, and the checkout is selected. The window is open already.
     ///
@@ -291,10 +306,47 @@ public final class WindowRouter {
     ///   - scheduler: the app's scheduler
     public func report(_ surfaces: Set<Surface>, shownBy host: String, to scheduler: Scheduler) {
         let shown = self.surfaces(surfaces, shownBy: host)
+        let attentive = isAttentive
+        attentionScheduler = scheduler
+        observeActivation()
         let previous = reports
         reports = Task {
             await previous?.value
             await scheduler.setVisible(shown)
+            await scheduler.setAttentive(attentive)
+        }
+    }
+
+    /// whether someone looks at the GitLab data: the app is frontmost or the menu bar pane is open; while nobody looks,
+    /// the shown lists load every 5 minutes (OD-06)
+    private var isAttentive: Bool {
+        surfacesByHost[PanelView.host] != nil || NSApp?.isActive == true
+    }
+
+    /// Tells the scheduler whether someone looks, when the app comes to the front or leaves it (OD-06).
+    private func observeActivation() {
+        guard activationObservers.isEmpty else {
+            return
+        }
+        let center = NotificationCenter.default
+        activationObservers = [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification].map { name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.reportAttention()
+                }
+            }
+        }
+    }
+
+    private func reportAttention() {
+        guard let scheduler = attentionScheduler else {
+            return
+        }
+        let attentive = isAttentive
+        let previous = reports
+        reports = Task {
+            await previous?.value
+            await scheduler.setAttentive(attentive)
         }
     }
 }

@@ -65,7 +65,8 @@ enum PanelView {
                 lists: workItems.lists, problem: workItems.problem, isLoading: workItems.isLoading,
                 lastLoadAt: workItems.lastLoadAt, markers: markers,
                 missingLabels: workItems.labels.missingFilterLabels(of: filters), filters: filters,
-                labelColors: workItems.labels.colors),
+                rowLabels: pipelines.preferences.workItemRows, labelColors: workItems.labels.colors,
+                related: workItems.relatedMergeRequests),
             update: model.updates.state)
     }
 }

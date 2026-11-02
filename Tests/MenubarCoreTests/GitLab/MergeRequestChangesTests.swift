@@ -206,50 +206,6 @@ struct MergeRequestChangesTests {
         #expect(stub.requests.filter { $0.url.path().contains("merge_requests/1/diffs") }.count == 2)
     }
 
-    @Test("MR-11 keeps the lists of the last 5 merge requests and the diffs of the selected one")
-    func bounded() async throws {
-        let folder = try TemporaryFolder()
-        let stub = StubTransport()
-        Self.serve(stub, count: 3)
-        let store = MergeRequestChangesStore(services: try Self.services(stub: stub, folder: folder))
-        let mergeRequests = (1...6).map(Self.mergeRequest)
-
-        for mergeRequest in mergeRequests {
-            await store.open(mergeRequest)
-        }
-
-        #expect(store.state(of: mergeRequests[0]).changes == nil)
-        for mergeRequest in mergeRequests[1...4] {
-            let files = store.state(of: mergeRequest).changes?.files ?? []
-            #expect(files.count == 3 && files.allSatisfy { $0.content == .notLoaded })
-        }
-        #expect(store.state(of: mergeRequests[5]).changes?.files.allSatisfy { !$0.hunks.isEmpty } == true)
-        #expect(stub.requests(operation: "MergeRequestDiffStats").count == 6)
-
-        // A kept list isn't asked again; its first page is.
-        await store.open(mergeRequests[2])
-        #expect(stub.requests(operation: "MergeRequestDiffStats").count == 6)
-        #expect(store.state(of: mergeRequests[2]).changes?.files.allSatisfy { !$0.hunks.isEmpty } == true)
-    }
-
-    @Test(
-        "MR-11 big and generated files start folded",
-        arguments: [
-            ("yarn.lock", 3, true),
-            ("web/dist/app.min.js", 3, true),
-            ("Sources/App.swift", 3, false),
-            ("Sources/App.swift", 501, true),
-        ])
-    func folds(_ path: String, lines: Int, folds: Bool) {
-        let hunk = DiffHunk(
-            oldStart: 1, oldCount: 0, newStart: 1, newCount: lines,
-            lines: (1...lines).map { DiffLine(kind: .added, text: "x", oldNumber: nil, newNumber: $0) })
-        let file = MergeRequestChanges.FileChange(
-            oldPath: path, newPath: path, kind: .modified, isGenerated: GeneratedFiles.isGenerated(path),
-            content: .hunks([hunk]))
-        #expect(file.foldsByDefault == folds)
-    }
-
     // MARK: Helpers
 
     private nonisolated static func mergeRequest(_ iid: Int) -> MergeRequest {

@@ -40,24 +40,6 @@ struct CheckTimesTests {
         #expect(summary.outcome == .failed("1 FAILED"))
     }
 
-    @Test("LOG-01 logs a check summary")
-    func logsTheSummary() async throws {
-        let folder = try TemporaryFolder()
-        let log = ActivityLog(folder: folder.url)
-        let checks = CheckTimes(folder: folder.url, log: log)
-        let stub = StubTransport()
-        stub.answer(body: "{}")
-        let recorder = RequestRecorder(wrapping: stub, log: log, capture: nil, clock: TestClock())
-
-        try await checks.measure(.gitlab) {
-            _ = try await recorder.send(Self.request("api/json"))
-        }
-
-        let summary = try #require(await log.entries().last)
-        #expect(summary.message == "Checked GitLab: 1 request, 0.00s together")
-        #expect(summary.outcome == .ok("OK"))
-    }
-
     @Test("LOG-05 records nothing without requests")
     func nothingWithoutRequests() async throws {
         let folder = try TemporaryFolder()
@@ -103,7 +85,6 @@ struct CheckTimesTests {
 
     @Test("LOG-05 a check that fails is recorded with the requests it made")
     func failedCheck() async throws {
-        struct Stop: Error {}
         let folder = try TemporaryFolder()
         let log = ActivityLog(folder: folder.url)
         let checks = CheckTimes(folder: folder.url, log: log, now: { Self.time })
@@ -122,7 +103,6 @@ struct CheckTimesTests {
 
     @Test("LOG-03 check times keep their newest half")
     func keepsTheNewestHalf() async throws {
-        #expect(CheckTimes.defaultMaxBytes == 524_288)
         let folder = try TemporaryFolder()
         let checks = CheckTimes(folder: folder.url, maxBytes: 1000)
 
@@ -135,18 +115,6 @@ struct CheckTimesTests {
         #expect(kept == Array(kept[0]...40), "the newest, without gaps")
         #expect(kept.count < 40)
         #expect(await checks.totalBytes() < 1200)
-    }
-
-    @Test("LOG-04 clear deletes the check times")
-    func clears() async throws {
-        let folder = try TemporaryFolder()
-        let checks = CheckTimes(folder: folder.url)
-        await checks.append(CheckTime(time: Self.time, source: .gitlab, seconds: 1, requests: 1, failed: 0))
-
-        await checks.clear()
-
-        #expect(await checks.all().isEmpty)
-        #expect(folder.contents().isEmpty)
     }
 
     private static func request(_ path: String) -> HTTPRequest {

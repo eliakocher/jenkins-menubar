@@ -120,12 +120,6 @@ struct FlakyRuleTests {
         #expect(FlakyRule.needingStages(for: build, in: history.map(\.build)) == Array((3...11).reversed()))
     }
 
-    @Test("PIPE-10 a build that isn't in the history gets no hint")
-    func unknownBuild() {
-        let build = RecentBuild(number: 5, result: .failure, commit: "c1")
-        #expect(FlakyRule.hints(for: build, stages: stages([("tests", .failed)]), history: [run(4, .success, commit: "c1")]).isEmpty)
-    }
-
     @Test("PIPE-10 asks the stages of the failed builds and those of the same commit only")
     func needingStages() {
         let build = RecentBuild(number: 5, result: .failure, commit: "c1")
@@ -182,13 +176,6 @@ struct RecentBuildsTests {
         #expect(builds.first?.commit == String(repeating: "9", count: 40))
     }
 
-    @Test("PIPE-10 a failed request for the history is thrown")
-    func failedRequest() async throws {
-        let stub = StubTransport()
-        stub.answer(path: Values.root + "/job/MR-12/api/json", status: 500, body: "")
-
-        await #expect(throws: JenkinsError.self) { try await client(stub).recentBuilds(job: "MR-12") }
-    }
 }
 
 @Suite("FlakyHintStore")

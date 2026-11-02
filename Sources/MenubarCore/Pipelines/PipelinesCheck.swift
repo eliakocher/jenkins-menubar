@@ -24,6 +24,8 @@ public struct PipelinesServices: Sendable {
     public var problems: ProblemTracker?
     /// the alert window, banners and sounds
     public var effects: any Effects
+    /// where the finished builds' details are kept on disk (OD-07); `nil` keeps none
+    public var details: DetailCache?
 
     public init(
         transport: any HTTPTransport,
@@ -38,7 +40,8 @@ public struct PipelinesServices: Sendable {
         capture: RequestCapture? = nil,
         checkTimes: CheckTimes? = nil,
         problems: ProblemTracker? = nil,
-        effects: any Effects
+        effects: any Effects,
+        details: DetailCache? = nil
     ) {
         self.transport = transport
         self.clock = clock
@@ -53,6 +56,7 @@ public struct PipelinesServices: Sendable {
         self.checkTimes = checkTimes
         self.problems = problems
         self.effects = effects
+        self.details = details
     }
 
     /// Returns the transport for a project's requests: the recorder that logs and keeps them, with the Jenkins paths
@@ -105,6 +109,11 @@ public struct GitLabUser: Codable, Hashable, Sendable {
     public func belongs(to token: String) -> Bool {
         tokenFingerprint == Self.fingerprint(of: token)
     }
+}
+
+extension CacheFile where Value == [Int] {
+    /// the open MRs last asked whether they're merged, with the time of the question (OD-06)
+    public static var mergedAsked: CacheFile { CacheFile("merged-asked") }
 }
 
 extension CacheFile where Value == GitLabUser {
@@ -302,7 +311,11 @@ public struct PipelinesCheck: Sendable {
 
     /// Asks GitLab which of the MR jobs' MRs are merged (HIDE-03).
     ///
-    /// - Returns: the merged iids: empty without MR jobs, the known ones when GitLab can't be asked or fails
+    /// Merged is for good, so an MR known merged isn't asked again, and the same open MRs are asked at most every
+    /// ``mergedAskedEvery`` (OD-06, Task 7.06: it was asked at every check with the same answer).
+    ///
+    /// - Returns: the merged iids among the builds': empty without MR jobs, the known ones when GitLab can't be asked,
+    ///   fails, or was asked about the same MRs a moment ago
     private func askMerged(
         project: Project,
         token: String?,
@@ -310,23 +323,41 @@ public struct PipelinesCheck: Sendable {
         known: [Int],
         transport: any HTTPTransport
     ) async throws -> [Int] {
-        let iids = Set(builds.compactMap(\.mergeRequestIID)).sorted()
+        let iids = Set(builds.compactMap(\.mergeRequestIID))
         guard !iids.isEmpty else {
             return []
+        }
+        let knownMerged = Set(known).intersection(iids)
+        let open = iids.subtracting(knownMerged).sorted()
+        guard !open.isEmpty else {
+            return knownMerged.sorted()
         }
         let path = project.team.gitLabProject.trimmingCharacters(in: .whitespaces)
         guard let token, let gitLab = project.team.gitLab, !path.isEmpty else {
             return known
         }
+        let now = services.now()
+        if let asked = services.caches.load(.mergedAsked, for: project.id), asked.value == open,
+            now.timeIntervalSince(asked.fetchedAt) < Self.mergedAskedEvery, now >= asked.fetchedAt
+        {
+            return knownMerged.sorted()
+        }
         let client = GitLabClient(transport: transport, gitLab: gitLab, token: token, timeouts: services.timeouts)
         do {
-            return try await measure { try await client.send(.mergedMergeRequests(project: path, iids: iids)) }
+            let answer = try await measure { try await client.send(.mergedMergeRequests(project: path, iids: open)) }
+            // What stays open is what the next check would ask about.
+            let stillOpen = open.filter { !answer.contains($0) }
+            try? services.caches.save(Cached(value: stillOpen, fetchedAt: now), as: .mergedAsked, for: project.id)
+            return knownMerged.union(answer).sorted()
         } catch is CancellationError {
             throw CancellationError()
         } catch {
             return known
         }
     }
+
+    /// how often the same open MRs are asked whether they're merged: a merged MR's job hides at most this late (OD-06)
+    public static let mergedAskedEvery: TimeInterval = 300
 
     /// Runs GitLab requests as one check time of their own, apart from the Jenkins check's.
     private func measure<Value>(_ operation: () async throws -> Value) async throws -> Value {

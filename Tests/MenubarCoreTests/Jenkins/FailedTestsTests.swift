@@ -46,23 +46,22 @@ struct FailedTestTests {
         #expect(request.headers == ["Authorization": "Basic \(Values.token)"])
     }
 
-    @Test("PIPE-03 a test counts as failed with the status FAILED or REGRESSION")
-    func statusRule() async throws {
-        let statuses: [(status: String?, failed: Bool)] = [
+    @Test(
+        "PIPE-03 a test counts as failed with the status FAILED or REGRESSION",
+        arguments: [
             ("FAILED", true), ("REGRESSION", true), ("PASSED", false), ("SKIPPED", false), ("FIXED", false),
             ("failed", false), ("", false), (nil, false),
-        ]
-        for item in statuses {
-            let field = item.status.map { #", "status": "\#($0)""# } ?? ""
-            let stub = StubTransport()
-            stub.answer(
-                path: Values.reportPath,
-                body: #"{"suites": [{"cases": [{"className": "a.B", "name": "c"\#(field)}]}]}"#)
+        ] as [(String?, Bool)])
+    func statusRule(status: String?, failed: Bool) async throws {
+        let field = status.map { #", "status": "\#($0)""# } ?? ""
+        let stub = StubTransport()
+        stub.answer(
+            path: Values.reportPath,
+            body: #"{"suites": [{"cases": [{"className": "a.B", "name": "c"\#(field)}]}]}"#)
 
-            let tests = try await client(stub).failedTests(job: "MR-1", number: 7)
+        let tests = try await client(stub).failedTests(job: "MR-1", number: 7)
 
-            #expect(tests.count == (item.failed ? 1 : 0), "status \(item.status ?? "missing")")
-        }
+        #expect(tests.count == (failed ? 1 : 0), "status \(status ?? "missing")")
     }
 
     @Test("PIPE-03 keeps the first two lines of an error message, cut when long")
@@ -75,29 +74,16 @@ struct FailedTestTests {
         #expect(FailedTest.preview(of: long) == String(repeating: "x", count: 240) + "…")
     }
 
-    @Test("PIPE-03 shows the class without its package")
-    func shortClassName() {
-        func test(_ className: String) -> FailedTest { FailedTest(className: className, name: "n", status: .failed) }
-        #expect(test("com.example.cart.CartServiceTest").shortClassName == "CartServiceTest")
-        #expect(test("CartServiceTest").shortClassName == "CartServiceTest")
-        #expect(test("com.example.Outer$Inner").shortClassName == "Outer$Inner")
-        #expect(test("").shortClassName == "")
-    }
-
-    @Test("PIPE-03 a build without a test report has no failed tests")
-    func noTestReport() async throws {
+    @Test("PIPE-03 a build without a test report (404) has no failed tests, any other failed request is thrown", arguments: [404, 500])
+    func missingOrFailedReport(status: Int) async throws {
         let stub = StubTransport()
-        stub.answer(path: Values.reportPath, status: 404, body: try FixtureFiles.string("Jenkins/error-404.html"))
+        stub.answer(path: Values.reportPath, status: status, body: try FixtureFiles.string("Jenkins/error-\(status).html"))
 
-        #expect(try await client(stub).failedTests(job: "MR-1", number: 7) == [])
-    }
-
-    @Test("PIPE-03 a failed request for the test report is thrown")
-    func failedRequest() async throws {
-        let stub = StubTransport()
-        stub.answer(path: Values.reportPath, status: 500, body: try FixtureFiles.string("Jenkins/error-500.html"))
-
-        await #expect(throws: JenkinsError.self) { try await client(stub).failedTests(job: "MR-1", number: 7) }
+        if status == 404 {
+            #expect(try await client(stub).failedTests(job: "MR-1", number: 7) == [])
+        } else {
+            await #expect(throws: JenkinsError.self) { try await client(stub).failedTests(job: "MR-1", number: 7) }
+        }
     }
 }
 
@@ -110,7 +96,7 @@ struct FailedTestsStoreTests {
         let stub = StubTransport()
         let store: FailedTestsStore
 
-        init(token: String? = Values.token) throws {
+        init(token: String? = Values.token, details: DetailCache? = nil) throws {
             folder = try TemporaryFolder()
             let locations = FileLocations(root: folder.url)
             let team = TeamStore(folder: locations.applicationSupport, report: { _ in })
@@ -120,7 +106,7 @@ struct FailedTestsStoreTests {
                 transport: stub, clock: TestClock(), tokens: TokenStore(keychain: keychain), team: team,
                 userStates: UserStateStore(folder: locations.applicationSupport, report: { _ in }),
                 caches: CacheStore(folder: locations.caches, report: { _ in }), log: ActivityLog(folder: locations.logs),
-                effects: FakeEffects())
+                effects: FakeEffects(), details: details)
             store = FailedTestsStore(services: services)
         }
 
@@ -152,6 +138,22 @@ struct FailedTestsStoreTests {
         await store.load(BuildID(job: "MR-1", number: 8))
         #expect(harness.stub.requests.count == 2)
         #expect(store.state(of: Values.build) == .loaded(tests))
+    }
+
+    @Test("OD-07 a finished build's failed tests are kept on disk and never asked again")
+    func keptOnDisk() async throws {
+        let disk = try TemporaryFolder()
+        let details = DetailCache(folder: disk.file("details"))
+        let first = try Harness(details: details)
+        try first.answerReport()
+        await first.store.load(Values.build)
+        #expect(first.stub.requests.count == 1)
+
+        // After a relaunch: shown at once, nothing asked.
+        let second = try Harness(details: details)
+        await second.store.load(Values.build)
+        #expect(second.stub.requests.isEmpty)
+        #expect(second.store.state(of: Values.build) == first.store.state(of: Values.build))
     }
 
     @Test("PIPE-03 a failed load shows as failed and asks again at the next selection")

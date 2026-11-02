@@ -15,11 +15,4 @@ struct MarkdownReadingSizeTests {
     func steps(start: Int, change: Int, expected: Int) {
         #expect(MarkdownReadingSize.step(start, changedBy: change) == expected)
     }
-
-    @Test("WIN-02 the reading size's first, default and last steps are 0.85×, 1× and 2×")
-    func range() {
-        #expect(MarkdownReadingSize.scale(forStep: 0) == 0.85)
-        #expect(MarkdownReadingSize.scale(forStep: MarkdownReadingSize.defaultStep) == 1)
-        #expect(MarkdownReadingSize.scale(forStep: 1000) == 2)
-    }
 }

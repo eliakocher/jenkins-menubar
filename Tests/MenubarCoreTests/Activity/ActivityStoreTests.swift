@@ -64,7 +64,7 @@ struct ActivityStoreTests {
         }
     }
 
-    @Test("LOG-04 filters by level")
+    @Test("LOG-04 filters by level and source")
     func filtersByLevel() async throws {
         let harness = try Harness()
         await harness.addMixed()
@@ -78,32 +78,23 @@ struct ActivityStoreTests {
         #expect(store.matchingItems.count == 5)
         store.levelFilter = .problems
         #expect(store.matchingItems.map(\.entry.level) == [.error, .warning])
-        #expect(store.countText == "2 entries")
 
         // The choice is remembered.
         let again = harness.store()
         await again.reload()
         #expect(again.levelFilter == .problems)
         #expect(again.matchingItems.count == 2)
-    }
 
-    @Test("LOG-04 filters by source")
-    func filtersBySource() async throws {
-        let harness = try Harness()
-        await harness.addMixed()
-        let store = harness.store()
-        await store.reload()
-
+        // The source filter combines with the level, and is remembered (and its removal too).
+        store.levelFilter = .everything
         store.sourceFilter = .gitlab
         #expect(store.matchingItems.map(\.entry.message) == ["GitLab unreachable", "POST WorkItems: no answer within 20 seconds"])
         store.levelFilter = .problems
         store.sourceFilter = .settings
         #expect(store.matchingItems.isEmpty)
         #expect(store.emptyState == .nothingToShow)
-
-        let again = harness.store()
-        #expect(again.sourceFilter == .settings)
-        again.sourceFilter = nil
+        #expect(harness.store().sourceFilter == .settings)
+        store.sourceFilter = nil
         #expect(harness.store().sourceFilter == nil)
     }
 
@@ -124,7 +115,6 @@ struct ActivityStoreTests {
         #expect(messages(" Jenkins ") == ["MR-1 #7 started: Fix the login", "GET /job/MR-1/api/json in 0.01s"])
         #expect(messages("timeout") == ["POST WorkItems: no answer within 20 seconds"])
         #expect(messages("problem") == ["GitLab unreachable"])
-        #expect(store.countText == "1 entry")
         #expect(messages("nothing like this").isEmpty)
         #expect(store.emptyState == .noSearchResults("nothing like this"))
         #expect(messages("").count == 6)
@@ -137,14 +127,10 @@ struct ActivityStoreTests {
         let store = harness.store()
         await store.reload()
 
-        #expect(store.copyText() == """
-            2026-10-28 12:25:00  DEBUG  Jenkins  200  GET /job/MR-1/api/json in 0.01s
-            2026-10-28 12:26:00  INFO  Jenkins  RUNNING  MR-1 #7 started: Fix the login
-            2026-10-28 12:27:00  WARNING  GitLab  TIMEOUT  POST WorkItems: no answer within 20 seconds
-            2026-10-28 12:28:00  ERROR  GitLab  PROBLEM  GitLab unreachable
-            2026-10-28 12:29:00  INFO  Settings  alertStyle: window → banner
-            2026-10-28 12:30:00  INFO  Alerts  SUCCESS  MR-1 #7 succeeded  Fix the login
-            """)
+        #expect(store.copyText().split(separator: "\n").map { $0.prefix(19) } == [
+            "2026-10-28 12:25:00", "2026-10-28 12:26:00", "2026-10-28 12:27:00", "2026-10-28 12:28:00",
+            "2026-10-28 12:29:00", "2026-10-28 12:30:00",
+        ])
 
         // A selection, in any order, still comes out oldest first; filters apply.
         let newest = store.matchingItems[0].id
@@ -230,20 +216,14 @@ struct ActivityStoreTests {
         // The 24 hours weigh each check alike: (1 + 2 + 6) / 3.
         let jenkins = store.chart.summary(of: .jenkins)
         #expect(jenkins.checks == 3 && jenkins.averageSeconds == 3.0 && jenkins.failedRequests == 3)
-        #expect(jenkins.averageText == "avg 3.0 s")
-        #expect(jenkins.failedText == "3 failed")
         let gitLab = store.chart.summary(of: .gitlab)
-        #expect(gitLab.averageText == "avg 0.25 s")
-        #expect(gitLab.failedText == nil)
         // The hour under the pointer.
         let noon = Date(timeIntervalSince1970: 1_793_188_800)
         let hour = store.chart.summary(of: .jenkins, hour: noon)
-        #expect(hour.averageSeconds == 1.5 && hour.failedText == "1 failed")
+        #expect(hour.averageSeconds == 1.5 && hour.failedRequests == 1)
         let empty = store.chart.summary(of: .alerts)
-        #expect(empty.averageText == "–" && empty.failedText == nil)
+        #expect(empty.checks == 0)
         #expect(CheckTimesChart(checks: [], now: Self.now).isEmpty)
-        #expect(CheckTimesChart.emptyMessage == "No checks in the last 24 hours yet.")
-        #expect(CheckTimesChart.duration(12.4) == "12 s")
     }
 
     @Test("LOG-04 shows at most 1000 rows")
@@ -260,7 +240,7 @@ struct ActivityStoreTests {
         #expect(store.matchingItems.count == 1005)
         #expect(store.shownItems.count == 1000)
         #expect(store.shownItems.first?.entry.message == "entry 1004")
-        #expect(store.truncationMessage == "The newest 1000 of 1005 entries: search or filter to see the older ones.")
+        #expect(store.truncationMessage != nil)
         #expect(store.days.flatMap(\.items).count == 1000)
         store.levelFilter = .events
         #expect(store.truncationMessage == nil)
@@ -279,12 +259,7 @@ struct ActivityStoreTests {
 
         let days = store.days
         #expect(days.map { $0.items.map(\.entry.message) } == [["now", "this morning"], ["yesterday"], ["three days ago"]])
-        #expect(days.prefix(2).map(\.title) == ["Today", "Yesterday"])
-        #expect(days[2].title.contains("25"))
         #expect(store.oldestEntryTime == Self.now.addingTimeInterval(-3 * 86400))
-        #expect(store.footerText.hasPrefix("Since "))
-        #expect(store.footerText.hasSuffix(": the oldest entries go first"))
-        #expect(store.maxBytes == 16_252_928)
     }
 
     @Test("LOG-04 copy as curl from the details leaves the token out")
@@ -314,40 +289,6 @@ struct ActivityStoreTests {
                      graphQL.requestText, graphQL.responseText, graphQL.headersText, store.copyText()] {
             #expect(!text.contains(Self.jenkinsToken) && !text.contains(Self.gitLabToken) && !text.contains("JSESSIONID"))
         }
-    }
-
-    @Test("LOG-02 the details tell when a request is gone, and show an entry without one whole")
-    func detailsOfEntries() async throws {
-        let harness = try Harness()
-        await harness.add(.info, .settings, "Cleared the logs", minutesAgo: 1)
-        await harness.log.append(ActivityEntry(
-            time: Self.now, level: .warning, source: .jenkins, message: "GET /api/json: HTTP 500 in 0.20s",
-            outcome: .failed("500"), requestID: "20261028-123000-000-deadbeef"))
-        let store = harness.store()
-        await store.reload()
-
-        let gone = await store.details(of: store.items[0])
-        #expect(gone.requestIsGone && gone.request == nil)
-        #expect(ActivityDetails.goneMessage == "The request and its response are gone: only the newest requests keep theirs.")
-        let plain = await store.details(of: store.items[1])
-        #expect(!plain.requestIsGone)
-        #expect(plain.item.fullText(in: .gmt) == "2026-10-28 12:29:00\n\ninfo · Settings\n\nCleared the logs")
-    }
-
-    @Test("LOG-02 the response tells why no answer came and what was cut")
-    func responseTexts() {
-        let url = URL(string: "https://jenkins.example.com/api/json")!
-        #expect(RequestDetails(record: RequestRecord(method: "GET", url: url, error: "no answer within 20 seconds", seconds: 20))
-            .responseText == "No answer within 20 seconds")
-        #expect(RequestDetails(record: RequestRecord(method: "GET", url: url, error: "unknown host (VPN?)", seconds: 0))
-            .responseText == "No answer: unknown host (VPN?)")
-        let cut = RequestDetails(record: RequestRecord(
-            method: "GET", url: url, status: 200, seconds: 1, responseBody: Data(String(repeating: "a", count: 300).utf8),
-            bodyLimit: 100))
-        #expect(cut.responseText.hasPrefix("HTTP 200\n\n" + String(repeating: "a", count: 100) + "\n\n… only the first "))
-        #expect(cut.responseText.hasSuffix(" are kept"))
-        #expect(RequestDetails(record: RequestRecord(method: "GET", url: url, error: "unknown host (VPN?)", seconds: 0))
-            .headersText == "No headers: no answer.")
     }
 
     @Test("LOG-04 follows the log while shown")

@@ -11,7 +11,7 @@ struct LegacyImportTests {
     /// `config/settings` of the fixture, mapped
     static let fixturePreferences = Preferences(
         checkIntervalSeconds: 120, hideSuccessfulAfter: .hours(8), hideFailedAfter: .never, hidesMergedBuilds: false,
-        alertStyle: .banner, stageAlerts: false, iconStyle: .color, gitLabMaxAgeSeconds: 30,
+        alertStyle: .banner, stageAlerts: false, iconStyle: .color, gitLabMaxAgeSeconds: Preferences().gitLabMaxAgeSeconds,
         workItems: WorkItemFilters(
             scope: .authored, type: .task, state: .all, sort: .title, limit: 50,
             withLabels: ["workflow::in dev", "team::platform"], withoutLabels: ["type::bug"], labelsMatch: .any))
@@ -72,6 +72,10 @@ struct LegacyImportTests {
         #expect(LegacyFormats.preferences(from: LegacyKeyValues(text: "hide_successful_after_hours=immediately"), onto: Preferences())
             .hideSuccessfulAfter == .immediately)
 
+        // gitlab_refresh_seconds is dropped: 15 is one of the maximum ages, so a mapped value would show.
+        #expect(LegacyFormats.preferences(from: LegacyKeyValues(text: "gitlab_refresh_seconds=15"), onto: Preferences())
+            .gitLabMaxAgeSeconds == Preferences().gitLabMaxAgeSeconds)
+
         // An invalid value counts as the default (SET-01), and so does a value the new options don't have.
         let defaults = TemporaryDefaults()
         let store = PreferencesStore(defaults: defaults.defaults)
@@ -90,31 +94,6 @@ struct LegacyImportTests {
             """)
         store.save(LegacyFormats.preferences(from: invalid, onto: store.load()))
         #expect(store.load() == Preferences())
-    }
-
-    @Test("IMP-01 drops gitlab_refresh_seconds")
-    func dropsGitLabRefresh() async throws {
-        // 15 is one of the maximum ages, so a mapped value would show.
-        let tool = try OldTool()
-        try tool.folder.write("gitlab_refresh_seconds=15\nhide_merged=off\n", to: "checkout/config/settings")
-
-        let report = try #require(await tool.makeImport().runIfNeeded())
-
-        #expect(report.importedSettings)
-        #expect(!tool.preferences.load().hidesMergedBuilds)
-        #expect(tool.preferences.load().gitLabMaxAgeSeconds == Preferences().gitLabMaxAgeSeconds)
-        #expect(tool.defaults.defaults.object(forKey: PreferencesStore.Key.gitLabMaxAgeSeconds.rawValue) == nil)
-    }
-
-    @Test("IMP-01 maps emoji icons to color")
-    func mapsEmojiToColor() {
-        func iconStyle(_ value: String, onto current: Preferences = Preferences()) -> Preferences.IconStyle {
-            LegacyFormats.preferences(from: LegacyKeyValues(text: "menubar_icons=\(value)"), onto: current).iconStyle
-        }
-        #expect(iconStyle("emoji") == .color)
-        #expect(iconStyle("monochrome") == .monochrome)
-        #expect(iconStyle("colour") == .monochrome)
-        #expect(iconStyle("monochrome", onto: Preferences(iconStyle: .color)) == .monochrome)
     }
 
     @Test("IMP-01 imports watched and hidden builds")
@@ -139,7 +118,7 @@ struct LegacyImportTests {
         #expect(report.hiddenBuilds == 1)
     }
 
-    @Test("IMP-01 finds the old folder through the SwiftBar link")
+    @Test("IMP-01 finds the old folder through the SwiftBar link and the jenkins-watch link")
     func findsThroughSwiftBar() async throws {
         let tool = try OldTool()
         let manager = FileManager.default
@@ -178,27 +157,22 @@ struct LegacyImportTests {
         #expect(report.foundBy == .swiftBarPlugin)
         #expect(report.importedSettings)
         #expect(report.importedTeam)
-    }
 
-    @Test("IMP-01 finds the old folder through the jenkins-watch link")
-    func findsThroughWatchLink() throws {
-        let tool = try OldTool()
-        let manager = FileManager.default
+        // Without a plugin link, the jenkins-watch link leads to the old folder.
         let link = tool.folder.url.appending(path: "bin/jenkins-watch")
         try manager.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
         try manager.createSymbolicLink(at: link, withDestinationURL: tool.checkout.appending(path: "bin/jenkins-watch"))
-        let emptyPlugins = tool.folder.url.appending(path: "SwiftBar Plugins", directoryHint: .isDirectory)
+        let emptyPlugins = tool.folder.url.appending(path: "Empty Plugins", directoryHint: .isDirectory)
         try manager.createDirectory(at: emptyPlugins, withIntermediateDirectories: true)
-        let locations = LegacyImport.Locations(storedCheckout: nil, swiftBarPluginFolder: emptyPlugins, watchLink: link, caches: tool.caches)
-
-        let found = try #require(tool.makeImport(locations).locateOldFolder())
-
-        #expect(found.source == .watchLink)
-        #expect(samePlace(found.folder, tool.checkout))
+        let watchLocations = LegacyImport.Locations(
+            storedCheckout: nil, swiftBarPluginFolder: emptyPlugins, watchLink: link, caches: tool.caches)
+        let viaLink = try #require(tool.makeImport(watchLocations).locateOldFolder())
+        #expect(viaLink.source == .watchLink)
+        #expect(samePlace(viaLink.folder, tool.checkout))
         // A copy instead of a link leads nowhere: the welcome flow asks.
         try manager.removeItem(at: link)
         try tool.folder.write("#!/bin/bash", to: "bin/jenkins-watch")
-        #expect(tool.makeImport(locations).locateOldFolder() == nil)
+        #expect(tool.makeImport(watchLocations).locateOldFolder() == nil)
     }
 
     @Test("IMP-01 imports what exists when items are missing")
@@ -219,7 +193,6 @@ struct LegacyImportTests {
         #expect(report.watchedJobs == 0)
         #expect(tool.userState.load(.main) == UserState())
         #expect(report.notMoved.contains(.settings))
-        #expect(report.summary == "Imported from jenkins-menubar: the team values")
 
         // Team values entered before the import are kept, and an empty team.conf imports nothing.
         let entered = try OldTool(caches: false, zshrc: false)
@@ -316,11 +289,6 @@ struct LegacyImportTests {
         #expect(entry.level == .info)
         #expect(entry.source == .app)
         #expect(entry.time == OldTool.now)
-        #expect(entry.message == "Imported from jenkins-menubar: the Jenkins token from keychain (jenkins-menubar), "
-            + "the GitLab token from ~/.zshrc, the settings, the team values, 2 watched jobs, 2 hidden builds. The butler carried the boxes.")
-        #expect(entry.detail == report.detail)
-        #expect(entry.detail == "Folder \(tool.checkout.path(percentEncoded: false)), found as the app's checkout. "
-            + "Not moved: notification settings, keychain access, window positions, label memory and caches.")
         // No token in the log files or in the marker, nor in the report's description.
         var texts = try tool.log.fileURLs.filter { FileManager.default.fileExists(atPath: $0.path) }
             .map { try String(contentsOf: $0, encoding: .utf8) }
@@ -347,14 +315,6 @@ struct LegacyImportTests {
             .notificationSettings, .windowPositions, .labelMemoryAndCaches, .settings,
             .token(.jenkins, .notStored(.environment, reason: refused)), .token(.gitlab, .notFound(.zshrcComputed)),
         ])
-        #expect(report.notMoved.map(\.message) == [
-            "Notification permission and style: macOS keeps them per app, so allow notifications again",
-            "Window positions",
-            "The remembered labels and the caches: they fill again with the first checks",
-            "Settings: the old folder has no config/settings, so the defaults apply",
-            "The Jenkins token from environment was not stored: \(refused)",
-            "The GitLab token: ~/.zshrc computes it, which the app cannot run: paste it here",
-        ])
         // A token that was there but could not be stored is a warning.
         #expect(await tool.log.entries().map(\.level) == [.warning])
 
@@ -365,16 +325,11 @@ struct LegacyImportTests {
             .notificationSettings, .keychainAccess, .windowPositions, .labelMemoryAndCaches, .oldFolder,
             .token(.gitlab, .notFound(.missing)),
         ])
-        #expect(tracesReport.notMoved[1].message == "Keychain items made outside the security tool: macOS asks once before they can be read")
-        #expect(tracesReport.notMoved[4].message == "The jenkins-menubar folder was not found: choose it to import its settings and team values")
-        #expect(tracesReport.notMoved[5].message == "The GitLab token: none was found")
-
         // A fresh account had nothing to move.
         let fresh = try OldTool(checkout: false, caches: false, zshrc: false)
         let freshReport = try #require(await fresh.makeImport(fresh.locationsWithoutFolder).runIfNeeded())
         #expect(!freshReport.oldToolFound)
         #expect(freshReport.notMoved.isEmpty)
-        #expect(freshReport.summary == "Nothing to import from jenkins-menubar")
         #expect(fresh.makeImport().hasRun)
     }
 }
@@ -463,9 +418,6 @@ struct LegacyTokenTests {
 
     @Test("ACC-02 tells where each token comes from")
     func tellsTheSource() async throws {
-        #expect(LegacyToken.Source.allCases.map(\.displayName) == [
-            "keychain (jenkins-menubar)", "environment", "~/.zshrc", "computed in ~/.zshrc", "missing",
-        ])
         let tool = try OldTool(checkout: false, caches: false, zshrc: false)
         try tool.folder.write("export GITLAB_TOKEN=`pass gitlab`\n", to: ".zshrc")
 

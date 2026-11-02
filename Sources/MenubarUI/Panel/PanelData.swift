@@ -153,13 +153,18 @@ public struct PanelData: Sendable {
         /// the filter labels GitLab no longer has (WI-06)
         public var missingLabels: [String]
         public var filters: WorkItemFilters
+        /// which labels the rows' second line shows and how (WI-04)
+        public var rowLabels: WorkItemRowLabels
         /// GitLab's label colors remembered from the work items and label searches, by title (WI-06), for the
         /// commitment's color in the summary row
         public var labelColors: [String: String]
+        /// the related MRs of the work items, by reference, for the "!14 +1" chip of the pane's flyout rows (WI-05)
+        public var related: RelatedMergeRequestsCache
 
         public init(lists: WorkItemLists? = nil, problem: Problem? = nil, isLoading: Bool = false, lastLoadAt: Date? = nil,
                     markers: [String: RelatedMergeRequestMarker] = [:], missingLabels: [String] = [],
-                    filters: WorkItemFilters = WorkItemFilters(), labelColors: [String: String] = [:]) {
+                    filters: WorkItemFilters = WorkItemFilters(), rowLabels: WorkItemRowLabels = WorkItemRowLabels(),
+                    labelColors: [String: String] = [:], related: RelatedMergeRequestsCache = RelatedMergeRequestsCache()) {
             self.lists = lists
             self.problem = problem
             self.isLoading = isLoading
@@ -167,7 +172,9 @@ public struct PanelData: Sendable {
             self.markers = markers
             self.missingLabels = missingLabels
             self.filters = filters
+            self.rowLabels = rowLabels
             self.labelColors = labelColors
+            self.related = related
         }
     }
 }

@@ -197,7 +197,8 @@ struct WorkItemsFixtures {
         }
         return PanelData.WorkItems(
             lists: lists, problem: problem, isLoading: isLoading, lastLoadAt: loaded || problem != nil ? f.now : nil,
-            markers: markers, missingLabels: missingLabels, filters: filters ?? self.filters)
+            markers: markers, missingLabels: missingLabels, filters: filters ?? self.filters,
+            labelColors: Self.colors, related: related)
     }
 
     /// The section's values: the items as loaded at 10:42, their related MRs, the Merge Requests store's MRs and the

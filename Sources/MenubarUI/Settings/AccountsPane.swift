@@ -144,7 +144,7 @@ public struct AccountCheckSection: View {
             Text("Account Check")
         } footer: {
             SettingsFooter(
-                "Tokens go to your login keychain under menubar-monitor, never to a file or the log. Saving or removing "
+                "Tokens go to your login keychain under \(AppIdentity.keychainService), never to a file or the log. Saving or removing "
                     + "one starts a check.")
         }
     }
@@ -168,6 +168,10 @@ struct AccountsFormModel {
     var errors: [TokenAccount: String] = [:]
     var isChecking = false
     var results: [TokenAccount: AccountStatus] = [:]
+    /// the Jenkins server's host, from the first project's job; nil while there is none
+    var jenkinsServer: String?
+    /// what is wrong with the GitLab URL as typed
+    var gitLabURLIssue: String?
 }
 
 /// What the Accounts pane's buttons do.
@@ -177,14 +181,18 @@ struct AccountsSettingsActions {
     var saveGitLab: () -> Void
     var remove: (TokenAccount) -> Void
     var check: () -> Void
+    /// opens Settings → Projects, where the Jenkins job is set
+    var showProjects: () -> Void = {}
 
     /// does nothing, for the gallery
     static let none = AccountsSettingsActions(saveJenkins: {}, saveGitLab: {}, remove: { _ in }, check: {})
 }
 
-/// Settings → Accounts's form: the problem rows, the two tokens and the account check. It draws only what it is given.
+/// Settings → Accounts's form: GitLab with its URL (a team value) and token, Jenkins with its server (from Projects),
+/// user and token, each with who the server says is signed in, and Check. It draws only what it is given.
 struct AccountsSettingsForm: View {
     let model: AccountsFormModel
+    @Binding var gitLabURL: String
     @Binding var jenkinsUser: String
     @Binding var jenkinsToken: String
     @Binding var gitLabToken: String
@@ -192,21 +200,153 @@ struct AccountsSettingsForm: View {
 
     var body: some View {
         Form {
+            SettingsPaneHeader(pane: .accounts)
             SettingsProblemRows(model.problems)
-            TokenSection(
-                .jenkins, source: model.jenkinsSource, user: $jenkinsUser, token: $jenkinsToken, link: model.jenkinsLink,
-                error: model.errors[.jenkins], save: actions.saveJenkins, remove: { actions.remove(.jenkins) })
-            TokenSection(
-                .gitlab, source: model.gitLabSource, token: $gitLabToken, link: model.gitLabLink,
-                error: model.errors[.gitlab], save: actions.saveGitLab, remove: { actions.remove(.gitlab) })
-            AccountCheckSection(isChecking: model.isChecking, results: model.results, check: actions.check)
+            Section {
+                SettingsTextRow(
+                    "GitLab URL", text: $gitLabURL,
+                    prompt: TeamValueFields.prompt(of: .gitLabURL), issue: model.gitLabURLIssue, width: 260, shared: true)
+                    .settingsAnchor(.gitLabURL)
+                statusRow(.gitlab, source: model.gitLabSource)
+                LabeledContent {
+                    SecureField("New token", text: $gitLabToken, prompt: Text("Paste a new token"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 260)
+                        .onSubmit { if SettingsStore.canSaveGitLabToken(gitLabToken) { actions.saveGitLab() } }
+                } label: {
+                    SettingsRowLabel("New token", "Needs the api scope")
+                }
+                .settingsAnchor(.gitLabToken)
+                buttons(
+                    .gitlab, link: model.gitLabLink, isStored: model.gitLabSource.isStored,
+                    canSave: SettingsStore.canSaveGitLabToken(gitLabToken), save: actions.saveGitLab)
+                if let error = model.errors[.gitlab] {
+                    StatusLine(.problem, error)
+                }
+            } header: {
+                SettingsSectionHeader("GitLab")
+            }
+            Section {
+                LabeledContent {
+                    if let server = model.jenkinsServer {
+                        Text(verbatim: server)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } else {
+                        Button("Add a Project…", action: actions.showProjects)
+                    }
+                } label: {
+                    SettingsRowLabel("Server", "From your first project")
+                }
+                statusRow(.jenkins, source: model.jenkinsSource)
+                LabeledContent {
+                    TextField("User", text: $jenkinsUser, prompt: Text("Your Jenkins user"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 260)
+                } label: {
+                    SettingsRowLabel("User")
+                }
+                LabeledContent {
+                    SecureField("New API token", text: $jenkinsToken, prompt: Text("Paste a new API token"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 260)
+                        .onSubmit {
+                            if SettingsStore.canSaveJenkinsToken(user: jenkinsUser, apiToken: jenkinsToken) {
+                                actions.saveJenkins()
+                            }
+                        }
+                } label: {
+                    SettingsRowLabel("New API token")
+                }
+                .settingsAnchor(.jenkinsToken)
+                buttons(
+                    .jenkins, link: model.jenkinsLink, isStored: model.jenkinsSource.isStored,
+                    canSave: SettingsStore.canSaveJenkinsToken(user: jenkinsUser, apiToken: jenkinsToken),
+                    save: actions.saveJenkins)
+                if let error = model.errors[.jenkins] {
+                    StatusLine(.problem, error)
+                }
+            } header: {
+                SettingsSectionHeader("Jenkins")
+            }
+            Section {
+                LabeledContent {
+                    if model.isChecking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Button("Check Now", action: actions.check)
+                    }
+                } label: {
+                    SettingsRowLabel("Check accounts", "Saving a token checks too")
+                }
+                .settingsAnchor(.accountCheck)
+            } footer: {
+                SettingsFooter(
+                    "Tokens stay in your login keychain under \(AppIdentity.keychainService): never in a file, the team file or the log.")
+            }
         }
         .formStyle(.grouped)
+        .revealsSettingsFields()
+    }
+
+    /// Who the server says is signed in, or where the token is while nothing was asked yet.
+    private func statusRow(_ account: TokenAccount, source: TokenSource) -> some View {
+        LabeledContent {
+            if model.isChecking {
+                ProgressView()
+                    .controlSize(.small)
+            } else if let status = model.results[account] {
+                StatusLine(AccountCheckSection.kind(of: status), status.message)
+            } else {
+                StatusLine(source.isStored ? .ok : .note, source.isStored ? "Token saved" : "No token yet")
+            }
+        } label: {
+            SettingsRowLabel("Account", Self.whereStored(source))
+        }
+    }
+
+    /// "Saved in your keychain", "Imported from ~/.zshrc into your keychain", or nil without a token.
+    private static func whereStored(_ source: TokenSource) -> String? {
+        switch source {
+        case .keychain(nil): "Saved in your keychain"
+        case .keychain(.oldKeychain?): "Imported from jenkins-menubar into your keychain"
+        case .keychain(let from?): "Imported from \(from.displayName) into your keychain"
+        case .missing(.zshrcComputed): source.text
+        case .missing: nil
+        }
+    }
+
+    private func buttons(
+        _ account: TokenAccount, link: TokenLink?, isStored: Bool, canSave: Bool, save: @escaping () -> Void
+    ) -> some View {
+        HStack {
+            if let link {
+                Link(destination: link.url) {
+                    Label(link.title, systemImage: "arrow.up.forward.square")
+                }
+            }
+            Spacer()
+            if isStored {
+                Button("Remove Token", role: .destructive) { actions.remove(account) }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.red)
+            }
+            Button("Save Token", action: save)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSave)
+        }
     }
 }
 
-/// Settings → Accounts, from the stores. The first showing in a session with a token stored runs the account check by
-/// itself, and so does a Save while the pane shows (ACC-04).
+/// Settings → Accounts, from the stores: the primary project's GitLab URL and the tokens. The first showing in a
+/// session with a token stored runs the account check by itself, and so does a Save while the pane shows (ACC-04).
 struct AccountsPane: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(PipelinesStore.self) private var pipelines
@@ -215,18 +355,24 @@ struct AccountsPane: View {
     @ViewState private var jenkinsUser = ""
     @ViewState private var jenkinsToken = ""
     @ViewState private var gitLabToken = ""
+    @ViewState private var isTyping = false
 
     var body: some View {
         AccountsSettingsForm(
-            model: model, jenkinsUser: $jenkinsUser, jenkinsToken: $jenkinsToken, gitLabToken: $gitLabToken,
+            model: model,
+            gitLabURL: Binding(get: { settings.teamDraft.gitLabURL }, set: { settings.teamDraft.gitLabURL = $0 }),
+            jenkinsUser: $jenkinsUser, jenkinsToken: $jenkinsToken, gitLabToken: $gitLabToken,
             actions: actions)
+            .modifier(TeamDraftTyping(draft: settings.teamDraft, isTyping: $isTyping))
             .onAppear {
+                settings.editPrimaryProject()
                 jenkinsUser = settings.jenkinsUser
                 let settings = settings
                 // Not a `task`: leaving the pane must not cancel the check's requests.
                 Task { await settings.accountsAppeared() }
             }
             .onDisappear {
+                settings.saveTeamNow()
                 settings.accountsDisappeared()
             }
             .onChange(of: settings.jenkinsUser) {
@@ -240,7 +386,9 @@ struct AccountsPane: View {
                 for: .accounts, from: [pipelines.problem, mergeRequests.problem, workItems.problem]),
             jenkinsSource: settings.tokenSource(.jenkins), gitLabSource: settings.tokenSource(.gitlab),
             jenkinsLink: settings.tokenLink(.jenkins), gitLabLink: settings.tokenLink(.gitlab),
-            errors: settings.tokenErrors, isChecking: settings.isCheckingAccounts, results: settings.accounts)
+            errors: settings.tokenErrors, isChecking: settings.isCheckingAccounts, results: settings.accounts,
+            jenkinsServer: settings.primaryTeam.jenkinsJob?.host(),
+            gitLabURLIssue: isTyping ? nil : settings.teamIssue(for: .gitLabURL))
     }
 
     private var actions: AccountsSettingsActions {
@@ -271,6 +419,7 @@ struct AccountsPane: View {
             },
             check: {
                 Task { await settings.checkAccounts() }
-            })
+            },
+            showProjects: { settings.selectedPane = .projects })
     }
 }

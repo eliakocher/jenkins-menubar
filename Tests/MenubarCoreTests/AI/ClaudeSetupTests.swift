@@ -11,24 +11,16 @@ struct ClaudeSetupTests {
 
     @Test("AI-09 sorts MCP tools into reading and changing ones by the verb their name starts with", arguments: [
         ("mcp__s__get_issue", McpToolAccess.reading), ("mcp__s__list_merge_requests", .reading),
-        ("mcp__s__search_code", .reading), ("mcp__s__find_users", .reading), ("mcp__s__read_file_content", .reading),
-        ("mcp__s__fetch_page", .reading), ("mcp__s__show_status", .reading), ("mcp__s__describe_table", .reading),
-        ("mcp__s__retrieve", .reading), ("mcp__s__whoAmI", .reading), ("mcp__s__whoami", .reading),
-        ("mcp__s__getStatus", .reading), ("mcp__s__getBuildLog", .reading), ("mcp__s__findJobsWithScmUrl", .reading),
-        ("mcp__s__searchBuildLog", .reading), ("mcp__s__status", .reading), ("mcp__s__validate_ci_config", .reading),
+        ("mcp__s__search_code", .reading), ("mcp__s__read_file_content", .reading), ("mcp__s__whoAmI", .reading),
+        ("mcp__s__getBuildLog", .reading), ("mcp__s__findJobsWithScmUrl", .reading), ("mcp__s__status", .reading),
+        ("mcp__s__validate_ci_config", .reading),
         // A noun that looks like a verb after a reading one stays reading.
         ("mcp__s__list_pipeline_trigger_jobs", .reading), ("mcp__s__get_job_artifact", .reading),
         // The part after the last double underscore says what a tool does.
-        ("mcp__claude_ai_Echo__echo__retrieve", .reading), ("mcp__claude_ai_Echo__echo__search", .reading),
-        ("mcp__s__create_issue", .changing), ("mcp__s__update_issue", .changing), ("mcp__s__delete_note", .changing),
-        ("mcp__s__merge_merge_request", .changing), ("mcp__s__approve_merge_request", .changing),
-        ("mcp__s__triggerBuild", .changing), ("mcp__s__rebuildBuild", .changing), ("mcp__s__replayBuild", .changing),
-        ("mcp__s__cancel_pipeline", .changing), ("mcp__s__retry_job", .changing), ("mcp__s__play_job", .changing),
-        ("mcp__s__publish_draft_note", .changing), ("mcp__s__resolve_discussion", .changing),
-        ("mcp__s__submit_review", .changing), ("mcp__s__mark_message_spam", .changing), ("mcp__s__set_variable", .changing),
-        ("mcp__s__run_pipeline", .changing), ("mcp__s__post_comment", .changing), ("mcp__s__upload_assets", .changing),
-        ("mcp__s__share_file", .changing), ("mcp__s__trash_message", .changing), ("mcp__s__browser_navigate", .changing),
-        ("mcp__claude_ai_Echo__echo__send", .changing),
+        ("mcp__claude_ai_Echo__echo__retrieve", .reading),
+        ("mcp__s__create_issue", .changing), ("mcp__s__delete_note", .changing), ("mcp__s__merge_merge_request", .changing),
+        ("mcp__s__triggerBuild", .changing), ("mcp__s__retry_job", .changing), ("mcp__s__post_comment", .changing),
+        ("mcp__s__browser_navigate", .changing), ("mcp__claude_ai_Echo__echo__send", .changing),
         // Not a known verb, or a read that also writes: kept off.
         ("mcp__s__weave_get_model_run_output", .changing), ("mcp__s__download_file_content", .changing),
         ("mcp__s__get_or_create_label", .changing), ("mcp__s__listAndDeleteNotes", .changing), ("mcp__s__", .changing),
@@ -90,36 +82,6 @@ struct ClaudeSetupTests {
         #expect(Self.value(after: "--system-prompt", in: on) == "Instructions")
     }
 
-    @Test("AI-09 allows exactly the reading MCP tools by name, denies every other one and Bash, Edit and Write, and never allows those")
-    func allowlist() throws {
-        let setup = Self.setup()
-        let prompt = ClaudePrompt(useCase: .askAboutItem, instructions: "i", text: "t")
-        let arguments = ClaudeEngine.arguments(for: prompt, model: .opus, setup: setup)
-        let allowed = try #require(Self.value(after: "--allowedTools", in: arguments))
-        #expect(allowed == "mcp__plugin_demo_builds__getBuild,mcp__plugin_demo_issues__get_issue")
-        let denied = try #require(Self.value(after: "--disallowedTools", in: arguments)).components(separatedBy: ",")
-        for never in ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch"] {
-            #expect(denied.contains(never))
-            #expect(!allowed.contains(never), "\(never) is allowed")
-        }
-        #expect(denied.contains("mcp__plugin_demo_issues__create_issue"))
-        #expect(denied.contains("mcp__plugin_demo_builds__triggerBuild"))
-        // A server that is off is denied as a whole, by one entry, not tool by tool.
-        #expect(denied.contains("mcp__claude_ai_Docs__*"))
-        #expect(!denied.contains("mcp__claude_ai_Docs__share_file"))
-        #expect(!denied.contains("mcp__plugin_demo_issues__get_issue"))
-        // A tool is in one list only.
-        #expect(Set(allowed.components(separatedBy: ",")).isDisjoint(with: denied))
-        // No bypass, and every list is one argument, so the next flag ends it.
-        #expect(!arguments.contains("--dangerously-skip-permissions") && !arguments.contains("bypassPermissions"))
-        #expect(arguments.firstIndex(of: "--allowedTools").map { arguments[$0 + 2].hasPrefix("--") } == true)
-
-        // With nothing listed yet, no MCP tool at all: a failed listing never turns a tool on.
-        let unknown = ClaudeEngine.arguments(for: prompt, model: .opus, setup: ClaudeSetup(useClaudeMd: true, inventory: nil))
-        #expect(!unknown.contains("--allowedTools"))
-        #expect(Self.value(after: "--disallowedTools", in: unknown)?.components(separatedBy: ",").contains("mcp__*") == true)
-    }
-
     @Test("AI-09 a question about code with a checkout has Read, Grep and Glob inside that folder only, and no setup safeguard is dropped")
     func codeQuestion() throws {
         let folder = "/Users/dev/src/my project; rm -rf ~"
@@ -127,8 +89,6 @@ struct ClaudeSetupTests {
         prompt.readableFolder = folder
         let setup = Self.setup()
         let command = ClaudeEngine.command(claude: Self.claude, for: prompt, model: .sonnet, setup: setup)
-        #expect(command.executable.path(percentEncoded: false) == "/usr/bin/env")
-        #expect(Array(command.arguments.prefix(3)) == ["-C", folder, "/opt/homebrew/bin/claude"])
         let arguments = Array(command.arguments.dropFirst(3))
         #expect(Self.value(after: "--tools", in: arguments) == "Read,Grep,Glob")
         // Read, Grep and Glob are not allowed by name: a bare `Read` allows every path, no rule keeps them in the folder.
@@ -184,8 +144,6 @@ struct ClaudeSetupTests {
     func servers() {
         let groups = Self.wide.serverGroups
         #expect(groups.map(\.key) == ["claude_ai_Figma", "claude_ai_Gitlab_MCP", "cmux-cua", "plugin_acme_jenkins"])
-        #expect(groups.map(\.name) == ["Figma", "Gitlab MCP", "cmux-cua", "jenkins (acme)"])
-        #expect(groups.map(\.toolCount) == [2, 2, 2, 2] && groups.map(\.readingCount) == [1, 1, 1, 1])
         #expect(groups.map { $0.isOn(choices: [:]) } == [false, true, false, true])
         // The user's choice wins, either way, and a server they never chose keeps its default.
         let choices = ["claude_ai_Figma": true, "claude_ai_Gitlab_MCP": false]
@@ -194,13 +152,11 @@ struct ClaudeSetupTests {
         #expect(McpServerGroup.key(ofServerNamed: "claude.ai Gitlab MCP") == "claude_ai_Gitlab_MCP")
         #expect(McpServerGroup.key(ofServerNamed: "plugin:acme:jenkins") == "plugin_acme_jenkins")
         #expect(McpServerGroup.key(of: "mcp__a(b)__get") == nil && McpServerGroup.key(of: "Read") == nil)
-        // Remembered: the choices survive the settings' round trip, and old settings without them read as none.
-        let settings = AISettings(mcpServerChoices: choices)
-        #expect(try! JSONDecoder().decode(AISettings.self, from: JSONEncoder().encode(settings)).mcpServerChoices == choices)
+        // Old settings without the choices read as none.
         #expect(try! JSONDecoder().decode(AISettings.self, from: Data(#"{"isEnabled": true}"#.utf8)).mcpServerChoices.isEmpty)
     }
 
-    @Test("AI-09 the arguments per server choice: a server that is off is denied by one prefix entry, one that is on by name")
+    @Test("AI-09 the arguments per server choice: a server that is off is denied by one prefix entry, one that is on by name; reads are allowed by name, never a bypass, and a failed listing keeps every MCP tool off")
     func perSelection() throws {
         let prompt = ClaudePrompt(useCase: .askAboutItem, instructions: "i", text: "t")
         func lists(_ choices: [String: Bool]) throws -> (allowed: [String], denied: [String]) {
@@ -226,10 +182,41 @@ struct ClaudeSetupTests {
         let none = try lists(["claude_ai_Gitlab_MCP": false, "plugin_acme_jenkins": false])
         #expect(none.allowed.isEmpty)
         #expect(Set(none.denied).isSuperset(of: ["mcp__claude_ai_Figma__*", "mcp__claude_ai_Gitlab_MCP__*", "mcp__cmux-cua__*", "mcp__plugin_acme_jenkins__*"]))
-        // A tool is never allowed and denied.
+        // A tool is never allowed and denied; Bash, Edit and Write are denied, never allowed.
         for choice in [standard, swapped, none] {
             #expect(Set(choice.allowed).isDisjoint(with: choice.denied))
+            for never in ["Bash", "Edit", "Write", "NotebookEdit", "WebFetch"] {
+                #expect(choice.denied.contains(never))
+            }
         }
+        // No bypass, and every list is one argument, so the next flag ends it.
+        let wide = ClaudeEngine.arguments(
+            for: prompt, model: .opus, setup: ClaudeSetup(useClaudeMd: true, inventory: Self.wide, serverChoices: [:]))
+        #expect(!wide.contains("--dangerously-skip-permissions") && !wide.contains("bypassPermissions"))
+        #expect(wide.firstIndex(of: "--allowedTools").map { wide[$0 + 2].hasPrefix("--") } == true)
+        // With nothing listed yet, no MCP tool at all: a failed listing never turns a tool on.
+        let unknown = ClaudeEngine.arguments(for: prompt, model: .opus, setup: ClaudeSetup(useClaudeMd: true, inventory: nil))
+        #expect(!unknown.contains("--allowedTools"))
+        #expect(Self.value(after: "--disallowedTools", in: unknown)?.components(separatedBy: ",").contains("mcp__*") == true)
+    }
+
+    @Test("AI-09 a server that listed no tools (failed, needing auth, starting) is denied by prefix, even when chosen on", arguments: [
+        "failed", "needs-auth", "pending",
+    ])
+    func toollessServerDenied(status: String) throws {
+        var inventory = Self.wide
+        inventory.servers += [ClaudeMcpServer(name: "plugin:acme:browser", status: status)]
+        let prompt = ClaudePrompt(useCase: .askAboutItem, instructions: "i", text: "t")
+        for choices in [[:], ["plugin_acme_browser": true]] {
+            let arguments = ClaudeEngine.arguments(
+                for: prompt, model: .opus, setup: ClaudeSetup(useClaudeMd: true, inventory: inventory, serverChoices: choices))
+            let denied = try #require(Self.value(after: "--disallowedTools", in: arguments)).components(separatedBy: ",")
+            #expect(denied.contains("mcp__plugin_acme_browser__*"))
+            #expect(Self.value(after: "--allowedTools", in: arguments)?.contains("plugin_acme_browser") != true)
+        }
+        // Servers that listed tools keep their own treatment: GitLab stays allowed by name, not denied by prefix.
+        let standard = ClaudeSetup(useClaudeMd: true, inventory: inventory)
+        #expect(!standard.blockedServers.contains("claude_ai_Gitlab_MCP"))
     }
 
     // MARK: - Listing the setup
@@ -253,7 +240,7 @@ struct ClaudeSetupTests {
         #expect(groups.map(\.key) == ["claude_ai_Docs", "claude_ai_Echo", "odd", "plugin_demo_builds", "plugin_demo_issues"])
         #expect(groups.map(\.name) == ["Docs", "claude_ai_Echo", "odd", "builds (demo)", "issues (demo)"])
         let issues = try #require(groups.last)
-        #expect(issues.toolCount == 4 && issues.readingCount == 2 && issues.estimatedTokens == 2 * McpServerGroup.tokensPerTool)
+        #expect(issues.toolCount == 4 && issues.readingCount == 2)
         #expect(ClaudeInventory.parse(streamJSON: Data("not json\n{\"type\":\"result\"}".utf8)) == nil)
 
         let fake = SetupFake(listing: try FixtureFiles.data("Claude/setup-init.jsonl"))

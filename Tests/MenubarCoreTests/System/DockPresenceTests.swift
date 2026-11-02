@@ -17,16 +17,12 @@ struct DockPresenceTests {
         #expect(!presence.showsDockIcon)
         presence.opened("main")
         #expect(presence.showsDockIcon)
-    }
 
-    @Test("APP-01 a window that reports twice counts once")
-    func reportsTwice() {
-        var presence = DockPresence()
-        presence.opened("main")
+        // A window that reports twice counts once, and a close without an open (a window that closes before its content
+        // appeared) changes nothing.
         presence.opened("main")
         presence.closed("main")
         #expect(!presence.showsDockIcon)
-        // A close without an open, as when a window closes before its content appeared, changes nothing.
         presence.closed("welcome")
         #expect(presence.openWindows.isEmpty)
     }

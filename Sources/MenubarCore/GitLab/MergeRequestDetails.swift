@@ -3,7 +3,7 @@ import Observation
 
 /// What GitLab knows of one merge request beyond the list: its approvals, its unresolved threads and its head
 /// pipeline with the jobs (MR-06 to MR-08). Read only.
-public struct MergeRequestDetails: Hashable, Sendable {
+public struct MergeRequestDetails: Codable, Hashable, Sendable {
     public var approvals: Approvals
     /// the threads that can be resolved and aren't, oldest first, among the first discussions GitLab sent
     public var threads: [ReviewThread]
@@ -17,6 +17,9 @@ public struct MergeRequestDetails: Hashable, Sendable {
     public var pipeline: Pipeline?
     /// who reviewed and when, for "Re-request Review" (MR-09); `nil` when GitLab didn't answer that request
     public var reviews: MergeRequestReviews?
+    /// whether the threads are in: the store asks the approvals and the pipeline first, and the discussions apart, so
+    /// the top cards don't wait for them (OD-07); `false` while only the first part is there
+    public var discussionsLoaded = true
 
     public init(
         approvals: Approvals, threads: [ReviewThread] = [], resolvedThreadCount: Int = 0, hasMoreDiscussions: Bool = false,
@@ -37,7 +40,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
     ///
     /// Approval rules are a paid GitLab feature: without them, only the people who approved and the approvals left are
     /// known, and ``rules`` is empty.
-    public struct Approvals: Hashable, Sendable {
+    public struct Approvals: Codable, Hashable, Sendable {
         public var approvedBy: [MergeRequest.Person]
         /// how many approvals the merge request needs in all; `nil` when GitLab doesn't say
         public var required: Int?
@@ -71,7 +74,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
     }
 
     /// One approval rule: who has to approve and whether that is done.
-    public struct Rule: Hashable, Sendable, Identifiable {
+    public struct Rule: Codable, Hashable, Sendable, Identifiable {
         public var name: String
         /// how many approvals the rule needs
         public var required: Int
@@ -92,7 +95,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
     // MARK: - Threads
 
     /// An unresolved thread: its first note and the replies to it (MR-07).
-    public struct ReviewThread: Hashable, Sendable, Identifiable {
+    public struct ReviewThread: Codable, Hashable, Sendable, Identifiable {
         public var id: String
         /// who started the thread; `nil` for a deleted user
         public var author: MergeRequest.Person?
@@ -142,7 +145,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
     // MARK: - The pipeline
 
     /// The head pipeline with its jobs, by stage (MR-08).
-    public struct Pipeline: Hashable, Sendable {
+    public struct Pipeline: Codable, Hashable, Sendable {
         public var status: MergeRequest.PipelineStatus?
         /// the pipeline's page
         public var url: URL?
@@ -165,7 +168,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
     }
 
     /// A pipeline stage and its jobs.
-    public struct Stage: Hashable, Sendable, Identifiable {
+    public struct Stage: Codable, Hashable, Sendable, Identifiable {
         public var name: String
         public var jobs: [Job]
 
@@ -186,7 +189,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
     }
 
     /// One job of a pipeline.
-    public struct Job: Hashable, Sendable, Identifiable {
+    public struct Job: Codable, Hashable, Sendable, Identifiable {
         public var id: String
         public var name: String
         public var stage: String
@@ -203,7 +206,7 @@ public struct MergeRequestDetails: Hashable, Sendable {
         }
 
         /// What a job is doing, in the few states the detail tells apart.
-        public enum State: Hashable, Sendable {
+        public enum State: String, Codable, Hashable, Sendable {
             case failed
             case running
             /// created, pending, scheduled, manual: not started
@@ -231,6 +234,17 @@ public struct MergeRequestDetails: Hashable, Sendable {
 
 // MARK: - The operation
 
+/// Which part of the details to ask for: the store asks the approvals and the pipeline (``top``) apart from the
+/// discussions, which are the slow, big part, so the top cards fill first (OD-07, Task 7.06: one query of 133 KB took
+/// 3.5 s and every card waited for it).
+enum MergeRequestDetailsPart: Sendable {
+    case all
+    /// the approvals and the head pipeline
+    case top
+    /// the discussions with their notes
+    case discussions
+}
+
 /// How much of the details to ask for. Approval rules and the approvals left belong to a paid GitLab; a GitLab without
 /// them answers a query that names them with a GraphQL error and no data.
 enum MergeRequestDetailsLevel: Sendable {
@@ -249,9 +263,12 @@ extension GitLabOperation where Value == MergeRequestDetails {
     /// - Parameters:
     ///   - source: the merge request
     ///   - level: how much to ask for
+    ///   - part: which part: all of it, the approvals and the pipeline, or the discussions
     /// - Returns: the operation, or `nil` for a reference without a path or an iid. An answer without the merge request
     ///   (gone, or not visible to the token) is a failure.
-    static func details(of source: DescriptionSource, level: MergeRequestDetailsLevel = .full) -> GitLabOperation? {
+    static func details(
+        of source: DescriptionSource, level: MergeRequestDetailsLevel = .full, part: MergeRequestDetailsPart = .all
+    ) -> GitLabOperation? {
         guard let (path, iid) = source.pathAndIID else {
             return nil
         }
@@ -268,13 +285,7 @@ extension GitLabOperation where Value == MergeRequestDetails {
                 "approvedBy { nodes { username name } }"
             }
         let base = source.webURL
-        return GitLabOperation(
-            name: "MergeRequestDetails",
-            query: """
-                query MergeRequestDetails($path: ID!, $iid: String!) {
-                  project(fullPath: $path) {
-                    mergeRequest(iid: $iid) {
-                      \(approvals)
+        let discussions = """
                       discussions(first: 100) {
                         pageInfo { hasNextPage }
                         nodes {
@@ -290,6 +301,8 @@ extension GitLabOperation where Value == MergeRequestDetails {
                           }
                         }
                       }
+            """
+        let pipeline = """
                       headPipeline {
                         status
                         detailedStatus { detailsPath }
@@ -297,6 +310,20 @@ extension GitLabOperation where Value == MergeRequestDetails {
                           nodes { name jobs(first: 50) { nodes { id name status detailedStatus { detailsPath } } } }
                         }
                       }
+            """
+        let (name, fields) =
+            switch part {
+            case .all: ("MergeRequestDetails", [approvals, discussions, pipeline])
+            case .top: ("MergeRequestDetails", [approvals, pipeline])
+            case .discussions: ("MergeRequestDiscussions", [discussions])
+            }
+        return GitLabOperation(
+            name: name,
+            query: """
+                query \(name)($path: ID!, $iid: String!) {
+                  project(fullPath: $path) {
+                    mergeRequest(iid: $iid) {
+                      \(fields.joined(separator: "\n"))
                     }
                   }
                 }
@@ -311,6 +338,25 @@ extension GitLabOperation where Value == MergeRequestDetails {
                 return mergeRequest.details(base: base)
             })
     }
+}
+
+extension MergeRequestDetails {
+    /// Takes the threads of other details, as the discussions' own answer brings them (OD-07).
+    mutating func adoptDiscussions(of other: MergeRequestDetails?) {
+        guard let other else {
+            return
+        }
+        threads = other.threads
+        resolvedThreads = other.resolvedThreads
+        resolvedThreadCount = other.resolvedThreadCount
+        hasMoreDiscussions = other.hasMoreDiscussions
+        discussionsLoaded = other.discussionsLoaded
+    }
+}
+
+extension DetailKind where Value == MergeRequestDetails {
+    /// a merge request's approvals, threads, pipeline and reviews (OD-07)
+    public static var mergeRequestDetails: DetailKind { DetailKind("merge-request-details") }
 }
 
 /// The shape of the answer, and the step from it to the values.
@@ -588,12 +634,25 @@ public final class MergeRequestDetailsStore {
         var detailsUpdatedAt: Date?
         var isLoading = false
         var failed = false
+        /// whether `details` came from the disk and weren't asked this launch (OD-07)
+        var fromDisk = false
     }
 
     private var entries: [String: Entry] = [:]
     /// whether the stored token can write, as GitLab's answer to ``checkWriteAccess()`` says (MR-09)
     public private(set) var writeAccess: WriteAccess = .unknown
+    /// the fingerprint of the token ``writeAccess`` was asked with: a token's scopes never change, so it is asked once
+    /// per token (Task 7.06: it was asked each time the reviewers showed)
+    @ObservationIgnored private var writeAccessToken: String?
+    /// the levels this GitLab answers: once the full query failed for a missing field, the basic one is asked first
+    /// (Task 7.06: every selection asked the reviews twice). Reset at each launch, so a GitLab update is picked up.
+    @ObservationIgnored private var levels = Levels()
     @ObservationIgnored private let services: GitLabServices
+
+    private struct Levels: Sendable {
+        var details: MergeRequestDetailsLevel = .full
+        var reviews: MergeRequestReviewsLevel = .full
+    }
 
     /// - Parameter services: the transport, the token and the team values; the logs record the requests
     public init(services: GitLabServices) {
@@ -619,17 +678,30 @@ public final class MergeRequestDetailsStore {
     /// approval rules answers with a GraphQL error, and the details are asked again without them. Cancelling the calling
     /// task doesn't cancel the request.
     ///
+    /// The approvals and the pipeline, the discussions and the reviews are three requests at once; the first part shows
+    /// as soon as it is there. Details kept on disk show at once and are asked again once per launch (OD-07).
+    ///
     /// - Parameters:
     ///   - mergeRequest: the selected merge request
     ///   - force: loads again although the details belong to the merge request's last update, as after a re-request
     public func load(_ mergeRequest: MergeRequest, force: Bool = false) async {
         let key = mergeRequest.reference
         var entry = entries[key] ?? Entry()
-        if entry.isLoading || (!force && state(of: mergeRequest).isCurrent) {
+        // The copy on disk shows at once; it is asked again below (OD-07).
+        if entries[key] == nil, let kept = services.details?.load(.mergeRequestDetails, key: key) {
+            entry.details = kept.value
+            entry.detailsUpdatedAt = kept.updatedAt
+            entry.fromDisk = true
+            entries[key] = entry
+        }
+        if entry.isLoading || (!force && !entry.fromDisk && state(of: mergeRequest).isCurrent) {
             return
         }
         let source = DescriptionSource(mergeRequest)
-        guard let full = GitLabOperation.details(of: source), let basic = GitLabOperation.details(of: source, level: .basic) else {
+        guard let full = GitLabOperation.details(of: source, part: .top),
+            let basic = GitLabOperation.details(of: source, level: .basic, part: .top),
+            let discussionsOperation = GitLabOperation.details(of: source, part: .discussions)
+        else {
             entry.failed = true
             entries[key] = entry
             return
@@ -637,51 +709,105 @@ public final class MergeRequestDetailsStore {
         entry.isLoading = true
         entry.failed = false
         entries[key] = entry
-        // A task of its own, which a new selection doesn't cancel: the answer is small, and kept for when the merge
-        // request is selected again.
+        // Tasks of their own, which a new selection doesn't cancel: the answers are kept for when the merge request is
+        // selected again. The approvals and the pipeline, the discussions and the reviews are asked at once, and the
+        // first part shows as soon as it is there (OD-07).
         let services = services
-        let details = await Task { () -> MergeRequestDetails? in
-            guard let client = try? await services.session().get().client else {
-                return nil
-            }
-            var details: MergeRequestDetails
+        let start = levels
+        guard let client = await Task(operation: { try? await services.session().get().client }).value else {
+            finish(key, updatedAt: mergeRequest.updatedAt, details: nil)
+            return
+        }
+        let discussionsTask = Task { try? await client.send(discussionsOperation) }
+        let reviewsTask = Task { await client.reviews(of: source, startingAt: start.reviews) }
+        let top = await Task { () -> (MergeRequestDetails, MergeRequestDetailsLevel)? in
             do {
-                details = try await client.send(full)
+                return (try await client.send(start.details == .full ? full : basic), start.details)
             } catch let error as GitLabError {
-                guard case .graphQLErrors = error.problem, let basic = try? await client.send(basic) else {
+                guard start.details == .full, case .graphQLErrors = error.problem, let answer = try? await client.send(basic) else {
                     return nil
                 }
-                details = basic
+                return (answer, .basic)
             } catch {
                 return nil
             }
-            // A request of its own: a GitLab that doesn't know its newer fields costs the re-request, not the details.
-            details.reviews = await client.reviews(of: source)
-            return details
         }.value
+        guard let top else {
+            discussionsTask.cancel()
+            reviewsTask.cancel()
+            finish(key, updatedAt: mergeRequest.updatedAt, details: nil)
+            return
+        }
+        var details = top.0
+        levels.details = top.1
+        // Until the discussions are there, the older threads stay, or the card waits with its skeleton.
+        let older = entries[key]?.details
+        details.reviews = older?.reviews
+        details.adoptDiscussions(of: older)
+        if older == nil {
+            details.discussionsLoaded = false
+        }
         entry = entries[key] ?? Entry()
+        entry.details = details
+        entry.detailsUpdatedAt = mergeRequest.updatedAt
+        entries[key] = entry
+
+        let discussions = await discussionsTask.value
+        let reviews = await reviewsTask.value
+        if let discussions {
+            details.adoptDiscussions(of: discussions)
+        }
+        details.discussionsLoaded = true
+        if let reviews {
+            details.reviews = reviews.reviews
+            levels.reviews = reviews.level
+        }
+        finish(key, updatedAt: mergeRequest.updatedAt, details: details)
+        if discussions != nil {
+            services.details?.save(details, updatedAt: mergeRequest.updatedAt, as: .mergeRequestDetails, key: key)
+        }
+    }
+
+    /// Ends a load: keeps the details for the merge request's update, or marks it failed and keeps what was shown.
+    private func finish(_ key: String, updatedAt: Date, details: MergeRequestDetails?) {
+        var entry = entries[key] ?? Entry()
         entry.isLoading = false
         if let details {
             entry.details = details
-            entry.detailsUpdatedAt = mergeRequest.updatedAt
+            entry.detailsUpdatedAt = updatedAt
+            entry.fromDisk = false
         } else {
             entry.failed = true
         }
         entries[key] = entry
     }
+
     /// Asks GitLab which scopes the stored token has, so the re-request buttons know before a click whether the token
     /// can write. Without a token, or when GitLab doesn't say, the access stays unknown and nothing is blocked.
+    ///
+    /// GitLab is asked once per token: the answer is kept until the stored token changes.
     public func checkWriteAccess() async {
         let services = services
-        let access = await Task { () -> WriteAccess in
+        let known = writeAccess == .unknown ? nil : writeAccessToken
+        let answer = await Task { () -> (WriteAccess, String?)? in
+            guard let token = try? await services.tokens.token(.gitlab), !token.isEmpty else {
+                return (.unknown, nil)
+            }
+            let fingerprint = GitLabUser.fingerprint(of: token)
+            if fingerprint == known {
+                return nil
+            }
             guard let client = try? await services.session().get().client,
                 let scopes = try? await client.tokenScopes()
             else {
-                return .unknown
+                return (.unknown, nil)
             }
-            return WriteAccess(scopes: scopes)
+            return (WriteAccess(scopes: scopes), fingerprint)
         }.value
-        writeAccess = access
+        if let (access, fingerprint) = answer {
+            writeAccess = access
+            writeAccessToken = fingerprint
+        }
     }
 
     /// Asks reviewers for a new review, after a click: one request each, then loads the merge request's details again.

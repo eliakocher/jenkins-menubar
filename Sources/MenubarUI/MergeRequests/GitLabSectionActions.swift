@@ -20,6 +20,9 @@ struct GitLabSectionActions {
     var showInMergeRequests: @MainActor (MergeRequest.ID) -> Void
     /// switches the window's section, as Work Items' "Show Merge Requests" does without a GitLab token (MR-04)
     var showSection: @MainActor (MainWindowSection) -> Void
+    /// selects a work item in Slots, by its full reference: the work item detail's "Show in Slots"; `nil` where the
+    /// button doesn't belong, in the gallery and inside Slots itself
+    var showInSlots: (@MainActor (WorkItem.ID) -> Void)?
     /// watches the builds of an MR, by its number, in one click (WATCH-01)
     var watchBuilds: @MainActor (MergeRequest) -> Void = { _ in }
     /// opens GitLab's new issue page for "New Follow-Up Item" (NEW-04); `nil` while the team values can't make a link
@@ -45,6 +48,14 @@ struct GitLabSectionActions {
             showInMergeRequests: { _ in }, showSection: { _ in })
     }
 
+    /// actions that do nothing but are all there, for the gallery's renders of the detail's buttons
+    static var gallery: GitLabSectionActions {
+        var actions = GitLabSectionActions.none
+        actions.newWorkItem = { _ in }
+        actions.showInSlots = { _ in }
+        return actions
+    }
+
     /// Returns the app's actions.
     ///
     /// - Parameters:
@@ -65,6 +76,7 @@ struct GitLabSectionActions {
             showInPipelines: { router.showInPipelines(job: $0) },
             showInMergeRequests: { router.showInMergeRequests($0) },
             showSection: { router.section = $0 },
+            showInSlots: { router.showInSlots($0) },
             watchBuilds: { MergeRequestWatching.watch($0, model: model, router: router) },
             newWorkItem: NewWorkItemLauncher.action(model: model) { router.browse($0, fallback: openURL) },
             openInApp: { router.openItemLink($0, model: model) })

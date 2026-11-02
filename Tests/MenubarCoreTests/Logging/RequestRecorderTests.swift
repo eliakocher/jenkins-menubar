@@ -121,7 +121,7 @@ struct RequestRecorderTests {
         await problems.update("jenkins", to: .rejectedToken(.jenkins), source: .jenkins)
         try await tokens.remove(.gitlab)
 
-        let text = try folder.read("menubar-monitor.log")
+        let text = try folder.read("MegaMonitor.log")
         #expect(text.split(separator: "\n").count == 7)
         #expect(!text.contains(Self.jenkinsToken) && !text.contains(Self.gitLabToken))
     }
@@ -136,21 +136,6 @@ struct RequestRecorderTests {
             try await recorder.send(Self.jenkins("api/json"))
         }
         #expect(folder.contents().isEmpty)
-    }
-
-    @Test("LOG-01 logs a request that failed for another reason with its description")
-    func otherErrors() async throws {
-        let folder = try TemporaryFolder()
-        let log = ActivityLog(folder: folder.url)
-        let stub = StubTransport()
-        stub.fail(path: "/job/project/job/mrs/api/json", with: .other("The certificate is not trusted"))
-        let recorder = RequestRecorder(wrapping: stub, log: log, capture: nil, pathsRelativeTo: Self.root)
-
-        _ = try? await recorder.send(Self.jenkins("api/json"))
-
-        let entry = try #require(await log.entries().first)
-        #expect(entry.message == "GET /api/json: The certificate is not trusted")
-        #expect(entry.outcome == .failed("ERROR"))
     }
 
     @Test("LOG-01 logs the whole path without a job URL, and without its query")

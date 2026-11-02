@@ -22,6 +22,9 @@ enum Entry {
             SingleInstance.handOver(to: running)
             exit(0)
         }
+        // The identity migration first (Task 7.12, APP-10): it copies the former preferences and folders before
+        // anything reads them. A later migration of keys inside the new domain goes after this line, never before.
+        IdentityMigrationLaunch.run(arguments: arguments, environment: ProcessInfo.processInfo.environment)
         MenubarMonitorApp.main()
     }
 }

@@ -60,12 +60,19 @@ public struct MergeRequestStatus: Hashable, Sendable {
     /// - Parameters:
     ///   - mergeRequest: the merge request
     ///   - me: my GitLab username
+    ///   - saysPipeline: whether the badge may speak of the pipeline; `false` while the header shows the Jenkins build's
+    ///     chip, so the pipeline isn't told twice (MR-14). Then a status that is only about the pipeline ("Pipeline
+    ///     failed", "Pipeline running") leaves its place: "Review requested" stands alone, and any other badge reads the
+    ///     review state, "Missing 1 of 2 approvals".
     /// - Returns: the badge
-    public static func of(_ mergeRequest: MergeRequest, me: String) -> MergeRequestStatus {
-        let status = of(mergeRequest)
-        guard mergeRequest.isReviewRequested(of: me) else { return status }
-        return MergeRequestStatus(kind: .reviewRequested, text: "Review requested · \(status.text)", symbol: "eye.circle.fill",
-                                  color: .orange)
+    public static func of(_ mergeRequest: MergeRequest, me: String, saysPipeline: Bool = true) -> MergeRequestStatus {
+        let status = rule(of: mergeRequest, saysPipeline: saysPipeline)
+        guard mergeRequest.isReviewRequested(of: me) else {
+            return status ?? reviewState(of: mergeRequest)
+        }
+        return MergeRequestStatus(
+            kind: .reviewRequested, text: status.map { "Review requested · \($0.text)" } ?? "Review requested",
+            symbol: "eye.circle.fill", color: .orange)
     }
 
     /// Returns the status of a merge request: the first rule of MR-02 that matches, in the old tool's order.
@@ -73,12 +80,37 @@ public struct MergeRequestStatus: Hashable, Sendable {
     /// - Parameter mergeRequest: the merge request
     /// - Returns: the badge, whoever looks at it
     public static func of(_ mergeRequest: MergeRequest) -> MergeRequestStatus {
+        // Every rule may answer, so the fallback is never used.
+        rule(of: mergeRequest, saysPipeline: true) ?? reviewState(of: mergeRequest)
+    }
+
+    /// Returns whether a badge's text is about the pipeline: "Pipeline failed", also behind "Review requested · ".
+    ///
+    /// - Parameter text: the badge's text
+    /// - Returns: `true` when its last part starts with "Pipeline"
+    public static func textNamesPipeline(_ text: String) -> Bool {
+        text.components(separatedBy: " · ").last?.hasPrefix("Pipeline") == true
+    }
+
+    /// The badge for a merge request whose status is only about the pipeline, from its reviewers.
+    private static func reviewState(of mergeRequest: MergeRequest) -> MergeRequestStatus {
+        let reviewers = mergeRequest.reviewers
+        let allApproved = !reviewers.isEmpty && reviewers.allSatisfy(\.approved)
+        return MergeRequestStatus(
+            kind: .notApproved, text: allApproved ? "All reviewers approved" : approvals(of: mergeRequest),
+            symbol: "hourglass.circle.fill", color: .neutral)
+    }
+
+    /// The first rule that matches. Without `saysPipeline`, the rules about the pipeline are skipped, and `nil` comes
+    /// back when nothing else is left to say, which GitLab's CI_MUST_PASS is.
+    private static func rule(of mergeRequest: MergeRequest, saysPipeline: Bool) -> MergeRequestStatus? {
         let status = mergeRequest.mergeStatus
+        let ciMustPass = status == MergeRequest.MergeStatus(rawValue: "CI_MUST_PASS")
         return if status == .mergeable {
             MergeRequestStatus(kind: .readyToMerge, text: "Ready to merge", symbol: "checkmark.circle.fill", color: .green)
         } else if mergeRequest.isDraft {
             MergeRequestStatus(kind: .draft, text: "Draft", symbol: "pencil.circle.fill", color: .neutral)
-        } else if mergeRequest.pipelineStatus == .failed {
+        } else if saysPipeline, mergeRequest.pipelineStatus == .failed {
             MergeRequestStatus(kind: .pipelineFailed, text: "Pipeline failed", symbol: "xmark.circle.fill", color: .red)
         } else if status == .conflict {
             MergeRequestStatus(kind: .conflicts, text: "Merge conflicts", symbol: "exclamationmark.circle.fill", color: .red)
@@ -94,8 +126,12 @@ public struct MergeRequestStatus: Hashable, Sendable {
             MergeRequestStatus(kind: .unresolvedThreads, text: "Unresolved threads", symbol: "bubble.left.circle.fill",
                                color: .orange)
         } else if status == .ciStillRunning {
-            MergeRequestStatus(kind: .pipelineRunning, text: "Pipeline running", symbol: "arrow.triangle.2.circlepath.circle.fill",
-                               color: .blue)
+            saysPipeline
+                ? MergeRequestStatus(kind: .pipelineRunning, text: "Pipeline running",
+                                     symbol: "arrow.triangle.2.circlepath.circle.fill", color: .blue)
+                : nil
+        } else if !saysPipeline, ciMustPass {
+            nil
         } else if let status, [.unchecked, .checking, .preparing, .approvalsSyncing].contains(status) {
             MergeRequestStatus(kind: .checking, text: "Checking mergeability", symbol: "ellipsis.circle.fill", color: .neutral)
         } else {

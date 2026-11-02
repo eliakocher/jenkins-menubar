@@ -194,12 +194,43 @@ private final class MetricsCollector: NSObject, URLSessionTaskDelegate, @uncheck
         }
     }
 
-    /// Without following, the task ends with the 3xx answer itself.
+    /// Without following, the task ends with the 3xx answer itself. A redirect to another origin is never followed: the
+    /// request carries the token (security audit, finding 7).
     func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest
     ) async -> URLRequest? {
-        followsRedirects ? request : nil
+        guard followsRedirects, let from = task.currentRequest?.url ?? task.originalRequest?.url, let to = request.url,
+            RedirectPolicy.allows(from: from, to: to)
+        else {
+            return nil
+        }
+        return request
+    }
+}
+
+/// Which redirects a request may follow: only within its own origin, since it carries the token in its
+/// `Authorization` header (security audit, finding 7). A refused redirect ends the request with the 3xx answer.
+public enum RedirectPolicy {
+    /// Returns whether a redirect keeps the scheme, the host and the port, ignoring case and the default ports; https
+    /// to http is refused as a change of scheme.
+    ///
+    /// - Parameters:
+    ///   - from: the URL that answered with the redirect
+    ///   - to: the URL it points to
+    /// - Returns: `true` for the same origin
+    public static func allows(from: URL, to: URL) -> Bool {
+        guard let fromScheme = from.scheme?.lowercased(), let toScheme = to.scheme?.lowercased(), fromScheme == toScheme,
+            let fromHost = from.host(percentEncoded: false)?.lowercased(),
+            let toHost = to.host(percentEncoded: false)?.lowercased(), fromHost == toHost
+        else {
+            return false
+        }
+        return port(of: from, scheme: fromScheme) == port(of: to, scheme: toScheme)
+    }
+
+    private static func port(of url: URL, scheme: String) -> Int? {
+        url.port ?? (scheme == "https" ? 443 : scheme == "http" ? 80 : nil)
     }
 }
 

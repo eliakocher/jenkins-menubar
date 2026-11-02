@@ -1,11 +1,15 @@
 import Foundation
 
-/// A release slot's name, the part of its label after the slot prefix: `2026.51` is ISO week 51 of 2026 (SLOT-01).
+/// A release slot's name, the part of its label after the slot prefix (SLOT-01). The team names most slots after the ISO
+/// week of their release, `2026.51`, whose dates the app computes; any other value, like `hotfix_2026-10-20`, is a slot
+/// too, without dates.
 public struct SlotName: Hashable, Comparable, Sendable, CustomStringConvertible {
-    /// the ISO week-numbering year
-    public var year: Int
-    /// the ISO week, 1 to 53
-    public var week: Int
+    private enum Kind: Hashable, Sendable {
+        case week(year: Int, week: Int)
+        case other(String)
+    }
+
+    private let kind: Kind
 
     /// Creates the name of a week.
     ///
@@ -14,20 +18,30 @@ public struct SlotName: Hashable, Comparable, Sendable, CustomStringConvertible 
     ///   - week: the ISO week, 1 to 53; whether the year has a week 53 shows when the dates are computed
     public init?(year: Int, week: Int) {
         guard (1000...9999).contains(year), (1...53).contains(week) else { return nil }
-        self.year = year
-        self.week = week
+        kind = .week(year: year, week: week)
     }
 
-    /// Reads a name like `2026.51`: a four-digit year, a dot and a one- or two-digit week, nothing else.
+    /// Reads a name: a week like `2026.51` (a four-digit year, a dot and a one- or two-digit week), else any other value
+    /// without spaces around it.
     ///
-    /// - Parameter value: the text after the slot prefix
+    /// - Parameter value: the text after the slot prefix; empty is no name
     public init?(_ value: String) {
+        let value = value.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else { return nil }
+        if let week = Self.week(value) {
+            self = week
+        } else {
+            kind = .other(value)
+        }
+    }
+
+    private static func week(_ value: String) -> SlotName? {
         let parts = value.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0].count == 4, (1...2).contains(parts[1].count),
             parts.allSatisfy({ $0.allSatisfy { $0.isASCII && $0.isNumber } }),
             let year = Int(parts[0]), let week = Int(parts[1])
         else { return nil }
-        self.init(year: year, week: week)
+        return SlotName(year: year, week: week)
     }
 
     /// Reads the slot out of a label.
@@ -40,11 +54,30 @@ public struct SlotName: Hashable, Comparable, Sendable, CustomStringConvertible 
         self.init(String(label.dropFirst(prefix.count)))
     }
 
-    /// like `2026.51`
-    public var description: String { "\(year).\(String(format: "%02d", week))" }
+    /// the ISO year and week of a week's name; `nil` for any other name, which has no dates
+    public var isoWeek: (year: Int, week: Int)? {
+        if case .week(let year, let week) = kind { return (year, week) }
+        return nil
+    }
 
+    /// like `2026.51`, or the other name as written
+    public var description: String {
+        switch kind {
+        case .week(let year, let week): "\(year).\(String(format: "%02d", week))"
+        case .other(let value): value
+        }
+    }
+
+    /// Weeks in time order, then the other names by their text.
     public static func < (left: SlotName, right: SlotName) -> Bool {
-        (left.year, left.week) < (right.year, right.week)
+        switch (left.kind, right.kind) {
+        case (.week(let leftYear, let leftWeek), .week(let rightYear, let rightWeek)):
+            (leftYear, leftWeek) < (rightYear, rightWeek)
+        case (.week, .other): true
+        case (.other, .week): false
+        case (.other(let leftValue), .other(let rightValue)):
+            leftValue.localizedStandardCompare(rightValue) == .orderedAscending
+        }
     }
 }
 
@@ -148,23 +181,28 @@ public struct SlotRules: Hashable, Sendable {
     public var warnDays: Int
     /// how many upcoming slots show after the current one, 1 to 12
     public var upcomingShown: Int
+    /// how many of the latest released slots show before the current one, 0 to 12; the ones with open items show
+    /// besides
+    public var pastShown: Int
 
     public static let defaultReleaseWeekday = 1
     public static let defaultCodeFreeze = Anchor(nth: 4, weekday: 5)
     public static let defaultEarlyAccess = Anchor(nth: 2, weekday: 1)
     public static let defaultWarnDays = 3
     public static let defaultUpcomingShown = 4
+    public static let defaultPastShown = 2
 
     public init(
         releaseWeekday: Int = defaultReleaseWeekday, codeFreeze: Anchor = defaultCodeFreeze,
         earlyAccess: Anchor = defaultEarlyAccess, warnDays: Int = defaultWarnDays,
-        upcomingShown: Int = defaultUpcomingShown
+        upcomingShown: Int = defaultUpcomingShown, pastShown: Int = defaultPastShown
     ) {
         self.releaseWeekday = releaseWeekday
         self.codeFreeze = codeFreeze
         self.earlyAccess = earlyAccess
         self.warnDays = warnDays
         self.upcomingShown = upcomingShown
+        self.pastShown = pastShown
     }
 
     /// Reads the rules from the team values; an empty or invalid value reads as its default.
@@ -178,7 +216,8 @@ public struct SlotRules: Hashable, Sendable {
                 nth: Self.nth(of: team.slotEarlyAccessNth) ?? Self.defaultEarlyAccess.nth,
                 weekday: Self.weekday(of: team.slotEarlyAccessWeekday) ?? Self.defaultEarlyAccess.weekday),
             warnDays: Self.days(of: team.slotWarnDays) ?? Self.defaultWarnDays,
-            upcomingShown: Self.nth(of: team.slotUpcomingShown) ?? Self.defaultUpcomingShown)
+            upcomingShown: Self.nth(of: team.slotUpcomingShown) ?? Self.defaultUpcomingShown,
+            pastShown: Self.count(of: team.slotPastShown) ?? Self.defaultPastShown)
     }
 
     /// Reads a weekday: its English name or its first three letters, or a number from 1 (Monday) to 7.
@@ -213,6 +252,14 @@ public struct SlotRules: Hashable, Sendable {
         days(of: text).flatMap { (1...12).contains($0) ? $0 : nil }
     }
 
+    /// Reads how many past slots show: a number from 0 to 12.
+    ///
+    /// - Parameter text: the typed value
+    /// - Returns: the number; `nil` for an empty or invalid text
+    public static func count(of text: String) -> Int? {
+        days(of: text).flatMap { (0...12).contains($0) ? $0 : nil }
+    }
+
     /// Returns the calendar slot dates are computed in: ISO weeks, in the time zone of the given calendar.
     static func isoCalendar(like calendar: Calendar) -> Calendar {
         var iso = Calendar(identifier: .iso8601)
@@ -225,16 +272,17 @@ public struct SlotRules: Hashable, Sendable {
     /// - Parameters:
     ///   - name: the slot
     ///   - calendar: the calendar whose time zone counts
-    /// - Returns: the dates; `nil` when the year has no such week, like 2027.53
+    /// - Returns: the dates; `nil` for a name that isn't a week, or when the year has no such week, like 2027.53
     public func dates(of name: SlotName, calendar: Calendar = .current) -> SlotDates? {
+        guard let (year, week) = name.isoWeek else { return nil }
         let iso = Self.isoCalendar(like: calendar)
         // Calendar's weekday counts from Sunday = 1.
         let weekday = releaseWeekday % 7 + 1
-        guard let date = iso.date(from: DateComponents(weekday: weekday, weekOfYear: name.week, yearForWeekOfYear: name.year))
+        guard let date = iso.date(from: DateComponents(weekday: weekday, weekOfYear: week, yearForWeekOfYear: year))
         else { return nil }
         // A week the year doesn't have rolls over into the next year.
         let back = iso.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)
-        guard back.yearForWeekOfYear == name.year, back.weekOfYear == name.week else { return nil }
+        guard back.yearForWeekOfYear == year, back.weekOfYear == week else { return nil }
         let release = iso.startOfDay(for: date)
         guard let freeze = Self.date(of: codeFreeze, before: release, releaseWeekday: releaseWeekday, in: iso),
             let early = Self.date(of: earlyAccess, before: release, releaseWeekday: releaseWeekday, in: iso)

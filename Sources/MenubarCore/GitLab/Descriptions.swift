@@ -174,6 +174,9 @@ public final class DescriptionsStore {
         var textUpdatedAt: Date?
         var isLoading = false
         var failed = false
+        /// whether `text` came from the disk and wasn't asked this launch, so the next load asks although it belongs
+        /// to the item's last update (OD-07)
+        var fromDisk = false
     }
 
     private var entries: [String: Entry] = [:]
@@ -208,7 +211,14 @@ public final class DescriptionsStore {
     public func load(_ source: DescriptionSource, force: Bool = false) async {
         let key = source.reference
         var entry = entries[key] ?? Entry()
-        if entry.isLoading || (!force && description(of: source).isCurrent) {
+        // The copy on disk shows at once; it is asked again below (OD-07).
+        if entries[key] == nil, let kept = services.details?.load(.itemDescription, key: key) {
+            entry.text = kept.value
+            entry.textUpdatedAt = kept.updatedAt
+            entry.fromDisk = true
+            entries[key] = entry
+        }
+        if entry.isLoading || (!force && !entry.fromDisk && description(of: source).isCurrent) {
             return
         }
         guard let operation = GitLabOperation.description(of: source) else {
@@ -230,9 +240,16 @@ public final class DescriptionsStore {
         if let text {
             entry.text = text
             entry.textUpdatedAt = source.updatedAt
+            entry.fromDisk = false
+            services.details?.save(text, updatedAt: source.updatedAt, as: .itemDescription, key: key)
         } else {
             entry.failed = true
         }
         entries[key] = entry
     }
+}
+
+extension DetailKind where Value == String {
+    /// a merge request's or work item's description (OD-07)
+    public static var itemDescription: DetailKind { DetailKind("description") }
 }

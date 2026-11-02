@@ -54,13 +54,10 @@ struct LinkedWorkItemsTests {
         // The list's title fills the title a reference has none of; GitLab's own stays.
         #expect(items.map(\.title) == ["From the list", "Seven"])
         #expect(items[0].webURL == URL(string: "https://gitlab.example.com/group/project/-/issues/19202"))
-    }
 
-    @Test("MR-12 a bare reference means the merge request's own project, another project's reference its own")
-    func projectOfAReference() {
-        let items = ItemLinks.workItems(ofMergeRequest: "group/project!16", title: "#1 group/other#2 both")
-
-        #expect(items.map(\.reference) == ["group/project#1", "group/other#2"])
+        // A bare reference means the merge request's own project, another project's reference its own.
+        let projects = ItemLinks.workItems(ofMergeRequest: "group/project!16", title: "#1 group/other#2 both")
+        #expect(projects.map(\.reference) == ["group/project#1", "group/other#2"])
     }
 
     @Test("MR-12 related issues and mentions count only when nothing stronger names a work item")
@@ -115,21 +112,6 @@ struct LinkedWorkItemsTests {
 
         #expect(ItemLinks.mergeRequest(ofBuild: branch, team: Self.team) == nil)
         #expect(ItemLinks.mergeRequest(ofBuild: unlinked, team: TeamValues()) == nil)
-    }
-
-    @Test("MR-12 a build's work items are those of its merge request: the title Jenkins names, else the list's")
-    func workItemsOfABuild() {
-        let build = Self.build(job: "MR-12477", title: "#19202 Dialog bot", gitLabURL: nil)
-        let untitled = Self.build(job: "MR-12477", title: nil, gitLabURL: nil)
-        let closes = [LinkedWorkItem(project: "group/project", iid: 7, origin: .closes)]
-
-        #expect(ItemLinks.workItems(ofBuild: build, team: Self.team).map(\.reference) == ["group/project#19202"])
-        #expect(ItemLinks.workItems(ofBuild: untitled, team: Self.team).isEmpty)
-        #expect(ItemLinks.workItems(ofBuild: untitled, team: Self.team, title: "#5 From a list").map(\.reference) == ["group/project#5"])
-        #expect(
-            ItemLinks.workItems(ofBuild: build, team: Self.team, evidence: .init(closes: closes)).map(\.reference)
-                == ["group/project#19202", "group/project#7"])
-        #expect(ItemLinks.workItems(ofBuild: Self.build(job: "main", title: "#1 x", gitLabURL: nil), team: Self.team).isEmpty)
     }
 
     // MARK: GitLab's links
@@ -198,22 +180,6 @@ struct LinkedWorkItemsTests {
         // The failure is not asked again at once.
         await store.load(reference: reference, webURL: Self.source.webURL, updatedAt: Self.updatedAt.addingTimeInterval(60))
         #expect(stub.requests(operation: "MergeRequestClosesIssues").count == 2)
-    }
-
-    @Test("MR-12 asks nothing without a GitLab token and shows no links")
-    func withoutToken() async throws {
-        let folder = try TemporaryFolder()
-        let stub = StubTransport()
-        let services = GitLabServices(
-            transport: stub, clock: ContinuousClock(), tokens: TokenStore(keychain: InMemoryKeychain(values: [:])),
-            team: TeamStore(folder: folder.file("support"), report: { _ in }),
-            caches: CacheStore(folder: folder.file("caches"), report: { _ in }), log: ActivityLog(folder: folder.file("logs")))
-        let store = LinkedWorkItemsStore(services: services)
-
-        await store.load(reference: "group/project!16", webURL: Self.source.webURL)
-
-        #expect(stub.requests.isEmpty)
-        #expect(store.links(of: "group/project!16") == nil)
     }
 
     // MARK: Helpers

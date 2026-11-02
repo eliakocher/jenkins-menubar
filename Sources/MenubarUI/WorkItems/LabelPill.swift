@@ -20,7 +20,7 @@ struct LabelPill: View {
     enum Style {
         /// the title, a scoped label's scope and value apart
         case full
-        /// the value alone, like "2026.51" for `cDueSlot::2026.51`
+        /// the value alone, like "2026.51" for `slot::2026.51`
         case value
         /// the value alone, smaller, for a list row's line
         case compact

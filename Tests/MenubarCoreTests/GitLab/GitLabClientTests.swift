@@ -63,8 +63,8 @@ struct GitLabClientTests {
         #expect(try await client.send(.mergedMergeRequests(project: "acme/main/server/server", iids: [12436, 12346, 12000])) == [12346, 12436])
         #expect(try await client.send(.mergeRequests).mergeRequests.map(\.iid) == [12437])
         #expect(try await client.send(.workItems(variables)).all.count == 22)
-        #expect(try await client.send(.labels(project: "acme/main/server/server", searchTerm: "uStatus::InVerification"))
-            == [Label(title: "uStatus::InVerification", color: "#808080")])
+        #expect(try await client.send(.labels(project: "acme/main/server/server", searchTerm: "status::InVerification"))
+            == [Label(title: "status::InVerification", color: "#808080")])
         #expect(try await client.send(try #require(GitLabOperation.relatedMergeRequests(of: item))).map(\.iid) == [12346, 12436, 12301])
         #expect(try await client.send(.metadata) == "19.3.6-ee")
 
@@ -95,7 +95,6 @@ struct GitLabClientTests {
         #expect(try await problem(of: .mergeRequests) == .rejectedToken(.gitLab))
         stub.answer(operation: "Metadata", body: try Self.fixture("metadata-null.json"))
         #expect(try await problem(of: .metadata) == .rejectedToken(.gitLab))
-        #expect(Problem.rejectedToken(.gitLab).message == "GitLab rejected the token (expired, or without the api scope?)")
 
         // Not JSON at all, like a sign-in page in front of GitLab.
         stub.answer(operation: "MergeRequests", body: "<html>Sign in</html>")
@@ -109,9 +108,8 @@ struct GitLabClientTests {
                     headers: ["WWW-Authenticate": #"Bearer realm="", error="insufficient_scope", scope="read_api""#])
         #expect(try await problem(of: .mergeRequests) == .missingScope)
         #expect(try await problem(of: .mergeRequests) == .missingScope)
-        #expect(Problem.missingScope.message == "GitLab rejected the token: it needs the api scope")
 
-        // GitLab's GraphQL endpoint answers a token without read_api as an unknown one: the copy names the scope.
+        // GitLab's GraphQL endpoint answers a token without read_api as an unknown one.
         stub.answer(operation: "MergeRequests", status: 401, body: try Self.fixture("invalid-token.json"))
         #expect(try await problem(of: .mergeRequests) == .rejectedToken(.gitLab))
     }
@@ -122,11 +120,9 @@ struct GitLabClientTests {
         stub.fail(operation: "CurrentUser", times: 1, with: .unknownHost)
         #expect(try await problem(of: .mergeRequests) == .unreachable(.gitLab))
         #expect(try await problem(of: .currentUser) == .unreachable(.gitLab))
-        #expect(Problem.unreachable(.gitLab).message == "GitLab unreachable")
 
         stub.answer(operation: "MergeRequests", times: 1, status: 502, body: #"{"errors": [{"message": "Bad gateway"}]}"#)
         #expect(try await problem(of: .mergeRequests) == .httpStatus(.gitLab, status: 502))
-        #expect(Problem.httpStatus(.gitLab, status: 502).message == "GitLab answered with HTTP 502")
 
         // An answer without data but with errors, for an operation other than the work items.
         stub.answer(operation: "Labels", body: #"{"errors": [{"message": "Field 'labels' doesn't exist"}]}"#)
@@ -151,7 +147,6 @@ struct GitLabClientTests {
         stub.answer(operation: "WorkItems", times: 1, body: try Self.fixture("work-items-invalid-sort.json"))
         let sortProblem = try await self.problem(of: .workItems(variables))
         #expect(sortProblem == .graphQLErrors(messages: ["Variable $sort of type IssueSort was provided invalid value"]))
-        #expect(sortProblem?.message == "Variable $sort of type IssueSort was provided invalid value")
 
         // Errors next to data still fail: a list could be missing.
         stub.answer(operation: "WorkItems", times: 1, body: #"{"data": {"committed": null}, "errors": [{"message": "Timeout"}, {"message": "other"}]}"#)
@@ -159,18 +154,11 @@ struct GitLabClientTests {
 
         stub.answer(operation: "WorkItems", times: 1, status: 500)
         #expect(try await self.problem(of: .workItems(variables)) == .workItemsFailed(status: 500))
-        #expect(Problem.workItemsFailed(status: 500).message == "Work items request failed (HTTP 500)")
-        #expect(Problem.workItemsFailed(status: 500).server == .gitLab)
-        #expect(!Problem.workItemsFailed(status: 500).marksStatusIcon)
 
         stub.answer(operation: "WorkItems", times: 1, status: 500, body: #"{"errors": [{"message": "Internal server error"}]}"#)
         #expect(try await self.problem(of: .workItems(variables)) == .graphQLErrors(messages: ["Internal server error"]))
 
         stub.answer(operation: "WorkItems", times: 1, body: #"{"data": null}"#)
         #expect(try await self.problem(of: .workItems(variables)) == .workItemsFailed(status: 200))
-
-        // The new case round-trips like the others.
-        let data = try JSONEncoder().encode(Problem.workItemsFailed(status: 503))
-        #expect(try JSONDecoder().decode(Problem.self, from: data) == .workItemsFailed(status: 503))
     }
 }

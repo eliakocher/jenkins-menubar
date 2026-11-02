@@ -51,6 +51,54 @@ extension FailedTestsFixtures {
         expanded: false)
 }
 
+/// The build info and recent builds of the gallery's builds: made up, with the shapes of Jenkins' answers (PIPE-11).
+extension BuildInfoFixtures {
+    /// the info of the builds of ``Fixtures/pipelineBuilds``, !24 #6 and the watched !14 #3, and their jobs' last builds;
+    /// any other build shows skeletons
+    static func standard(_ f: Fixtures) -> BuildInfoFixtures {
+        func history(_ latest: Int, _ results: [BuildResult?], minutes: [Double]) -> JobHistoryState {
+            .loaded(
+                results.prefix(latest).enumerated().map { index, result in
+                    JobHistoryBuild(
+                        number: latest - index, result: result, duration: result == nil ? nil : minutes[index % minutes.count] * 60,
+                        startedAt: f.minutesAgo(Double(30 + index * 70)))
+                })
+        }
+        let parameters = [
+            BuildParameter(name: "TARGET_BRANCH", value: "release/8.x"),
+            BuildParameter(name: "SKIP_UI_TESTS", value: "false"),
+            BuildParameter(name: "EXTRA_ARGS", value: "-Dsuite=smoke"),
+            BuildParameter(name: "NOTIFY_CHANNEL", value: "#team-builds"),
+        ]
+        func info(_ cause: String, node: String?, usual: Double, commit: String, parameters: [BuildParameter] = []) -> BuildInfoState {
+            .loaded(BuildInfo(parameters: parameters, commit: commit, cause: cause, node: node, estimatedDuration: usual * 60))
+        }
+        return BuildInfoFixtures(
+            infos: [
+                f.runningBuild.id: info(
+                    "Started by user Jane Doe", node: "linux-agent-3", usual: 25, commit: "3fa9c1d7e2b04a58", parameters: parameters),
+                f.failedBuild.id: info(
+                    "Started by GitLab push by Jane Doe", node: "linux-agent-7", usual: 9, commit: "b71e04c9a35d82f0",
+                    parameters: parameters),
+                f.unstableBuild.id: info("Started by user Jane Doe", node: nil, usual: 15, commit: "0c5d77a1be93f642"),
+                f.failedTestsBuild.id: info(
+                    "Started by GitLab push by Alex Kim", node: "linux-agent-2", usual: 12, commit: "e49a1f6b0d7c3258",
+                    parameters: Array(parameters.prefix(2))),
+                f.watchedBuild.id: .failed,
+            ],
+            histories: [
+                f.runningBuild.id: history(
+                    7, [nil, .failure, .success, .success, .unstable, .success, .success, .failure, .success, .success],
+                    minutes: [0, 11, 24, 26, 27, 25, 23, 6, 24, 25]),
+                f.failedBuild.id: history(
+                    3, [.failure, .failure, .success, .success, .aborted], minutes: [12, 11, 9, 8, 1]),
+                f.unstableBuild.id: history(11, [.unstable, .success, .success, .failure], minutes: [15, 14, 16, 5]),
+                f.failedTestsBuild.id: history(6, [.failure, .success, .success], minutes: [14, 12, 11]),
+                f.watchedBuild.id: .failed,
+            ])
+    }
+}
+
 /// The builds of `docs/design/pipelines.md`, States: made up, with full stage lists for the detail.
 extension Fixtures {
     /// Returns stages from names, statuses and minutes.

@@ -234,7 +234,9 @@ struct OpenedItemsTests {
         var text: String
         var route: LinkRoute?
         var refusal: OpenByLink.Refusal?
-        var testDescription: String { text }
+        /// the team's project for a short form without one; without a project it is blank and no project is set up
+        var defaultProject = "group/project"
+        var testDescription: String { defaultProject == "group/project" ? text : "\(text) (no project)" }
     }
 
     nonisolated static let linkCases: [LinkCase] = [
@@ -249,19 +251,16 @@ struct OpenedItemsTests {
         LinkCase(text: "other!5", refusal: .notAnItem),
         LinkCase(text: "group/other!x", refusal: .notAnItem),
         LinkCase(text: "   ", refusal: .empty),
+        // A short form without a project needs one in Team.
+        LinkCase(text: "!8", refusal: .noProject, defaultProject: " "),
     ]
 
     @Test("WIN-06 Open by Link reads GitLab links and short references, and says why it can't", arguments: linkCases)
     func openByLink(_ item: LinkCase) {
-        let projects = [Project(id: .main, team: TeamValues(
+        let projects = item.refusal == .noProject ? [] : [Project(id: .main, team: TeamValues(
             jenkinsJobURL: "https://jenkins.example.com/job/project", gitLabURL: Self.gitLab.absoluteString, gitLabProject: "group/project"))]
-        let result = OpenByLink.parse(item.text, projects: projects, defaultProject: "group/project")
+        let result = OpenByLink.parse(item.text, projects: projects, defaultProject: item.defaultProject)
         #expect(result == (item.route.map { .success($0) } ?? .failure(item.refusal!)))
-    }
-
-    @Test("WIN-06 a short form without a project needs one in Team")
-    func noProject() {
-        #expect(OpenByLink.parse("!8", projects: [], defaultProject: " ") == .failure(.noProject))
     }
 
     // MARK: - Helpers

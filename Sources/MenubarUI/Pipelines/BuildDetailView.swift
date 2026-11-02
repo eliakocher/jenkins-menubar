@@ -56,14 +56,17 @@ public struct BuildDetailView: View {
 }
 
 /// The build detail drawn from plain values, for the window and the gallery: a scrolling page in the merge request
-/// detail's language. On top the header: the state badge, the reference and the checkout, the title, the running
-/// build's bar, and a strip of chips for the duration, the age, the failed tests, the flaky hints and the merge request.
-/// Below, the compact cards (Stages, Failed Tests) in one column, or two when wide, then Claude full width. "Open Build in Jenkins" is in the toolbar;
-/// the other actions and the links are in the ⋯ menu, and Rebuild is next to the chips.
+/// detail's language (Task 7.0). On top the header: the state badge, the reference and the checkout, the title, the running
+/// build's bar, and a strip of chips for the duration, the age and the failed tests. Under it the action row: every
+/// frequent action as a bordered button (Rebuild, Notifications, Hide, the console and test results in Jenkins, Copy Link,
+/// New Bug), wrapping when narrow. Below, the compact cards (Stages, Failed Tests, Build Info, Recent Builds with the flaky
+/// hints, Linked) in one column, or two when wide, then Claude full width. "Open Build in Jenkins" is in the toolbar; only
+/// the rare ones (Rebuild with Changes…, the branch) are in the ⋯ menu.
 struct BuildDetailContent: View {
     let model: BuildDetailModel?
     let actions: PanelActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.buildInfoFixtures) private var fixtures
     @Environment(AppModel.self) private var appModel: AppModel?
 
     /// the card the failed tests chip jumps to
@@ -71,50 +74,50 @@ struct BuildDetailContent: View {
         case tests
     }
 
+    /// what the info and history are loaded for: the build, and whether it runs, since a finished build asks again
+    private struct LoadKey: Hashable {
+        var build: BuildID
+        var isRunning: Bool
+    }
+
     var body: some View {
         if let model {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        header(model) {
-                            withAnimation(.snappy) { proxy.scrollTo(Card.tests, anchor: .top) }
-                        }
-                        if showsStagesCard(model) || model.failedTests != nil || model.canReportBug {
-                            CardColumnsLayout {
-                                if showsStagesCard(model) {
-                                    StagesCard(stages: model.stages, note: model.note)
-                                }
-                                if let build = model.failedTests {
-                                    FailedTestsSection(build: build)
-                                        .id(Card.tests)
-                                }
-                                // Why Did It Fail? and Open in Claude Code, while the Claude features are on (AI-02, AI-05).
-                                if model.canReportBug, case .build(let row) = model.item {
-                                    ExplainBuildSection(build: row.build, page: row.buildPage?.url, inCard: true)
-                                }
-                            }
+            DetailPage(id: model.item.id) { proxy in
+                header(model) {
+                    withAnimation(.snappy) { proxy.scrollTo(Card.tests, anchor: .top) }
+                }
+                CardColumnsLayout {
+                    if showsStagesCard(model) {
+                        StagesCard(stages: model.stages, note: model.note)
+                    }
+                    if let build = model.failedTests {
+                        FailedTestsSection(build: build)
+                            .id(Card.tests)
+                    }
+                    if case .build(let row) = model.item {
+                        BuildInfoCard(build: row.build, started: model.startedText, branch: branchLink(model), actions: actions)
+                        RecentBuildsCard(build: row.build, jobURL: model.jobURL, flakyCheck: model.flakyCheck, actions: actions)
+                        if let mergeRequest = model.mergeRequest {
+                            LinkedItemsCard(
+                                mergeRequest: mergeRequest, workItems: model.workItems, actions: actions.itemLinks)
                         }
                     }
-                    .sectionNavigation(proxy: proxy)
-                    .pageContentWidth()
-                }
-                // Another build starts at the top, with its own disclosures.
-                .id(model.item.id)
-                // GitLab's links from its merge request to the work items, once while they are fresh (MR-12).
-                .task(id: model.mergeRequest?.reference) {
-                    if case .build(let row) = model.item {
-                        await appModel?.loadItemLinks(ofBuild: row.build)
+                    // Why Did It Fail?, while the Claude features are on (AI-02, AI-05).
+                    if model.canExplain, case .build(let row) = model.item {
+                        ExplainBuildSection(build: row.build, page: row.buildPage?.url, inCard: true)
                     }
                 }
             }
-            .toolbar {
-                if let primary = model.primary {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button { actions.open(primary.url) } label: {
-                            Label(primary.title, systemImage: "arrow.up.forward.app")
-                        }
-                        .help(primary.title)
-                    }
+            // The info and the recent builds, once per build shown (and again when it finishes).
+            .task(id: loadKey(model)) {
+                if fixtures == nil, case .build(let row) = model.item {
+                    await appModel?.buildInfo.load(row.build)
+                }
+            }
+            // GitLab's links from its merge request to the work items, once while they are fresh (MR-12).
+            .task(id: model.mergeRequest?.reference) {
+                if case .build(let row) = model.item {
+                    await appModel?.loadItemLinks(ofBuild: row.build)
                 }
             }
         } else {
@@ -123,65 +126,73 @@ struct BuildDetailContent: View {
         }
     }
 
+    private func loadKey(_ model: BuildDetailModel) -> LoadKey? {
+        guard case .build(let row) = model.item else { return nil }
+        return LoadKey(build: row.build.id, isRunning: row.build.isRunning)
+    }
+
     /// Whether the Stages card shows: not for a waiting job, and not for a build whose stages are never loaded, which
     /// would be a card with a note of no use.
     private func showsStagesCard(_ model: BuildDetailModel) -> Bool {
         model.showsStages && !(model.stages.isEmpty && model.note == BuildDetailModel.StageNote.notLoaded)
     }
 
+    /// The branch of a branch job, which the Build Info card names; a merge request's job has the Linked card.
+    private func branchLink(_ model: BuildDetailModel) -> BuildLink? {
+        model.links.first { $0.kind == .branch }
+    }
+
     // MARK: The header
 
     private func header(_ model: BuildDetailModel, jump: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 8) {
-                StatusBadge(text: model.badge, symbol: model.symbol, tint: tint(of: model))
-                if case .build(let row) = model.item {
-                    Text(verbatim: model.reference)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    // The checkout the build lives in; a click shows it in Workspaces (WS-07).
-                    WorkspaceTag(subject: .build(row.build))
-                }
-                if model.notifications.isMuted {
-                    MutedMark()
-                }
-                Spacer(minLength: 8)
-                moreMenu(model)
-            }
-            Text(verbatim: model.title)
-                .font(.title2.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-            progress(model)
-            if case .waiting = model.item, let note = model.note {
-                // A waiting job has no facts: its note stands in their place.
-                Text(verbatim: note)
+        DetailHeader(title: model.title) {
+            StatusBadge(text: model.badge, symbol: model.symbol, tint: tint(of: model))
+            if case .build(let row) = model.item {
+                Text(verbatim: model.reference)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                // The checkout the build lives in; a click shows it in Workspaces (WS-07).
+                WorkspaceTag(subject: .build(row.build))
             }
+            if model.notifications.isMuted {
+                MutedMark()
+            }
+        } menu: {
+            moreMenu(model)
+        } byline: {
+            byline(model)
+        } chips: {
             chips(model, jump: jump)
+        } footer: {
+            // Every frequent action as a button, not behind the ⋯ menu.
+            BuildActionRow(model: model, actions: actions)
                 .padding(.top, 4)
-            if let build = model.flakyCheck {
-                FlakyHintLine(build: build, asChips: true)
-            }
-            rebuildRow(model)
         }
     }
 
     /// The state's color in the tokens of the merge request detail: a running build blue, the quiet states grey.
     private func tint(of model: BuildDetailModel) -> Color {
         guard case .build(let row) = model.item else { return MergeRequestStatus.Color.neutral.swiftUI }
-        switch row.state {
-        case .running: return MergeRequestStatus.Color.blue.swiftUI
-        case .failed: return MergeRequestStatus.Color.red.swiftUI
-        case .unstable: return MergeRequestStatus.Color.orange.swiftUI
-        case .successful: return MergeRequestStatus.Color.green.swiftUI
-        case .aborted, .other: return MergeRequestStatus.Color.neutral.swiftUI
+        return row.state.detailTint
+    }
+
+    /// The running build's bar and its times, a waiting job's note, and the rebuild's line.
+    @ViewBuilder
+    private func byline(_ model: BuildDetailModel) -> some View {
+        progress(model)
+        if case .waiting = model.item, let note = model.note {
+            // A waiting job has no facts: its note stands in their place.
+            Text(verbatim: note)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        if let rebuild = model.rebuild {
+            RebuildLine(rebuild: rebuild, cancel: nil)
+                .font(.callout)
         }
     }
 
-    /// The running build's bar and its times.
     @ViewBuilder
     private func progress(_ model: BuildDetailModel) -> some View {
         if let progress = model.progress {
@@ -207,125 +218,51 @@ struct BuildDetailContent: View {
         }
     }
 
-    /// The duration, the age, the failed tests and the merge request, wrapping when narrow.
+    /// The duration, the age and the failed tests, wrapping when narrow; the merge request and the branch are in the cards.
+    @ViewBuilder
     private func chips(_ model: BuildDetailModel, jump: @escaping () -> Void) -> some View {
         let green = MergeRequestStatus.Color.green.swiftUI
         let red = MergeRequestStatus.Color.red.swiftUI
-        return PillFlowLayout(spacing: 6, lineSpacing: 6) {
-            if let started = model.startedText {
-                if let finished = model.finishedText {
-                    if let duration = model.durationText {
-                        DetailChip(symbol: "timer", text: duration, help: "How long the build ran")
-                    }
-                    DetailChip(symbol: "clock", text: "Finished \(finished)", help: "Started \(started)")
+        if let started = model.startedText {
+            if let finished = model.finishedText {
+                if let duration = model.durationText {
+                    DetailChip(symbol: "timer", text: duration, help: "How long the build ran")
+                }
+                DetailChip(symbol: "clock", text: "Finished \(finished)", help: "Started \(started)")
+            } else {
+                DetailChip(symbol: "play.circle", text: "Started \(started)", help: "When the build started")
+            }
+        }
+        if let tests = model.tests {
+            if tests.failed > 0 {
+                let text = "\(String(tests.failed)) of \(String(tests.total)) failed"
+                if model.failedTests != nil {
+                    DetailChip(symbol: "xmark.octagon.fill", tint: red, text: text, help: "Jump to the Failed Tests card", action: jump)
                 } else {
-                    DetailChip(symbol: "play.circle", text: "Started \(started)", help: "When the build started")
+                    DetailChip(symbol: "xmark.octagon.fill", tint: red, text: text, help: "The tests that failed in this build")
                 }
-            }
-            if let tests = model.tests {
-                if tests.failed > 0 {
-                    let text = "\(String(tests.failed)) of \(String(tests.total)) failed"
-                    if model.failedTests != nil {
-                        DetailChip(symbol: "xmark.octagon.fill", tint: red, text: text, help: "Show the failed tests", action: jump)
-                    } else {
-                        DetailChip(symbol: "xmark.octagon.fill", tint: red, text: text, help: "Failed tests")
-                    }
-                } else if tests.total > 0 {
-                    DetailChip(symbol: "checkmark.circle", tint: green, text: "\(String(tests.total)) tests passed")
-                }
-            }
-            if model.stages.isEmpty, !model.failedStageNames.isEmpty {
-                DetailChip(symbol: "xmark.circle", tint: red, text: "Failed: \(model.failedStageNames.joined(separator: ", "))")
-            }
-            // The merge request of the build and its work items show in the app (MR-12); a branch has no page there and
-            // opens in GitLab.
-            if let mergeRequest = model.mergeRequest {
-                MergeRequestLinkChip(mergeRequest: mergeRequest, actions: actions.itemLinks)
-                WorkItemLinkChips(
-                    items: model.workItems, project: mergeRequest.project, named: false, actions: actions.itemLinks)
-            }
-            ForEach(model.links.filter { $0.kind == .branch || ($0.kind == .mergeRequest && model.mergeRequest == nil) }) { link in
-                DetailChip(
-                    symbol: link.kind == .mergeRequest ? "arrow.triangle.merge" : "arrow.triangle.branch",
-                    text: link.title.replacingOccurrences(of: "Open ", with: "").replacingOccurrences(of: "Show ", with: ""),
-                    help: link.title
-                ) {
-                    if link.kind == .mergeRequest { actions.follow(link.url) } else { actions.open(link.url) }
-                }
+            } else if tests.total > 0 {
+                DetailChip(symbol: "checkmark.circle", tint: green, text: "\(String(tests.total)) tests passed")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// Rebuild, or Cancel Rebuild while the new build is queued, with the rebuild's line next to it (PIPE-09).
-    @ViewBuilder
-    private func rebuildRow(_ model: BuildDetailModel) -> some View {
-        let canRebuild = model.canRebuild
-        if canRebuild || model.rebuild != nil {
-            HStack(alignment: .center, spacing: 10) {
-                if canRebuild, case .build(let row) = model.item {
-                    // While queued, the button cancels, so the line next to it reads "Rebuilding…" alone.
-                    if model.rebuild?.canCancel == true {
-                        Button { actions.cancelRebuild(row.build.jobKey) } label: {
-                            Label("Cancel Rebuild", systemImage: "xmark")
-                        }
-                        .buttonStyle(.bordered)
-                    } else {
-                        Button { actions.rebuildBuild(row.build.id) } label: {
-                            Label("Rebuild", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(model.rebuild?.isUnderWay == true)
-                    }
-                }
-                if let rebuild = model.rebuild {
-                    RebuildLine(rebuild: rebuild, cancel: nil)
-                        .font(.callout)
-                }
-            }
-            .padding(.top, 2)
+        if model.stages.isEmpty, !model.failedStageNames.isEmpty {
+            DetailChip(symbol: "xmark.circle", tint: red, text: "Failed: \(model.failedStageNames.joined(separator: ", "))")
         }
     }
 
-    /// The other actions and the links the header doesn't show as chips.
+    /// The rare actions: Jenkins's own Build with Parameters page, the branch, and the build's page, which the toolbar
+    /// has too. The frequent ones are in the action row.
     @ViewBuilder
     private func moreMenu(_ model: BuildDetailModel) -> some View {
-        // Notifications for This Job is always there, so the menu is too (ALERT-09).
-        Menu {
-            if let primary = model.primary {
-                Button(primary.title) { actions.open(primary.url) }
-            }
-            ForEach(model.links) { link in
-                Button(link.title) { if link.kind == .mergeRequest { actions.follow(link.url) } else { actions.open(link.url) } }
-            }
+        if let url = model.rebuildWithChanges {
             // Jenkins's own page, where the parameters change before the build (PIPE-09).
-            if let url = model.rebuildWithChanges {
-                Button("Rebuild with Changes…") { actions.open(url) }
-            }
-            if let primary = model.primary, case .build = model.item {
-                Divider()
-                Button("Copy Link") { actions.copy(primary.url) }
-            }
-            Divider()
-            JobNotificationsMenu(notifications: model.notifications) {
-                actions.setJobNotifications(model.item.id, $0)
-            }
-            if model.canReportBug, let newWorkItem = actions.newWorkItem, case .build(let row) = model.item {
-                Button("New Bug from This Build") { newWorkItem(.bugFromBuild(row.build, row.buildPage?.url)) }
-            }
-            if model.canHide, case .build(let row) = model.item {
-                Button("Hide Until the Next Build") { actions.hide(row.build) }
-            }
-            if model.canStopWatching {
-                Button("Stop Watching") { actions.stopWatching(model.item.id) }
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .imageScale(.large)
+            Button("Rebuild with Changes…") { actions.open(url) }
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("More")
+        ForEach(model.links.filter { $0.kind == .branch }) { link in
+            Button(link.title) { actions.open(link.url) }
+        }
+        if let primary = model.primary {
+            Button(primary.title) { actions.open(primary.url) }
+        }
     }
 }

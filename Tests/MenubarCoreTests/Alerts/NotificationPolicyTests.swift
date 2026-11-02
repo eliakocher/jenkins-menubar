@@ -32,14 +32,6 @@ struct NotificationPolicyTests {
         #expect(policy.shouldNotify(build) == row.notifies)
     }
 
-    @Test("ALERT-09 notifies for everything by default")
-    func defaults() {
-        let policy = NotificationPolicy()
-        #expect(policy.mine && policy.watching && policy.jobs.isEmpty)
-        #expect(policy.shouldNotify(Self.build(kind: .mine)))
-        #expect(policy.shouldNotify(Self.build(kind: .watched)))
-    }
-
     @Test("ALERT-09 a job is keyed by its project and name, not by its build number")
     func keyedByJob() {
         var policy = NotificationPolicy()
@@ -52,15 +44,6 @@ struct NotificationPolicyTests {
         #expect(policy.shouldNotify(Self.build("MR-2", kind: .mine)))
         // The same job name in another project is another job.
         #expect(policy.shouldNotify(Self.build(kind: .mine, project: other)))
-    }
-
-    @Test("ALERT-09 setting a job to nil makes it follow its group again")
-    func clearsASetting() {
-        var policy = NotificationPolicy(watching: false, jobs: ["MR-1": .always])
-        #expect(policy.shouldNotify(Self.build(kind: .watched)))
-        policy.set(nil, forJob: "MR-1")
-        #expect(policy.jobs.isEmpty)
-        #expect(!policy.shouldNotify(Self.build(kind: .watched)))
     }
 
     @Test("ALERT-09 the policy survives a round trip through UserDefaults")

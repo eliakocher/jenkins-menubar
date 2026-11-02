@@ -9,7 +9,7 @@ import Foundation
 /// changed (`mergeRequestInteraction.updatedAt`, the review) and when the merge request last got new code (its newest
 /// diff version, and its commits' dates). Without the review's time, nothing is compared and ``Freshness/unknown``
 /// stands.
-public struct MergeRequestReviews: Hashable, Sendable {
+public struct MergeRequestReviews: Codable, Hashable, Sendable {
     public var reviewers: [Reviewer]
     /// when the newest diff version was made, which is the last push; `nil` when GitLab sent none
     public var lastPushedAt: Date?
@@ -23,7 +23,7 @@ public struct MergeRequestReviews: Hashable, Sendable {
     }
 
     /// A reviewer, with the review GitLab knows of.
-    public struct Reviewer: Hashable, Sendable, Identifiable {
+    public struct Reviewer: Codable, Hashable, Sendable, Identifiable {
         /// GitLab's global id of the user, like `gid://gitlab/User/42`, which the re-request names
         public var id: String
         public var username: String
@@ -446,18 +446,35 @@ extension GitLabClient {
     /// - Parameter source: the merge request
     /// - Returns: the reviews; `nil` when GitLab answered neither
     func reviews(of source: DescriptionSource) async -> MergeRequestReviews? {
+        await reviews(of: source, startingAt: .full)?.reviews
+    }
+
+    /// Asks for the reviews of a merge request at a level, and again for the reviewers alone when GitLab doesn't know
+    /// the newer fields. The caller keeps the level that answered, so a GitLab without the newer fields costs one
+    /// request per merge request, not two (Task 7.06: every selection asked twice).
+    ///
+    /// - Parameters:
+    ///   - source: the merge request
+    ///   - level: the level to ask first; ``MergeRequestReviewsLevel/basic`` asks nothing else
+    /// - Returns: the reviews and the level that answered; `nil` when GitLab answered neither
+    func reviews(of source: DescriptionSource, startingAt level: MergeRequestReviewsLevel)
+        async -> (reviews: MergeRequestReviews, level: MergeRequestReviewsLevel)?
+    {
         guard let full = GitLabOperation<MergeRequestReviews>.reviews(of: source),
             let basic = GitLabOperation<MergeRequestReviews>.reviews(of: source, level: .basic)
         else {
             return nil
         }
+        if level == .basic {
+            return (try? await send(basic)).map { ($0, .basic) }
+        }
         do {
-            return try await send(full)
+            return (try await send(full), .full)
         } catch let error as GitLabError {
             guard case .graphQLErrors = error.problem else {
                 return nil
             }
-            return try? await send(basic)
+            return (try? await send(basic)).map { ($0, .basic) }
         } catch {
             return nil
         }

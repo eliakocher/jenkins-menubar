@@ -7,26 +7,35 @@ public struct SlotItemsPage: Hashable, Sendable {
     public var count: Int
     /// the cursor of the next page; `nil` on the last one
     public var nextCursor: String?
+    /// the weight of every issue under each epic of the page, open and closed, in any slot, by the epic's reference;
+    /// empty when not asked for (SLOT-11)
+    public var epicWeights: [String: Int]
 
-    public init(items: [WorkItem], count: Int, nextCursor: String? = nil) {
+    public init(items: [WorkItem], count: Int, nextCursor: String? = nil, epicWeights: [String: Int] = [:]) {
         self.items = items
         self.count = count
         self.nextCursor = nextCursor
+        self.epicWeights = epicWeights
     }
 }
 
 extension GitLabOperation where Value == SlotItemsPage {
     /// One page of the issues of a group and its subgroups that carry any of the labels, open and closed: a slot's
-    /// committed ones (the slot label) and its planned ones (the scheduled slot label) (SLOT-06). Each comes with its
-    /// weight, assignees, epic, blocked flag and due date. A group GitLab doesn't know is an error.
+    /// issues, by its scheduled slot label (SLOT-06). Each comes with its weight, assignees, epic, blocked flag and due
+    /// date, and the epic with the weight under it. A group GitLab doesn't know is an error.
     ///
     /// - Parameters:
     ///   - group: the group's full path
     ///   - labels: the labels, any of which an issue has
     ///   - after: the cursor of the page before; `nil` for the first page
+    ///   - epicWeights: whether to ask for the weight under each epic (`descendantWeightSum`, taken from GitLab's
+    ///     docs); a GitLab that refuses it is asked again without
     /// - Returns: the operation
-    public static func slotItems(group: String, labels: [String], after: String? = nil) -> GitLabOperation {
-        GitLabOperation(
+    public static func slotItems(
+        group: String, labels: [String], after: String? = nil, epicWeights: Bool = true
+    ) -> GitLabOperation {
+        let weights = epicWeights ? " descendantWeightSum { openedIssues closedIssues }" : ""
+        return GitLabOperation(
             name: "SlotItems",
             query: """
                 query SlotItems($group: ID!, $labels: [String!], $after: String) {
@@ -46,7 +55,7 @@ extension GitLabOperation where Value == SlotItemsPage {
                         blocked
                         labels(first: 40) { nodes { title color } }
                         assignees(first: 10) { nodes { username name } }
-                        epic { reference(full: true) title webUrl state labels(first: 30) { nodes { title color } } }
+                        epic { reference(full: true) title webUrl state labels(first: 30) { nodes { title color } }\(weights) }
                       }
                     }
                   }
@@ -64,9 +73,15 @@ extension GitLabOperation where Value == SlotItemsPage {
                 guard let issues = answer.data?.group?.issues else {
                     throw GitLabError(.graphQLErrors(messages: ["GitLab has no group \(group)"]))
                 }
+                var weights: [String: Int] = [:]
+                for epic in issues.nodes.nodes.compactMap(\.epic) {
+                    if let sum = epic.descendantWeightSum {
+                        weights[epic.reference] = (sum.openedIssues ?? 0) + (sum.closedIssues ?? 0)
+                    }
+                }
                 return SlotItemsPage(
                     items: issues.nodes.nodes.map(\.workItem), count: issues.count,
-                    nextCursor: issues.pageInfo.hasNextPage ? issues.pageInfo.endCursor : nil)
+                    nextCursor: issues.pageInfo.hasNextPage ? issues.pageInfo.endCursor : nil, epicWeights: weights)
             })
     }
 }
@@ -111,6 +126,12 @@ private struct SlotItemsShape: Decodable {
         var webUrl: URL
         var state: String?
         var labels: Nodes<LabelNode>?
+        var descendantWeightSum: Weights?
+    }
+
+    struct Weights: Decodable {
+        var openedIssues: Int?
+        var closedIssues: Int?
     }
 
     struct Node: Decodable {

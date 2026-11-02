@@ -9,12 +9,33 @@ public struct LabelMemory: Codable, Hashable, Sendable {
     public var colors: [String: String]
     /// the filter labels GitLab didn't have when last asked (renamed or removed)
     public var missing: [String]
+    /// when GitLab was last asked whether each filter label exists, by title; a label asked within
+    /// ``filterCheckReusedFor`` isn't asked again (Task 7.06: it was asked at every load, ~90 requests an hour)
+    public var checkedAt: [String: Date]
 
-    public init(lastSeen: [String: Date] = [:], colors: [String: String] = [:], missing: [String] = []) {
+    public init(lastSeen: [String: Date] = [:], colors: [String: String] = [:], missing: [String] = [], checkedAt: [String: Date] = [:]) {
         self.lastSeen = lastSeen
         self.colors = colors
         self.missing = missing
+        self.checkedAt = checkedAt
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case lastSeen, colors, missing, checkedAt
+    }
+
+    /// Reads a memory, also one saved before ``checkedAt`` existed.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lastSeen = try container.decode([String: Date].self, forKey: .lastSeen)
+        colors = try container.decode([String: String].self, forKey: .colors)
+        missing = try container.decode([String].self, forKey: .missing)
+        checkedAt = try container.decodeIfPresent([String: Date].self, forKey: .checkedAt) ?? [:]
+    }
+
+    /// how long GitLab's answer about a filter label is reused: labels are renamed or removed rarely, and a gone
+    /// label's warning a few hours late costs nothing (Task 7.06)
+    public static let filterCheckReusedFor: TimeInterval = 6 * 3600
 
     /// how long a label no work item had stays offered
     public static let keptFor: TimeInterval = 30 * 86400
@@ -109,7 +130,7 @@ extension Label {
         return 0.299 * red + 0.587 * green + 0.114 * blue > 0.6 ? "#000000" : "#FFFFFF"
     }
 
-    /// Returns a scoped label's scope and value, split at its last `::`, like `uStatus` and `Todo`.
+    /// Returns a scoped label's scope and value, split at its last `::`, like `status` and `Todo`.
     ///
     /// - Parameter title: the label's title
     /// - Returns: the scope and the value, or `nil` for a label without `::`
@@ -120,7 +141,7 @@ extension Label {
 
     /// The labels of one scope in the label picker, or the labels without one (WI-06).
     public struct Group: Hashable, Sendable, Identifiable {
-        /// the scope, like `uStatus`; `nil` for "Other Labels"
+        /// the scope, like `status`; `nil` for "Other Labels"
         public var scope: String?
         /// the label titles, in the order given
         public var labels: [String]

@@ -36,14 +36,14 @@ extension JenkinsClient {
         }
     }
 
-    private static func encodeTree(_ tree: String) -> String {
+    static func encodeTree(_ tree: String) -> String {
         tree.replacingOccurrences(of: "[", with: "%5B").replacingOccurrences(of: "]", with: "%5D")
             .replacingOccurrences(of: "{", with: "%7B").replacingOccurrences(of: "}", with: "%7D")
     }
 }
 
 /// A value that reads as `nil` when it has another shape, so one odd action doesn't fail the whole list.
-private struct Lenient<Value: Decodable>: Decodable {
+struct Lenient<Value: Decodable>: Decodable {
     var value: Value?
 
     init(from decoder: any Decoder) throws {
@@ -51,7 +51,7 @@ private struct Lenient<Value: Decodable>: Decodable {
     }
 }
 
-private struct HistoryAnswer: Decodable {
+struct HistoryAnswer: Decodable {
     struct Revision: Decodable {
         var SHA1: String?
     }

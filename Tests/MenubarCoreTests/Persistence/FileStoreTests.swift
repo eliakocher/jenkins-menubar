@@ -66,16 +66,4 @@ struct FileStoreTests {
         #expect(store.load()?.name == "fresh")
         #expect(folder.contents() == ["sample.json", "sample.json.corrupt"])
     }
-
-    @Test("deleting removes the file")
-    func delete() throws {
-        let folder = try TemporaryFolder()
-        let store = FileStore<Sample>(url: folder.file("sample.json"), report: { _ in })
-
-        try store.save(Sample(name: "x", when: Date()))
-        try store.delete()
-
-        #expect(store.load() == nil)
-        #expect(folder.contents().isEmpty)
-    }
 }

@@ -230,7 +230,7 @@ public struct SystemProgramLauncher: ProgramLauncher {
         _ program: URL, arguments: [String], directory: URL?, path: [String]?, wait: Duration
     ) async throws -> LaunchOutcome {
         let log = FileManager.default.temporaryDirectory
-            .appending(path: "menubar-monitor-launch-\(UUID().uuidString).log", directoryHint: .notDirectory)
+            .appending(path: "megamonitor-launch-\(UUID().uuidString).log", directoryHint: .notDirectory)
         FileManager.default.createFile(atPath: log.path(percentEncoded: false), contents: nil)
         defer { try? FileManager.default.removeItem(at: log) }
         let output = try FileHandle(forWritingTo: log)

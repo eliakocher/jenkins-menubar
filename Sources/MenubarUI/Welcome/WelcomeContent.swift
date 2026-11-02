@@ -107,8 +107,8 @@ struct WelcomeContentActions {
     var openLoginItemsSettings: @MainActor () -> Void = {}
 }
 
-/// The welcome flow's window content: the page's heading and form above a bottom bar with the step and the buttons
-/// (`docs/design/welcome.md`). It draws only what it is given.
+/// The welcome flow's window content: a grouped form that starts with the step's header, as the Settings panes do,
+/// above a bottom bar with the step and the buttons (`docs/design/welcome.md`). It draws only what it is given.
 struct WelcomeContent: View {
     /// the window's content size, fixed
     nonisolated static let size = CGSize(width: 600, height: 560)
@@ -118,14 +118,13 @@ struct WelcomeContent: View {
     var actions = WelcomeContentActions()
 
     var body: some View {
-        // The heading stays above the form: in an empty section's header it changed the next header's style.
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Form {
-                page
-            }
-            .formStyle(.grouped)
+        Form {
+            WelcomeStepHeader(
+                symbol: headerSymbol, tint: headerTint, title: data.page == .done ? data.summary.heading : data.page.heading,
+                summary: intro)
+            page
         }
+        .formStyle(.grouped)
         .safeAreaBar(edge: .bottom) {
             bottomBar
         }
@@ -134,43 +133,26 @@ struct WelcomeContent: View {
 
     // MARK: - Header and bottom bar
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if data.page == .welcome {
-                Image(nsImage: NSApplication.shared.applicationIconImage)
-                    .resizable()
-                    .frame(width: 64, height: 64)
-            }
-            Text(data.page == .done ? data.summary.heading : data.page.heading)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.primary)
-            if let intro {
-                Text(intro)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-            if data.page == .welcome, data.importSummary.isFresh {
-                Text(WelcomeImportSummary.freshText)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-            }
-            if data.page == .team {
-                teamFileImport
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // On the section headers' text below, which the grouped form insets by its margin and the rows' own.
-        .padding(.horizontal, Self.headerInset)
-        .padding(.top, 20)
+    /// the line under the heading; page 6 says where to find the app
+    private var intro: String? {
+        data.page == .done ? data.summary.whereToFind : data.page.intro
     }
 
-    /// the grouped form's leading inset of its section headers' text
-    private static let headerInset: CGFloat = 30
+    private var headerSymbol: String {
+        data.page == .done && data.summary.heading != WelcomePage.done.heading
+            ? "exclamationmark.circle.fill" : data.page.symbol
+    }
 
-    /// the paragraph under the heading; page 6 says where to find the app
-    private var intro: String? {
-        data.page == .done ? data.summary.whereToFind : data.page.intro(notifications: data.notifications)
+    /// the tint of the matching Settings pane, as its sidebar icon has it
+    private var headerTint: Color {
+        switch data.page {
+        case .welcome: .blue
+        case .team: SettingsPane.projects.tint
+        case .accounts: SettingsPane.accounts.tint
+        case .notifications: SettingsPane.notifications.tint
+        case .menuBarAndLogin: SettingsPane.general.tint
+        case .done: data.summary.heading == WelcomePage.done.heading ? .green : .orange
+        }
     }
 
     private var bottomBar: some View {
@@ -182,6 +164,7 @@ struct WelcomeContent: View {
                 Button("Back", action: actions.back)
             }
             Button(data.page.buttonTitle, action: actions.next)
+                .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!data.canContinue)
         }
@@ -206,18 +189,15 @@ struct WelcomeContent: View {
 
     // MARK: Team (TEAM-01 to TEAM-03)
 
-    private var teamFileImport: some View {
-        WelcomeTeamFileImport(
-            result: data.team.fileResult ?? (data.team.importedFromOldTool ? .ok("Imported from jenkins-menubar") : nil),
-            importTeamFile: actions.importTeamFile)
-    }
-
-    /// Settings → Team's fields; Return in a field presses Continue, which saves first (`welcome.md`, Keyboard), and
+    /// Settings → Projects' rows; Return in a field presses Continue, which saves first (`welcome.md`, Keyboard), and
     /// while Continue is disabled shows why instead of moving on.
     @ViewBuilder private var teamSections: some View {
         WelcomeNoteRows(data.team.notes)
         SettingsProblemRows(data.team.problems)
-        TeamValueFields(
+        WelcomeTeamFileImport(
+            result: data.team.fileResult ?? (data.team.importedFromOldTool ? .ok("Imported from jenkins-menubar") : nil),
+            importTeamFile: actions.importTeamFile)
+        WelcomeTeamFields(
             values: $input.team, issues: data.team.issues,
             onSubmit: {
                 if data.canContinue {
@@ -226,7 +206,7 @@ struct WelcomeContent: View {
                     actions.teamNotReady()
                 }
             },
-            onLeave: { actions.leftTeamField($0) }, showsConventions: false, initialFocus: .jenkinsJobURL)
+            onLeave: { actions.leftTeamField($0) })
     }
 
     // MARK: Accounts (ACC-01 to ACC-06)
@@ -235,17 +215,29 @@ struct WelcomeContent: View {
     /// on top, as Settings → Accounts shows the stores' problems: its own section is below the fold.
     @ViewBuilder private var accountsSections: some View {
         SettingsProblemRows(data.accounts.problems)
-        TokenSection(
-            .jenkins, source: data.accounts.sources[.jenkins] ?? .missing(nil), user: $input.jenkinsUser,
+        WelcomeTokenSection(
+            .jenkins, source: data.accounts.sources[.jenkins] ?? .missing(nil),
+            result: data.accounts.results[.jenkins], isChecking: data.accounts.isChecking, user: $input.jenkinsUser,
             token: $input.jenkinsToken, link: data.accounts.links[.jenkins], error: data.accounts.errors[.jenkins],
             save: { actions.saveToken(.jenkins) }, remove: { actions.removeToken(.jenkins) },
             initialFocus: input.jenkinsUser.isEmpty ? .user : .token)
-        TokenSection(
-            .gitlab, source: data.accounts.sources[.gitlab] ?? .missing(nil), token: $input.gitLabToken,
+        WelcomeTokenSection(
+            .gitlab, source: data.accounts.sources[.gitlab] ?? .missing(nil),
+            result: data.accounts.results[.gitlab], isChecking: data.accounts.isChecking, token: $input.gitLabToken,
             link: data.accounts.links[.gitlab], error: data.accounts.errors[.gitlab],
             save: { actions.saveToken(.gitlab) }, remove: { actions.removeToken(.gitlab) })
-        AccountCheckSection(
-            isChecking: data.accounts.isChecking, results: data.accounts.results, check: { actions.checkAccounts() })
+        Section {
+            LabeledContent {
+                if data.accounts.isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button("Check Now", action: actions.checkAccounts)
+                }
+            } label: {
+                SettingsRowLabel("Check accounts", "Saving a token checks too")
+            }
+        }
     }
 
     // MARK: Notifications (APP-04)
@@ -263,8 +255,10 @@ struct WelcomeContent: View {
                 }
             }
         case .notAsked, nil:
-            // Only the intro: the page's one button asks.
-            EmptyView()
+            // The page's one button asks; the line says so before (HIG Privacy).
+            Section {
+                StatusLine(.note, "When you continue, macOS asks whether MegaMonitor may show notifications")
+            }
         }
     }
 
@@ -272,15 +266,14 @@ struct WelcomeContent: View {
 
     private var menuBarAndLoginSections: some View {
         Section {
-            Toggle("Show in menu bar", isOn: $input.showInMenuBar)
-                .settingsSwitch()
+            Toggle(isOn: $input.showInMenuBar) {
+                SettingsRowLabel("Show in menu bar", "Open MegaMonitor again to reach its window while it is hidden")
+            }
+            .settingsSwitch()
             OpenAtLoginRows(
                 isOn: data.login.status == .notFound ? .constant(false) : $input.openAtLogin,
-                status: data.login.status, error: data.login.error, openSystemSettings: actions.openLoginItemsSettings)
-        } footer: {
-            SettingsFooter(
-                "Open at login starts MegaMonitor when you log in. Checks and alerts go on while the menu bar icon "
-                    + "is hidden; open MegaMonitor again to get to its window.")
+                status: data.login.status, error: data.login.error, openSystemSettings: actions.openLoginItemsSettings,
+                caption: "Starts MegaMonitor when you log in")
         }
     }
 
@@ -288,7 +281,7 @@ struct WelcomeContent: View {
 
     @ViewBuilder private var doneSections: some View {
         if !data.summary.stillMissing.isEmpty {
-            Section("Still Missing") {
+            Section {
                 ForEach(data.summary.stillMissing) { line in
                     if let page = line.opens {
                         StatusLine(line.kind, line.text) {
@@ -300,13 +293,17 @@ struct WelcomeContent: View {
                         StatusLine(line.kind, line.text)
                     }
                 }
+            } header: {
+                SettingsSectionHeader("Still Missing")
             }
         }
         if !data.summary.didNotMove.isEmpty {
-            Section("Didn't Move from jenkins-menubar") {
+            Section {
                 ForEach(data.summary.didNotMove, id: \.self) { text in
                     StatusLine(.note, text)
                 }
+            } header: {
+                SettingsSectionHeader("Didn't Move from jenkins-menubar")
             }
         }
         if let eggLine = data.summary.eggLine {
@@ -322,6 +319,42 @@ struct WelcomeContent: View {
         switch page {
         case .notifications: actions.openNotificationSettings()
         case .loginItems: actions.openLoginItemsSettings()
+        }
+    }
+}
+
+/// The top of a step, as ``SettingsPaneHeader`` starts a pane: a large white symbol in a colored rounded square, the
+/// step's title, and what it is for.
+private struct WelcomeStepHeader: View {
+    let symbol: String
+    let tint: Color
+    let title: String
+    let summary: String?
+
+    var body: some View {
+        Section {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 44, height: 44)
+                    .background(tint.gradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .shadow(color: tint.opacity(0.35), radius: 4, y: 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: title)
+                        .font(.title3.weight(.semibold))
+                    if let summary {
+                        Text(verbatim: summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
         }
     }
 }
@@ -353,6 +386,216 @@ private struct WelcomeNoteRows: View {
     }
 }
 
+/// The team values as Settings → Projects shows them: the Jenkins job stacked over its full-width field, the GitLab URL
+/// and project beside theirs, all marked Shared. Return presses Continue; a field that lost the focus shows its issue
+/// (TEAM-01).
+private struct WelcomeTeamFields: View {
+    @Binding var values: TeamValues
+    let issues: [TeamValues.Key: String]
+    let onSubmit: () -> Void
+    let onLeave: (TeamValues.Key) -> Void
+    @FocusState private var focused: TeamValues.Key?
+
+    var body: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                SettingsRowLabel("Jenkins job", "The multibranch job, as the browser shows it")
+                field(.jenkinsJobURL, "Jenkins job")
+                    .frame(maxWidth: .infinity)
+            }
+            issue(.jenkinsJobURL)
+            LabeledContent {
+                field(.gitLabURL, "GitLab URL")
+                    .frame(width: 260)
+            } label: {
+                SettingsRowLabel("GitLab URL")
+            }
+            issue(.gitLabURL)
+            LabeledContent {
+                field(.gitLabProject, "GitLab project")
+                    .frame(width: 260)
+            } label: {
+                SettingsRowLabel("GitLab project")
+            }
+            issue(.gitLabProject)
+        } header: {
+            // The focus's watchers hang on a single view that always shows: a modifier on a section may go to each of
+            // its rows (inferred).
+            SettingsSectionHeader("Team Values", shared: true)
+                .onChange(of: focused) { old, _ in
+                    if let old {
+                        onLeave(old)
+                    }
+                }
+                .task {
+                    focused = .jenkinsJobURL
+                }
+        }
+    }
+
+    private func field(_ key: TeamValues.Key, _ title: String) -> some View {
+        TextField(
+            title, text: Binding(get: { values[key] }, set: { values[key] = $0 }),
+            prompt: Text(verbatim: TeamValueFields.prompt(of: key))
+        )
+        .labelsHidden()
+        .textFieldStyle(.roundedBorder)
+        .multilineTextAlignment(.leading)
+        .focused($focused, equals: key)
+        .onSubmit(onSubmit)
+        .help(values[key])
+    }
+
+    @ViewBuilder private func issue(_ key: TeamValues.Key) -> some View {
+        if let issue = issues[key] {
+            StatusLine(.problem, issue)
+        }
+    }
+}
+
+/// One token's section of Settings → Accounts, in its new look: who is signed in, the fields of a new token, the link
+/// that creates one, Remove and Save Token, and why a token couldn't be saved (ACC-02, ACC-03, ACC-05, ACC-06).
+private struct WelcomeTokenSection: View {
+    enum Field: Hashable {
+        case user
+        case token
+    }
+
+    private let account: TokenAccount
+    private let source: TokenSource
+    private let result: AccountStatus?
+    private let isChecking: Bool
+    private let user: Binding<String>?
+    private let token: Binding<String>
+    private let link: TokenLink?
+    private let error: String?
+    private let save: () -> Void
+    private let remove: () -> Void
+    private let initialFocus: Field?
+    @FocusState private var focused: Field?
+
+    init(
+        _ account: TokenAccount, source: TokenSource, result: AccountStatus?, isChecking: Bool,
+        user: Binding<String>? = nil, token: Binding<String>, link: TokenLink?, error: String?,
+        save: @escaping () -> Void, remove: @escaping () -> Void, initialFocus: Field? = nil
+    ) {
+        self.account = account
+        self.source = source
+        self.result = result
+        self.isChecking = isChecking
+        self.user = user
+        self.token = token
+        self.link = link
+        self.error = error
+        self.save = save
+        self.remove = remove
+        self.initialFocus = initialFocus
+    }
+
+    var body: some View {
+        Section {
+            LabeledContent {
+                if isChecking {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if let result {
+                    StatusLine(AccountCheckSection.kind(of: result), result.message)
+                } else {
+                    StatusLine(source.isStored ? .ok : .note, source.isStored ? "Token saved" : "No token yet")
+                }
+            } label: {
+                SettingsRowLabel("Account", whereStored)
+            }
+            if account == .jenkins, let user {
+                LabeledContent {
+                    TextField("User", text: user, prompt: Text("Your Jenkins user"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 260)
+                        .focused($focused, equals: .user)
+                        .onSubmit(submit)
+                } label: {
+                    SettingsRowLabel("User")
+                }
+                LabeledContent {
+                    SecureField("New API token", text: token, prompt: Text("Paste a new API token"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 260)
+                        .focused($focused, equals: .token)
+                        .onSubmit(submit)
+                } label: {
+                    SettingsRowLabel("New API token", "From your Jenkins user page")
+                }
+            } else {
+                LabeledContent {
+                    SecureField("New token", text: token, prompt: Text("Paste a new token"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.leading)
+                        .frame(width: 260)
+                        .focused($focused, equals: .token)
+                        .onSubmit(submit)
+                } label: {
+                    SettingsRowLabel("New token", "Needs the api scope")
+                }
+            }
+            HStack {
+                if let link {
+                    Link(destination: link.url) {
+                        Label(link.title, systemImage: "arrow.up.forward.square")
+                    }
+                }
+                Spacer()
+                if source.isStored {
+                    Button("Remove Token", role: .destructive, action: remove)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.red)
+                }
+                Button("Save Token", action: save)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSave)
+            }
+            if let error {
+                StatusLine(.problem, error)
+            }
+        } header: {
+            // On the header, a single view: a modifier on the section may go to each of its rows (inferred).
+            SettingsSectionHeader(account == .jenkins ? "Jenkins" : "GitLab")
+                .task {
+                    if let initialFocus {
+                        focused = initialFocus
+                    }
+                }
+        }
+    }
+
+    /// where the stored token came from, or nil without one
+    private var whereStored: String? {
+        switch source {
+        case .keychain(nil): "Saved in your keychain"
+        case .keychain(.oldKeychain?): "Imported from jenkins-menubar into your keychain"
+        case .keychain(let from?): "Imported from \(from.displayName) into your keychain"
+        case .missing(.zshrcComputed): source.text
+        case .missing: nil
+        }
+    }
+
+    private var canSave: Bool {
+        account == .jenkins
+            ? SettingsStore.canSaveJenkinsToken(user: user?.wrappedValue ?? "", apiToken: token.wrappedValue)
+            : SettingsStore.canSaveGitLabToken(token.wrappedValue)
+    }
+
+    private func submit() {
+        if canSave {
+            save()
+        }
+    }
+}
+
 /// Page 1's import from jenkins-menubar: what was imported, and "Choose Folder…" when the old folder wasn't found
 /// (IMP-01).
 private struct WelcomeImportSections: View {
@@ -364,10 +607,12 @@ private struct WelcomeImportSections: View {
 
     var body: some View {
         if !summary.imported.isEmpty {
-            Section("Imported from jenkins-menubar") {
+            Section {
                 ForEach(summary.imported, id: \.self) { line in
                     StatusLine(.ok, line)
                 }
+            } header: {
+                SettingsSectionHeader("Imported from jenkins-menubar")
             }
         }
         if summary.folderMissing {
@@ -387,6 +632,11 @@ private struct WelcomeImportSections: View {
                 }
             }
         }
+        if summary.isFresh {
+            Section {
+                StatusLine(.note, WelcomeImportSummary.freshText)
+            }
+        }
     }
 }
 
@@ -397,15 +647,18 @@ private struct WelcomeTeamFileImport: View {
     @ViewState private var importing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button("Import Team File…") {
-                importing = true
+        Section {
+            LabeledContent {
+                Button("Import Team File…") {
+                    importing = true
+                }
+                .fileImporter(isPresented: $importing, allowedContentTypes: [.json], onCompletion: importTeamFile)
+            } label: {
+                SettingsRowLabel("Team file", "Ask a colleague for it, or fill in the values below")
             }
-            .fileImporter(isPresented: $importing, allowedContentTypes: [.json], onCompletion: importTeamFile)
             if let result {
                 StatusLine(result.kind, result.text)
             }
         }
-        .padding(.top, 4)
     }
 }

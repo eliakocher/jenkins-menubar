@@ -1,0 +1,20 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+  "number": 12,
+  "estimatedDuration": -1,
+  "actions": [
+    {
+      "_class": "hudson.model.CauseAction",
+      "causes": [
+        {
+          "_class": "com.dabsquared.gitlabjenkins.cause.GitLabWebHookCause",
+          "shortDescription": "Started by GitLab push by Jane Doe"
+        },
+        {
+          "_class": "hudson.model.Cause$UserIdCause",
+          "shortDescription": "Started by user John Roe"
+        }
+      ]
+    }
+  ]
+}

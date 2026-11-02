@@ -13,23 +13,23 @@
           "labels": {
             "nodes": [
               {
-                "title": "cDueSlot::2026.51",
+                "title": "slot::2026.51",
                 "color": "#9400d3"
               },
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cLevelOfCommitment::Committed",
+                "title": "commitment::Committed",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cScheduledSlot::2026.51",
+                "title": "slot-scheduled::2026.51",
                 "color": "#9400d3"
               },
               {
@@ -37,11 +37,11 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
-                "title": "uStatus::MaintainerTriage",
+                "title": "status::MaintainerTriage",
                 "color": "#808080"
               }
             ]
@@ -55,27 +55,27 @@
           "labels": {
             "nodes": [
               {
-                "title": "cDueSlot::2026.51",
+                "title": "slot::2026.51",
                 "color": "#9400d3"
               },
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cLevelOfCommitment::Committed",
+                "title": "commitment::Committed",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
-                "title": "cScheduledSlot::2026.51",
+                "title": "slot-scheduled::2026.51",
                 "color": "#9400d3"
               },
               {
@@ -83,19 +83,19 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
-                "title": "uPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -114,7 +114,7 @@
           "labels": {
             "nodes": [
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -134,7 +134,7 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -146,7 +146,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               },
               {
@@ -164,11 +164,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -188,7 +188,7 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
@@ -200,7 +200,7 @@
                 "color": "#808080"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -214,11 +214,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -226,11 +226,11 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Task",
+                "title": "type::Task",
                 "color": "#ed9121"
               },
               {
-                "title": "uStatus::MaintainerTriage",
+                "title": "status::MaintainerTriage",
                 "color": "#808080"
               }
             ]
@@ -244,11 +244,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
@@ -268,7 +268,7 @@
                 "color": "#e6e6fa"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -276,7 +276,7 @@
                 "color": "#6699cc"
               },
               {
-                "title": "uPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#c21e56"
               },
               {
@@ -288,7 +288,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -302,15 +302,15 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Major",
+                "title": "priority::Major",
                 "color": "#ed9121"
               },
               {
@@ -318,7 +318,7 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
@@ -342,7 +342,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -358,7 +358,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               },
               {
@@ -376,11 +376,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
@@ -392,7 +392,7 @@
                 "color": "#e6e6fa"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
@@ -400,11 +400,11 @@
                 "color": "#6699cc"
               },
               {
-                "title": "uPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -418,15 +418,15 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
@@ -434,7 +434,7 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
@@ -454,7 +454,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -470,7 +470,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               },
               {
@@ -488,15 +488,15 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
@@ -504,7 +504,7 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
@@ -528,7 +528,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -544,7 +544,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               },
               {
@@ -562,11 +562,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:ExpertGroupFrontend",
+                "title": "group:ExpertGroupFrontend",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -574,11 +574,11 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -592,11 +592,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Major",
+                "title": "priority::Major",
                 "color": "#ed9121"
               },
               {
@@ -608,15 +608,15 @@
                 "color": "#e6e6fa"
               },
               {
-                "title": "uIssueType::NewFeature",
+                "title": "type::NewFeature",
                 "color": "#ed9121"
               },
               {
-                "title": "uPriority::Major",
+                "title": "priority::Major",
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -630,19 +630,19 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:CustomerAcme",
+                "title": "group:CustomerAcme",
                 "color": "#808080"
               },
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Major",
+                "title": "priority::Major",
                 "color": "#ed9121"
               },
               {
@@ -654,7 +654,7 @@
                 "color": "#cc338b"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
@@ -662,15 +662,15 @@
                 "color": "#dc143c"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
-                "title": "uPriority::Major",
+                "title": "priority::Major",
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -684,15 +684,15 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
@@ -700,7 +700,7 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
@@ -716,7 +716,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -732,7 +732,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -746,11 +746,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:ExpertGroupFrontend",
+                "title": "group:ExpertGroupFrontend",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -758,11 +758,11 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -776,11 +776,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:ExpertGroupFrontend",
+                "title": "group:ExpertGroupFrontend",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -788,11 +788,11 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -806,11 +806,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -818,7 +818,7 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
@@ -830,7 +830,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -838,7 +838,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               },
               {
@@ -856,11 +856,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -868,11 +868,11 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -880,7 +880,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -894,7 +894,7 @@
           "labels": {
             "nodes": [
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -902,7 +902,7 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
@@ -914,7 +914,7 @@
                 "color": "#808080"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -928,11 +928,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:SquadAlpha",
+                "title": "group:SquadAlpha",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -940,11 +940,11 @@
                 "color": "#808080"
               },
               {
-                "title": "mSquad::Alpha",
+                "title": "squad::Alpha",
                 "color": "#6699cc"
               },
               {
-                "title": "uIssueType::Improvement",
+                "title": "type::Improvement",
                 "color": "#ed9121"
               },
               {
@@ -952,7 +952,7 @@
                 "color": "#6699cc"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -966,11 +966,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
-                "title": "cPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#ed9121"
               },
               {
@@ -990,7 +990,7 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Bug",
+                "title": "type::Bug",
                 "color": "#ed9121"
               },
               {
@@ -998,7 +998,7 @@
                 "color": "#6699cc"
               },
               {
-                "title": "uPriority::Minor",
+                "title": "priority::Minor",
                 "color": "#c21e56"
               },
               {
@@ -1014,7 +1014,7 @@
                 "color": "#c21e56"
               },
               {
-                "title": "uStatus::Todo",
+                "title": "status::Todo",
                 "color": "#808080"
               }
             ]
@@ -1028,11 +1028,11 @@
           "labels": {
             "nodes": [
               {
-                "title": "cGroup:ExpertGroupFrontend",
+                "title": "group:ExpertGroupFrontend",
                 "color": "#808080"
               },
               {
-                "title": "cPrerequisiteStatus::Ready",
+                "title": "prerequisite::Ready",
                 "color": "#cc338b"
               },
               {
@@ -1040,11 +1040,11 @@
                 "color": "#808080"
               },
               {
-                "title": "uIssueType::Task",
+                "title": "type::Task",
                 "color": "#ed9121"
               },
               {
-                "title": "uStatus::MaintainerTriage",
+                "title": "status::MaintainerTriage",
                 "color": "#808080"
               }
             ]

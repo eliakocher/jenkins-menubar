@@ -51,13 +51,13 @@ struct MenubarMonitorApp: App {
         .windowResizability(.contentSize)
         .defaultPosition(.center)
 
-        // Settings (Task 6.1): its panes in a TabView, each 560 pt wide with a height of its own.
+        // Settings: a sidebar and the selected pane, in a resizable window of at least its content's minimum size.
         Settings {
             SettingsView(system: settingsSystem())
                 .tracksPresence(as: "settings", in: shell.presenter)
                 .appEnvironment(shell.model, router: shell.router)
         }
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
     }
 
     /// What Settings asks of the app: the notification permission through `NativeEffects`, for Settings → General's
@@ -68,7 +68,8 @@ struct MenubarMonitorApp: App {
             notificationPermission: { await effects.notificationPermission() },
             requestNotificationPermission: { _ = await effects.requestNotificationPermission() },
             openNotificationSettings: { effects.openNotificationSettings() },
-            linkRouting: delegate.shell.linkRouting)
+            linkRouting: delegate.shell.linkRouting,
+            showWelcome: { [shell = delegate.shell] in shell.presenter.showWelcome() })
     }
 
     /// What the welcome flow asks of the app: the notification permission through `NativeEffects` (APP-04) and the

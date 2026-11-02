@@ -8,7 +8,7 @@ struct TeamStoreTests {
     private static let team = TeamValues(
         jenkinsJobURL: "https://jenkins.example.com/job/GitLab%20Team/job/group%252Fproject",
         gitLabURL: "https://gitlab.example.com", gitLabProject: "group/subgroup/project",
-        committedLabel: "cLevel::Committed", slotLabelPrefix: "cDueSlot::", ignoredMergeRequestPrefix: "[ucascade]")
+        committedLabel: "commitment::Committed", slotLabelPrefix: "slot::", ignoredMergeRequestPrefix: "[ucascade]")
 
     private static var repositoryRoot: URL {
         URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -28,6 +28,25 @@ struct TeamStoreTests {
         #expect(imported == Project(id: .main, team: Self.team))
         #expect(colleague.primaryProject() == imported)
         #expect(colleague.projects() == [imported])
+    }
+
+    @Test("TEAM-02 every team value round-trips through the team file, also one added later")
+    func everyValueRoundTrips() throws {
+        let folder = try TemporaryFolder()
+        let mine = TeamStore(folder: folder.file("mine"), report: { _ in })
+        let colleague = TeamStore(folder: folder.file("colleague"), report: { _ in })
+        var team = TeamValues()
+        for key in TeamValues.Key.allCases {
+            team[key] = "value-of-\(key.rawValue)"
+        }
+        try mine.save(Project(id: .main, team: team))
+
+        try mine.exportTeamFile(to: folder.file("team.json"))
+        let imported = try colleague.importTeamFile(from: folder.file("team.json")).team
+
+        for key in TeamValues.Key.allCases {
+            #expect(imported[key] == team[key], "\(key.rawValue) was lost")
+        }
     }
 
     @Test("TEAM-02 export holds no token")
@@ -58,8 +77,6 @@ struct TeamStoreTests {
         #expect(throws: TeamFileError.newerFormat(2)) {
             try store.importTeamFile(from: file)
         }
-        #expect(TeamFileError.newerFormat(2).message
-            == "That team file is from a newer MegaMonitor (format 2): update the app first")
         #expect(store.projects().isEmpty)
         #expect(!folder.contents().contains { $0.hasPrefix("support/") })
     }
@@ -93,21 +110,6 @@ struct TeamStoreTests {
             try store.importTeamFile(from: file)
         }
         #expect(store.projects().isEmpty)
-    }
-
-    @Test("a missing team file is refused as unreadable")
-    func refusesMissingFile() throws {
-        let folder = try TemporaryFolder()
-        let error = try #require(throws: TeamFileError.self) {
-            try TeamStore.readTeamFile(from: folder.file("nope.json"))
-        }
-
-        guard case .unreadable(let reason) = error else {
-            Issue.record("expected unreadable, got \(error)")
-            return
-        }
-        #expect(!reason.isEmpty)
-        #expect(error.message.hasPrefix("The team file could not be read: "))
     }
 
     @Test("an imported team file is normalized, and a missing value reads as empty")

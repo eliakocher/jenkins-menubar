@@ -4,7 +4,7 @@ import UserNotifications
 extension NativeEffects {
     /// Posts the morning digest the user scheduled as a banner (AI-04): "Your Digest", marked as Claude's, with the
     /// digest's text, which the banner shows in full when expanded. Nothing shows while banners aren't allowed; the
-    /// digest is still in the main window's Digest.
+    /// digest is still in the main window's Digest, which a click on the banner opens.
     ///
     /// - Parameter text: the digest
     func postDigest(_ text: String) async {
@@ -17,6 +17,8 @@ extension NativeEffects {
         content.subtitle = "Written by Claude"
         content.body = text
         content.threadIdentifier = "digest"
+        // A click opens the Digest section, as a slot notice's click opens its link.
+        content.userInfo = [NotificationDelegate.noticeURLKey: AppRoute.open(.digest).url.absoluteString]
         do {
             try await UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: "digest-\(UUID().uuidString)", content: content, trigger: nil))

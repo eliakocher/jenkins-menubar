@@ -37,7 +37,7 @@ if [[ ! -x $app/Contents/MacOS/MegaMonitor ]]; then
 	exit 2
 fi
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/menubar-monitor-smoke.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/megamonitor-smoke.XXXXXX")
 server=
 cleanup() {
 	if [[ -n $server ]]; then
@@ -124,7 +124,7 @@ python3 -I - "$status" "$work/data" "$work/requests.jsonl" <<'PY'
 import json, os, sys
 
 status, data, requests_file = int(sys.argv[1]), sys.argv[2], sys.argv[3]
-log_file = f"{data}/Logs/menubar-monitor.log"
+log_file = f"{data}/Logs/MegaMonitor.log"
 entries = [json.loads(line) for line in open(log_file)] if os.path.exists(log_file) else []
 requests = [json.loads(line) for line in open(requests_file)] if os.path.exists(requests_file) else []
 failures = []

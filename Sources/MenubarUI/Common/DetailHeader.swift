@@ -15,7 +15,6 @@ struct DetailPage<Content: View>: View {
                 VStack(alignment: .leading, spacing: 24) {
                     content(proxy)
                 }
-                .sectionNavigation(proxy: proxy)
                 .pageContentWidth()
             }
             .id(id)
@@ -60,8 +59,6 @@ struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Fo
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             footer
-            SectionNav()
-                .padding(.leading, -6)
         }
     }
 }
@@ -151,26 +148,6 @@ struct PeopleLine: View {
         case 1: people[0].displayName
         case 2: "\(people[0].displayName) and \(people[1].displayName)"
         default: "\(people[0].displayName) and \(people.count - 1) others"
-        }
-    }
-}
-
-extension View {
-    /// Puts a detail's main link in the window's toolbar, as the merge request and build details do: "Open in GitLab",
-    /// "Open Build".
-    ///
-    /// - Parameters:
-    ///   - title: the button's title
-    ///   - help: the tooltip, like "Open Work Item #31"
-    ///   - action: opens the page
-    func detailPrimaryAction(_ title: String, help: String, action: @escaping () -> Void) -> some View {
-        toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: action) {
-                    Label(title, systemImage: "arrow.up.forward.app")
-                }
-                .help(help)
-            }
         }
     }
 }

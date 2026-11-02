@@ -48,6 +48,7 @@ public enum GalleryCatalog {
         + activityEntries
         + workspacesEntries
         + slotsEntries
+        + digestEntries
         + settingsEntries + updateRowEntries
 }
 #endif

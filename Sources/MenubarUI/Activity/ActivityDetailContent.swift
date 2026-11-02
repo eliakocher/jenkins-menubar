@@ -11,9 +11,27 @@ struct ActivityDetailPane: View {
     /// whether the list is empty or not read yet; then the inspector stays blank without a selection
     var isListEmpty = false
     var now = Date()
+    /// closes the inspector: the strip's ✕ and Esc
+    var close: () -> Void = {}
     let copyCurl: @MainActor (RequestDetails) -> Void
 
     var body: some View {
+        DetailPane(title: title, close: close) {
+            content
+        }
+    }
+
+    /// What the strip over the inspector names: the entry's source and time, how many are selected, or "Details".
+    private var title: String {
+        switch detail {
+        case .none: "Details"
+        case .several(let count): "\(count) Entries"
+        case .one(let item): "\(item.entry.source.displayName) · \(item.entry.time.formatted(date: .omitted, time: .standard))"
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch detail {
         case .none:
             if isListEmpty {

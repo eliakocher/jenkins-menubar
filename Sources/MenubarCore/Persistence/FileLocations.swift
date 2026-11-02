@@ -8,11 +8,11 @@ public struct FileLocations: Hashable, Sendable {
     /// the variable that moves every folder, for the smoke check
     public static let dataDirectoryVariable = "MENUBAR_MONITOR_DATA_DIR"
 
-    /// `~/Library/Application Support/menubar-monitor`: the projects and the watched and hidden builds
+    /// `~/Library/Application Support/MegaMonitor`: the projects and the watched and hidden builds
     public var applicationSupport: URL
-    /// `~/Library/Caches/menubar-monitor`: one folder per project
+    /// `~/Library/Caches/MegaMonitor`: one folder per project
     public var caches: URL
-    /// `~/Library/Logs/menubar-monitor`: the activity log, the check times and the captured requests
+    /// `~/Library/Logs/MegaMonitor`: the activity log, the check times and the captured requests
     public var logs: URL
 
     public init(applicationSupport: URL, caches: URL, logs: URL) {
@@ -51,7 +51,7 @@ public struct FileLocations: Hashable, Sendable {
             logs: library.appending(path: "Logs/\(AppIdentity.name)", directoryHint: .isDirectory))
     }
 
-    /// Returns the caches folder of a project, `~/Library/Caches/menubar-monitor/<ProjectID>`.
+    /// Returns the caches folder of a project, `~/Library/Caches/MegaMonitor/<ProjectID>`.
     ///
     /// - Parameter project: the project
     /// - Returns: the folder

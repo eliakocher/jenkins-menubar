@@ -183,7 +183,12 @@ public struct ClaudeSetup: Hashable, Sendable {
             return
         }
         let on = Set(inventory.serverGroups.filter { $0.isOn(choices: serverChoices) }.map(\.key))
-        blockedServers = inventory.serverGroups.map(\.key).filter { !on.contains($0) }
+        let groupKeys = inventory.serverGroups.map(\.key)
+        // A server that listed no tools (failed, needing auth, still starting) is denied by prefix too, whatever the
+        // user chose: if it connects during a run, the user's own allow rules would otherwise let all its tools run.
+        let toolless = Set(inventory.servers.map { McpServerGroup.key(ofServerNamed: $0.name) })
+            .subtracting(groupKeys).filter { !$0.isEmpty }.sorted()
+        blockedServers = groupKeys.filter { !on.contains($0) } + toolless
         let sorted = McpToolClassifier.split(inventory.mcpTools.filter { McpServerGroup.key(of: $0).map(on.contains) == true })
         readingTools = sorted.reading
         otherTools = sorted.changing

@@ -1,0 +1,31 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun",
+  "number": 11,
+  "builtOn": "linux-agent-3",
+  "estimatedDuration": 540000,
+  "actions": [
+    {
+      "_class": "hudson.model.CauseAction",
+      "causes": [
+        {
+          "_class": "hudson.model.Cause$UserIdCause",
+          "shortDescription": "Started by user Jane Doe"
+        }
+      ]
+    },
+    {},
+    null,
+    {
+      "_class": "hudson.plugins.git.util.BuildData",
+      "buildsByBranchName": {
+        "origin/MR-12": {
+          "_class": "hudson.plugins.git.util.Build",
+          "buildNumber": 11,
+          "marked": { "SHA1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }
+        }
+      },
+      "lastBuiltRevision": { "SHA1": "1111111111111111111111111111111111111111" },
+      "remoteUrls": ["git@gitlab.example.com:team/product.git"]
+    }
+  ]
+}

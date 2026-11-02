@@ -16,13 +16,13 @@ struct WorkspaceActions {
     var showInMergeRequests: @MainActor (MergeRequest.ID) -> Void
     /// starts work in a free checkout on a branch, after the detail's confirmation (WS-08)
     var startWork: @MainActor (Checkout, String) -> Void
-    /// opens Settings → Repositories
-    var openSettings: @MainActor () -> Void
+    /// opens Settings → Workspaces at a field, scrolled to and highlighted
+    var openSettings: @MainActor (SettingsField) -> Void
 
     /// Actions that do nothing, for the gallery.
     static let none = WorkspaceActions(
         openInIDE: { _ in }, openInTerminal: { _ in }, revealInFinder: { _ in }, open: { _ in }, copy: { _ in },
-        showInPipelines: { _ in }, showInMergeRequests: { _ in }, startWork: { _, _ in }, openSettings: {})
+        showInPipelines: { _ in }, showInMergeRequests: { _ in }, startWork: { _, _ in }, openSettings: { _ in })
 
     /// The window's actions.
     @MainActor
@@ -41,7 +41,10 @@ struct WorkspaceActions {
             showInPipelines: { router.showInPipelines(job: $0) },
             showInMergeRequests: { router.showInMergeRequests($0) },
             startWork: { checkout, branch in Task { await store.startWork(in: checkout, branch: branch) } },
-            openSettings: { router.open(.settings(pane: .repositories)) })
+            openSettings: { field in
+                model.settings.reveal(field)
+                router.open(.settings(pane: field.pane))
+            })
     }
 }
 
@@ -113,11 +116,21 @@ struct WorkspacesListContent: View {
                         .font(.subheadline)
                         .selectionDisabled()
                     }
-                    Button("Repositories Settings…") { actions.openSettings() }
+                    Button("Repositories Settings…") { actions.openSettings(.repositoryFolders) }
                         .buttonStyle(.link)
                         .font(.subheadline)
                         .selectionDisabled()
                 }
+            } else if model.empty == nil, !model.rows.isEmpty {
+                // Where the checkouts come from, with the way to change it.
+                HStack(spacing: 6) {
+                    Text("Checkouts come from the folders in Settings.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    SettingsGearButton(field: .repositoryFolders)
+                        .controlSize(.small)
+                }
+                .selectionDisabled()
             }
         }
         .contextMenu(forSelectionType: Checkout.ID.self) { ids in
@@ -146,7 +159,7 @@ struct WorkspacesListContent: View {
                         "Add the folders of your git checkouts in Settings: one checkout, or a pattern like "
                             + "~/workspaces/*/project for several clones side by side.")
                 } actions: {
-                    Button("Repositories Settings…") { actions.openSettings() }
+                    Button("Repositories Settings…") { actions.openSettings(.repositoryFolders) }
                 }
             case .noCheckouts:
                 ContentUnavailableView {
@@ -154,7 +167,7 @@ struct WorkspacesListContent: View {
                 } description: {
                     Text(verbatim: model.folderProblems.first ?? "None of the folders has a git checkout.")
                 } actions: {
-                    Button("Repositories Settings…") { actions.openSettings() }
+                    Button("Repositories Settings…") { actions.openSettings(.repositoryFolders) }
                 }
             case nil:
                 if model.findsNothing {

@@ -61,6 +61,8 @@ struct WorkItemsData: Sendable {
     var problem: Problem? { workItems.problem }
     var isLoading: Bool { workItems.isLoading }
     var filters: WorkItemFilters { workItems.filters }
+    /// which labels the rows' second line shows and how (WI-04)
+    var rowLabels: WorkItemRowLabels { workItems.rowLabels }
     var missingLabels: [String] { workItems.missingLabels }
 
     /// whether the section shows its own data: not while the team values are missing (TEAM-03) or the GitLab token is
@@ -94,6 +96,8 @@ struct WorkItemsListModel: Sendable {
     var sections: [PanelModel.Subsection<WorkItemRowModel>]
     /// "No work items match the filter", with the summary as its description
     var empty: Empty?
+    /// the filters in one line, for the bar above the first section; `nil` without the team values or the token
+    var filterSummary: String?
     /// "All Work Items in GitLab", the last row; `nil` while searching, without a token or while empty
     var link: URL?
     /// the search text, trimmed
@@ -136,6 +140,7 @@ struct WorkItemsListModel: Sendable {
         self.query = query
         problems = MainWindowProblems.appWide(jenkins: data.jenkinsProblem, update: data.update)
         tokenNote = nil
+        filterSummary = nil
         isPlaceholder = false
         sections = []
         empty = nil
@@ -148,6 +153,7 @@ struct WorkItemsListModel: Sendable {
             tokenNote = PanelModel.SetupText.workItemsNote
             return
         }
+        filterSummary = data.filters.summary
         // Offline shows the cached work items without other problem rows (OD-05).
         let offline = data.jenkinsProblem == .offline
         if !offline {
@@ -187,6 +193,8 @@ struct WorkItemsListModel: Sendable {
 struct WorkItemRowModel: Hashable, Sendable, Identifiable {
     var workItem: WorkItem
     var marker: RelatedMergeRequestMarker?
+    /// the chip on line 2 for the item's merge request, like "!14 +1"; `nil` without a counted open or merged MR
+    var mergeRequestChip: WorkItemMergeRequestChip?
     /// "#31", "&12" or "web#34"
     var reference: String
     /// the slot label's value, like "Q1"
@@ -195,6 +203,8 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
     var slotLabel: LabelPillModel?
     /// "Task · Closed · design"; `nil` when nothing is left
     var secondLine: String?
+    /// "5m ago", at the right end of the row's first line
+    var age: String
     /// "Open Work Item #31 in GitLab"
     var openTitle: String
 
@@ -207,25 +217,33 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
     init(_ item: WorkItem, data: WorkItemsData, sharedLabels: Set<String> = []) {
         workItem = item
         marker = data.marker(of: item)
+        mergeRequestChip = WorkItemMergeRequestChip.make(
+            data.related.entries[item.reference]?.mergeRequests ?? [], marker: marker, project: data.team.gitLabProject,
+            ignoredPrefix: data.team.ignoredMergeRequestPrefix)
         reference = data.shortReference(of: item)
-        slot = item.slot(prefix: data.team.slotLabelPrefix)
-        slotLabel = item.slotLabel(prefix: data.team.slotLabelPrefix).map { LabelPillModel($0, colors: data.labelColors) }
-        secondLine = Self.secondLine(of: item, team: data.team, filters: data.filters, sharedLabels: sharedLabels)
+        slot = item.slot(prefix: data.team.slotPrefix)
+        slotLabel = item.slotLabel(prefix: data.team.slotPrefix).map { LabelPillModel($0, colors: data.labelColors) }
+        secondLine = Self.secondLine(of: item, team: data.team, filters: data.filters, sharedLabels: sharedLabels,
+            rowLabels: data.rowLabels)
+        age = "\(GitLabText.age(since: item.updatedAt, now: data.now)) ago"
         openTitle = "Open Work Item \(reference) in GitLab"
     }
 
     /// Returns line 2: the type unless it is an issue or the Type filter fixes it, "Closed" under "Open and closed"
     /// only, then the labels, without those every row has: the slot label, the committed label, the must-have
-    /// labels of "all" mode, and the labels every shown item carries.
+    /// labels of "all" mode, and the labels every shown item carries; then the user's "Hide on rows" and "Show scoped
+    /// labels by their value only" (WI-04), which touch this line only.
     ///
     /// - Parameters:
     ///   - item: the work item
     ///   - team: the team values, for the committed label and the slot prefix
     ///   - filters: the work item filters
     ///   - sharedLabels: the labels every shown item has
+    ///   - rowLabels: which labels to hide and whether scoped ones show by their value
     /// - Returns: the parts joined with " · ", or `nil` when nothing is left
     static func secondLine(
-        of item: WorkItem, team: TeamValues, filters: WorkItemFilters, sharedLabels: Set<String> = []
+        of item: WorkItem, team: TeamValues, filters: WorkItemFilters, sharedLabels: Set<String> = [],
+        rowLabels: WorkItemRowLabels = WorkItemRowLabels()
     ) -> String? {
         var parts: [String] = []
         if item.type != .issue, filters.type == .all {
@@ -238,9 +256,17 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
         if filters.labelsMatch == .all {
             shared.formUnion(filters.withLabels)
         }
-        let prefix = team.slotLabelPrefix
-        let slotLabel = prefix.isEmpty ? nil : item.labels.first { $0.title.hasPrefix(prefix) }?.title
-        parts += item.labels.map(\.title).filter { !shared.contains($0) && $0 != slotLabel }
+        // The pill shows the slot; the due slot's label shows here only when it names another slot.
+        var hidden: Set<String> = []
+        if let label = item.slotLabel(prefix: team.slotPrefix) {
+            hidden.insert(label.title)
+        }
+        if let prefix = team.dueSlotPrefix, let label = item.slotLabel(prefix: prefix),
+            SlotPlan.dueSlot(of: item, team: team) == SlotPlan.slot(of: item, team: team) {
+            hidden.insert(label.title)
+        }
+        parts += item.labels.map(\.title).filter { !shared.contains($0) && !hidden.contains($0) }
+            .compactMap { rowLabels.text(of: $0) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
@@ -263,6 +289,72 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
     /// - Parameter query: the trimmed search text; empty matches
     func matches(_ query: String) -> Bool {
         PanelModel.matches(query, [workItem.title, reference, slot ?? ""] + workItem.labels.map(\.title))
+    }
+}
+
+/// The chip on a work item row's second line for its merge requests (Task 7.x, the user, 2026-11-02: the symbol column
+/// wasted the row's left): the merge glyph and the first MR's reference, "!14", with "+1" for each further one. Only the
+/// MRs that count make it, the open ones first, then the merged ones; closed MRs and the ignored prefix (cascade MRs)
+/// don't, as for the marker (WI-05).
+struct WorkItemMergeRequestChip: Hashable, Sendable {
+    /// What the first MR is, which tints the chip.
+    enum Kind: Hashable, Sendable {
+        case open
+        /// open, with a title starting `Draft:`, `[Draft]` or `WIP:`
+        case draft
+        case merged
+    }
+
+    /// "!14", "web!8 +2"; `nil` when only the marker is known
+    var text: String?
+    var kind: Kind
+    /// the MRs, one per line: "!14 · open · Rework the color tokens"
+    var help: String
+
+    /// "arrow.triangle.pull" for an open MR, "arrow.triangle.merge" for a merged one
+    var symbol: String {
+        WorkItemRowStyle.symbol(of: kind == .merged ? .merged : .open)
+    }
+
+    /// The chip's text with the count: "!14" for one MR, "!14 +2" for three.
+    static func text(first: String, count: Int) -> String {
+        count > 1 ? "\(first) +\(count - 1)" : first
+    }
+
+    /// Returns the chip of a work item.
+    ///
+    /// - Parameters:
+    ///   - mergeRequests: the MRs that mention the work item, in GitLab's order
+    ///   - marker: the item's marker, for a chip when the MRs themselves are not known
+    ///   - project: the team's project path, for the short reference
+    ///   - ignoredPrefix: the ignored MR prefix from Team; empty counts every MR
+    /// - Returns: the chip, or `nil` without a counted open or merged MR
+    static func make(
+        _ mergeRequests: [RelatedMergeRequest], marker: RelatedMergeRequestMarker?, project: String, ignoredPrefix: String
+    ) -> WorkItemMergeRequestChip? {
+        let counted = mergeRequests.filter {
+            ($0.state == .opened || $0.state == .merged) && (ignoredPrefix.isEmpty || !$0.title.hasPrefix(ignoredPrefix))
+        }
+        let ordered = counted.filter { $0.state == .opened } + counted.filter { $0.state == .merged }
+        guard let first = ordered.first else {
+            return marker.map {
+                WorkItemMergeRequestChip(text: nil, kind: $0 == .merged ? .merged : .open, help: $0.text)
+            }
+        }
+        let kind: Kind = first.state == .merged ? .merged : (isDraft(first.title) ? .draft : .open)
+        let lines = ordered.map { request in
+            let word = request.state == .merged ? "merged" : (isDraft(request.title) ? "draft" : "open")
+            return "\(GitLabText.shortReference(request.reference, project: project)) · \(word) · \(request.title)"
+        }
+        return WorkItemMergeRequestChip(
+            text: text(first: GitLabText.shortReference(first.reference, project: project), count: ordered.count),
+            kind: kind, help: lines.joined(separator: "\n"))
+    }
+
+    /// Returns whether an MR title marks a draft, as GitLab does.
+    static func isDraft(_ title: String) -> Bool {
+        let lowered = title.lowercased()
+        return ["draft:", "[draft]", "(draft)", "wip:"].contains { lowered.hasPrefix($0) }
     }
 }
 
@@ -326,6 +418,11 @@ struct WorkItemDetailModel: Sendable {
         /// the time the steps count from
         var today: Date
     }
+    /// the slot the item is in, by its slot label or its scheduled slot label (`SlotPlan.slot(of:team:)`); `nil` without
+    /// one. "Show in Slots" appears with it.
+    var slotName: SlotName?
+    /// the due slot, the one the item is committed to, when it differs from ``slotName``; the Slot card says "due …"
+    var dueSlot: SlotName?
     /// the slot label, drawn as GitLab draws it; `nil` when the item has no slot or Team has no slot prefix (WI-04)
     var slotLabel: LabelPillModel?
     /// "Open", "Closed"
@@ -403,7 +500,10 @@ struct WorkItemDetailModel: Sendable {
         assignees = item.assignees ?? []
         flags = reality?.id == item.id ? reality?.flags ?? [] : []
         slot = Self.slot(of: item, team: team, now: data.now, calendar: calendar)
-        slotLabel = item.slotLabel(prefix: team.slotLabelPrefix).map { LabelPillModel($0, colors: data.labelColors) }
+        slotName = SlotPlan.slot(of: item, team: team)
+        slotLabel = item.slotLabel(prefix: team.slotPrefix).map { LabelPillModel($0, colors: data.labelColors) }
+        let due = SlotPlan.dueSlot(of: item, team: team)
+        dueSlot = due == slotName ? nil : due
         state = WorkItemText.state(item.state)
         type = WorkItemText.type(item.type)
         updated = "\(GitLabText.age(since: item.updatedAt, now: data.now)) ago"
@@ -432,8 +532,7 @@ struct WorkItemDetailModel: Sendable {
 
     /// Returns the slot of an item whose slot label names a week, with its dates from the team's rules.
     private static func slot(of item: WorkItem, team: TeamValues, now: Date, calendar: Calendar) -> Slot? {
-        let prefix = team.slotLabelPrefix
-        guard let name = item.labels.lazy.compactMap({ SlotName(label: $0.title, prefix: prefix) }).first,
+        guard let name = SlotPlan.slot(of: item, team: team),
             let dates = SlotRules(team: team).dates(of: name, calendar: calendar)
         else {
             return nil

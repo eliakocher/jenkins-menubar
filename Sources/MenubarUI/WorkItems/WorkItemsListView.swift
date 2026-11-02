@@ -45,6 +45,7 @@ struct WorkItemsListContent: View {
     let model: WorkItemsListModel
     @Binding var selection: WorkItem.ID?
     let actions: GitLabSectionActions
+    @Environment(SettingsStore.self) private var settings: SettingsStore?
     /// the "In GitLab" section while the search has text (WIN-07)
     var search = GitLabSearchRows.hidden
     /// the "In GitLab" row that the arrow keys are on; the list's own selection stays, so the detail doesn't change
@@ -76,6 +77,9 @@ struct WorkItemsListContent: View {
                     Button("Show Merge Requests") { actions.showSection(.mergeRequests) }
                         .buttonStyle(.link)
                         .selectionDisabled()
+                }
+                if let summary = model.filterSummary {
+                    WorkItemsFilterBar(summary: summary)
                 }
                 if model.isPlaceholder {
                     SectionPlaceholderRows()
@@ -135,7 +139,10 @@ struct WorkItemsListContent: View {
                     } description: {
                         Text(verbatim: empty.summary)
                     } actions: {
-                        Button("Filters…") { actions.openSettings(.gitLab) }
+                        Button("Filters…") {
+                            settings?.reveal(.workItemFilters)
+                            actions.openSettings(.gitLab)
+                        }
                         if let link = empty.link {
                             Link("All Work Items in GitLab", destination: link)
                         }
@@ -151,5 +158,28 @@ struct WorkItemsListContent: View {
                 }
             }
         }
+    }
+}
+
+/// The quiet line above the first section: the filters in one line, cut at the end with the full text on hover, and the
+/// gear that opens Settings at the filters (WI-02, WIN-04). It replaces the filters in the window's subtitle, which ran
+/// over the list column's edge.
+struct WorkItemsFilterBar: View {
+    let summary: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(summary)
+            Spacer(minLength: 4)
+            SettingsGearButton(field: .workItemFilters)
+                .foregroundStyle(.secondary)
+        }
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
     }
 }

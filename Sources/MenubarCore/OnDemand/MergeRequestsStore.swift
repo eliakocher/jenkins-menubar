@@ -22,6 +22,9 @@ public final class MergeRequestsStore {
     /// whether a load is under way, which shows a spinner (OD-01)
     public private(set) var isLoading = false
 
+    /// called after each load that ended, like the job lookup for a new MR of mine (OD-06)
+    @ObservationIgnored public var onLoaded: @MainActor () -> Void = {}
+
     @ObservationIgnored private let services: GitLabServices
     @ObservationIgnored private let project: ProjectID
 
@@ -79,6 +82,7 @@ public final class MergeRequestsStore {
         lastLoadAt = services.now()
         save()
         await services.track(Self.problemKey, problem)
+        onLoaded()
     }
 
     /// Forgets the MRs, deletes their cache and shows the setup steps: the GitLab token was removed (MR-04). Settings

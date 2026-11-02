@@ -17,7 +17,7 @@ struct MergeRequestsGalleryView: View {
         ) {
             MergeRequestsListContent(model: MergeRequestsListModel(data, query: query), selection: .constant(selection), actions: .none)
         } detail: {
-            MergeRequestDetailContent(model: MergeRequestDetailModel(data, selection: selection), actions: .none)
+            MergeRequestDetailContent(model: MergeRequestDetailModel(data, selection: selection), actions: .gallery)
         }
     }
 }
@@ -54,6 +54,12 @@ extension GalleryCatalog {
             GalleryEntry(screen: "merge-requests", state: "jenkins-build", size: size) { f in
                 let m = f.mergeRequestsScreen
                 let build = m.build(of: m.mr16, number: 3, phase: .finished(result: .failure, duration: 12 * 60))
+                return MergeRequestsGalleryView(panel: m.panel(m.badgesWith(sixth: m.mr16), builds: [build]), selection: m.mr16.id)
+            },
+            // MR-14: GitLab says "failed", the Jenkins build "Unstable": one pipeline chip, GitLab's word in its tooltip.
+            GalleryEntry(screen: "merge-requests", state: "jenkins-build-unstable", size: size) { f in
+                let m = f.mergeRequestsScreen
+                let build = m.build(of: m.mr16, number: 4, phase: .finished(result: .unstable, duration: 12 * 60))
                 return MergeRequestsGalleryView(panel: m.panel(m.badgesWith(sixth: m.mr16), builds: [build]), selection: m.mr16.id)
             },
             GalleryEntry(screen: "merge-requests", state: "detail-no-pipeline", size: size) { f in

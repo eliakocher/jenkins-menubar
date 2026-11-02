@@ -223,7 +223,7 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The screens whose entries show the main window, with its sidebar and toolbar.
-    private static let mainWindowScreens: Set<String> = ["main-window", "pipelines", "merge-requests", "work-items", "activity"]
+    private static let mainWindowScreens: Set<String> = ["main-window", "pipelines", "merge-requests", "work-items", "activity", "slots", "digest"]
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true

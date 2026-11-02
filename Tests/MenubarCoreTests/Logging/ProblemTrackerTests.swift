@@ -45,20 +45,6 @@ struct ProblemTrackerTests {
         #expect(await tracker.problem("gitlab.workItems") == .graphQLErrors(messages: ["Timeout", "second"]))
     }
 
-    @Test("LOG-01 keeps the problems of each check apart")
-    func keysApart() async throws {
-        let folder = try TemporaryFolder()
-        let log = ActivityLog(folder: folder.url)
-        let tracker = ProblemTracker(log: log)
-
-        await tracker.update("gitlab.mergeRequests", to: .unreachable(.gitLab), source: .gitlab)
-        await tracker.update("gitlab.workItems", to: .unreachable(.gitLab), source: .gitlab)
-        await tracker.update("gitlab.workItems", to: nil, source: .gitlab)
-
-        #expect(await log.entries().map(\.message) == ["GitLab unreachable", "GitLab unreachable", "Resolved: GitLab unreachable"])
-        #expect(await tracker.problem("gitlab.mergeRequests") == .unreachable(.gitLab))
-    }
-
     @Test("LOG-01 doesn't log again a problem the caches still had at launch")
     func seededProblems() async throws {
         let folder = try TemporaryFolder()

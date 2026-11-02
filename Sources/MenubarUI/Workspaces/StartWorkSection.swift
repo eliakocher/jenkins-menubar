@@ -44,7 +44,7 @@ struct StartWorkDraft: Hashable, Sendable {
     }
 }
 
-/// The detail's "Start Work Here" section, for a free checkout only (WS-08): the work item, the branch it names, and an
+/// The detail's "Start Work Here" card, for a free checkout only (WS-08): the work item, the branch it names, and an
 /// inline confirmation that says which checkout and which branch before anything runs.
 struct StartWorkSection: View {
     let checkout: Checkout
@@ -57,53 +57,59 @@ struct StartWorkSection: View {
     var body: some View {
         let branch = draft.branch(in: items)
         let known = draft.item(in: items)
-        Section {
-            TextField("Work item", text: $draft.query, prompt: Text("Search your work items or type a number"))
-                .disabled(isRunning)
-                .onSubmit { confirmIfReady(branch) }
-            ForEach(draft.matches(in: items)) { item in
-                Button {
-                    draft.query = String(item.number)
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(verbatim: "#\(item.number)")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                        Text(verbatim: item.title)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(item.reference)
-            }
-            if draft.number != nil, known == nil {
-                TextField("Title", text: $draft.title, prompt: Text("For the branch name; the app doesn't know item #\(draft.number ?? 0)"))
+        DetailCard("Start Work Here", symbol: "play.circle") {
+            VStack(alignment: .leading, spacing: 10) {
+                TextField("Work item", text: $draft.query, prompt: Text("Search your work items or type a number"))
+                    .textFieldStyle(.roundedBorder)
                     .disabled(isRunning)
-            }
-            if let branch {
-                LabeledContent("Branch") {
-                    Text(verbatim: branch)
-                        .font(.body.monospaced())
-                        .textSelection(.enabled)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
+                    .onSubmit { confirmIfReady(branch) }
+                ForEach(draft.matches(in: items)) { item in
+                    Button {
+                        draft.query = String(item.number)
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(verbatim: "#\(item.number)")
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                            Text(verbatim: item.title)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.reference)
                 }
-                if isConfirming || isRunning {
-                    confirmation(branch)
-                } else {
-                    Button("Start Work…") { isConfirming = true }
-                        .buttonStyle(.bordered)
+                if draft.number != nil, known == nil {
+                    TextField("Title", text: $draft.title, prompt: Text("For the branch name; the app doesn't know item #\(draft.number ?? 0)"))
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isRunning)
                 }
+                if let branch {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("Branch")
+                            .foregroundStyle(.secondary)
+                            .fixedSize()
+                        Text(verbatim: branch)
+                            .font(.body.monospaced())
+                            .textSelection(.enabled)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(branch)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    if isConfirming || isRunning {
+                        confirmation(branch)
+                    } else {
+                        Button("Start Work…") { isConfirming = true }
+                            .buttonStyle(.bordered)
+                    }
+                }
+                Text("Starts a branch named after a work item from the latest origin/\(checkout.baseBranch). It only runs after your confirmation.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        } header: {
-            Text("Start Work Here")
-        } footer: {
-            Text("Starts a branch named after a work item from the latest origin/\(checkout.baseBranch). It only runs after your confirmation.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onChange(of: branch) {
             // Another branch name is another question.

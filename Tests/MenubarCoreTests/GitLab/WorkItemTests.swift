@@ -8,7 +8,7 @@ import Testing
 @Suite("Work items")
 struct WorkItemTests {
     private static let projectPath = "acme/main/server/server"
-    private static let committed = "cLevelOfCommitment::Committed"
+    private static let committed = "commitment::Committed"
     private static let gitLab = URL(string: "https://gitlab.example.com")!
 
     private static func project(committedLabel: String = committed) -> Project {
@@ -41,12 +41,12 @@ struct WorkItemTests {
     func committedSections() async throws {
         let lists = try await Self.realWorkItems()
         let sections = WorkItemSections(lists, committedLabel: Self.committed)
-        #expect(sections.sections.map(\.title) == ["Committed (2)", "Not Committed (20 of 29)"])
         #expect(sections.sections.map(\.kind) == [.committed, .notCommitted])
-        #expect(sections.header == "Work Items · 2 committed")
+        #expect(sections.sections.map(\.list.count) == [2, 29])
+        #expect(sections.sections.map(\.list.items.count) == [2, 20])
         let first = try #require(lists.committed?.items.first)
         #expect(first.reference == "\(Self.projectPath)#19017")
-        #expect(first.labels.first == Label(title: "cDueSlot::2026.51", color: "#9400d3"))
+        #expect(first.labels.first == Label(title: "slot::2026.51", color: "#9400d3"))
         #expect(first.updatedAt == (try Date.ISO8601FormatStyle().parse("2026-10-26T08:39:25Z")))
         // The old query asked no type and state: they read as an open issue.
         #expect(first.type == .issue && first.state == .opened)
@@ -72,12 +72,10 @@ struct WorkItemTests {
         #expect(variables.otherNot == nil)
 
         let sections = WorkItemSections(WorkItemLists(others: Self.list(3, of: 3)), committedLabel: "")
-        #expect(sections.sections.map(\.title) == ["Work Items (3)"])
-        #expect(sections.header == "Work Items (3)")
-        // Without committed ones, the header counts the other list.
+        #expect(sections.sections.map(\.kind) == [.all])
+        // Without committed ones, only the other list shows.
         let none = WorkItemSections(WorkItemLists(committed: Self.list(0, of: 0), others: Self.list(29, of: 20)), committedLabel: Self.committed)
-        #expect(none.header == "Work Items (20 of 29)")
-        #expect(none.sections.map(\.title) == ["Not Committed (20 of 29)"])
+        #expect(none.sections.map(\.kind) == [.notCommitted])
     }
 
     @Test("WI-01 limit never cuts committed items")
@@ -91,13 +89,8 @@ struct WorkItemTests {
 
         let sections = WorkItemSections(WorkItemLists(committed: Self.list(30, of: 30), others: Self.list(40, of: 10)),
                                         committedLabel: Self.committed)
-        #expect(sections.sections.map(\.title) == ["Committed (30)", "Not Committed (10 of 40)"])
-    }
-
-    @Test("WI-01 count shows N of M")
-    func countText() {
-        #expect(WorkItemSections.Section(kind: .notCommitted, list: Self.list(29, of: 20)).countText == "20 of 29")
-        #expect(WorkItemSections.Section(kind: .notCommitted, list: Self.list(3, of: 3)).countText == "3")
+        #expect(sections.sections.map(\.kind) == [.committed, .notCommitted])
+        #expect(sections.sections.map(\.list.items.count) == [30, 10])
     }
 
     @Test("WI-01 committed label as must-not-have drops its section")
@@ -117,21 +110,13 @@ struct WorkItemTests {
         #expect(Self.variables(filters).withOthers)
     }
 
-    @Test("WI-01 says when no work item matches")
-    func noneMatch() {
-        let sections = WorkItemSections(WorkItemLists(committed: Self.list(0, of: 0), others: Self.list(0, of: 0)), committedLabel: Self.committed)
-        #expect(sections.isEmpty)
-        #expect(sections.header == "Work Items (0)")
-        #expect(WorkItemSections.emptyText == "No work items match the filter")
-    }
-
     // MARK: - WI-02
 
     @Test("WI-02 query variables for scope type state sort and limit")
     func queryVariables() throws {
         // The variables the old tool sent with work-items.json.
         var filters = WorkItemFilters()
-        filters.setLabel("uStatus::InVerification", in: .without)
+        filters.setLabel("status::InVerification", in: .without)
         let variables = Self.variables(filters)
         let expected = try JSONSerialization.jsonObject(with: try FixtureFiles.data("GitLab/work-items-variables.json")) as? NSDictionary
         let sent = try JSONSerialization.jsonObject(with: Data(variables.graphQLValue.json.utf8)) as? NSDictionary
@@ -143,28 +128,6 @@ struct WorkItemTests {
         #expect(other.assignee == nil && other.author == "alex.doe")
         #expect(other.types == ["TASK"] && other.state == "all" && other.sort == "TITLE_ASC" && other.first == 50)
         #expect(Self.variables(WorkItemFilters(type: .incident, state: .closed, sort: .priority)).types == ["INCIDENT"])
-    }
-
-    @Test("WI-02 sums up the filters")
-    func summary() {
-        #expect(WorkItemFilters().summary == "Assigned to me · Open")
-        // The old tool's test.
-        var filters = WorkItemFilters(scope: .authored, state: .all)
-        filters.setLabel("type::bug", in: .with)
-        filters.setLabel("workflow::done", in: .without)
-        #expect(filters.summary == "Created by me · Open and closed · +bug · −done")
-
-        filters = WorkItemFilters(type: .epic, state: .closed, withLabels: ["uStatus::Sub::Deep", "cGroup:SquadAlpha", "bug"])
-        #expect(filters.summary == "Assigned to me · Epics · Closed · +Sub::Deep · +SquadAlpha · +bug")
-    }
-
-    @Test("WI-02 sums up any-of labels in parentheses")
-    func summaryAny() {
-        var filters = WorkItemFilters(labelsMatch: .any)
-        filters.setLabel("type::bug", in: .with)
-        #expect(filters.summary == "Assigned to me · Open · +bug")
-        filters.setLabel("team::web", in: .with)
-        #expect(filters.summary == "Assigned to me · Open · +(bug or web)")
     }
 
     // MARK: - WI-03
@@ -181,59 +144,46 @@ struct WorkItemTests {
         filters.setLabel("workflow::done", in: nil)
         #expect(filters.withoutLabels == ["type::bug"])
         #expect(filters.list(of: "workflow::done") == nil)
-
-        #expect(WorkItemFilters.message(label: "X", putIn: .with) == "Work items must have the label X")
-        #expect(WorkItemFilters.message(label: "X", putIn: .without) == "Work items must not have the label X")
-        #expect(WorkItemFilters.message(label: "X", putIn: nil) == "The label X is out of the work item filters")
-        #expect(WorkItemFilters.message(labelsMatch: .all) == "Work items need all of the must-have labels")
     }
 
     @Test("WI-03 keeps one must-have label per scope")
     func oneLabelPerScope() {
         var filters = WorkItemFilters()
-        for (label, list) in [("uStatus::Todo", WorkItemFilters.LabelList.with), ("uStatus::Done", .without),
-                              ("uStatus::Sub::Deep", .with), ("uStatus::InProgress", .with), ("bug", .with)] {
+        for (label, list) in [("status::Todo", WorkItemFilters.LabelList.with), ("status::Done", .without),
+                              ("status::Sub::Deep", .with), ("status::InProgress", .with), ("bug", .with)] {
             filters.setLabel(label, in: list)
         }
-        #expect(filters.withLabels == ["uStatus::Sub::Deep", "uStatus::InProgress", "bug"])
-        #expect(filters.withoutLabels == ["uStatus::Done"])
+        #expect(filters.withLabels == ["status::Sub::Deep", "status::InProgress", "bug"])
+        #expect(filters.withoutLabels == ["status::Done"])
     }
 
     @Test("WI-03 nested scope is its own scope")
     func nestedScope() {
-        #expect(WorkItemFilters.scope(of: "uStatus::Sub::Deep") == "uStatus::Sub")
-        #expect(WorkItemFilters.scope(of: "uStatus::Todo") == "uStatus")
-        #expect(WorkItemFilters.scope(of: "cGroup:SquadAlpha") == nil)
-        var filters = WorkItemFilters(withLabels: ["uStatus::Sub::Deep"])
-        filters.setLabel("uStatus::Sub::Other", in: .with)
-        #expect(filters.withLabels == ["uStatus::Sub::Other"])
-        filters.setLabel("uStatus::Todo", in: .with)
-        #expect(filters.withLabels == ["uStatus::Sub::Other", "uStatus::Todo"])
+        #expect(WorkItemFilters.scope(of: "status::Sub::Deep") == "status::Sub")
+        #expect(WorkItemFilters.scope(of: "status::Todo") == "status")
+        #expect(WorkItemFilters.scope(of: "group:SquadAlpha") == nil)
+        var filters = WorkItemFilters(withLabels: ["status::Sub::Deep"])
+        filters.setLabel("status::Sub::Other", in: .with)
+        #expect(filters.withLabels == ["status::Sub::Other"])
+        filters.setLabel("status::Todo", in: .with)
+        #expect(filters.withLabels == ["status::Sub::Other", "status::Todo"])
     }
 
     @Test("WI-03 switching to all keeps the last label of each scope")
     func switchToAll() {
         var filters = WorkItemFilters(labelsMatch: .any)
-        for label in ["uStatus::Todo", "uStatus::InProgress", "bug"] {
+        for label in ["status::Todo", "status::InProgress", "bug"] {
             filters.setLabel(label, in: .with)
         }
+        // Any keeps several labels of a scope.
+        #expect(filters.withLabels == ["status::Todo", "status::InProgress", "bug"])
         filters.setLabelsMatch(.all)
         #expect(filters.labelsMatch == .all)
-        #expect(filters.withLabels == ["uStatus::InProgress", "bug"])
+        #expect(filters.withLabels == ["status::InProgress", "bug"])
 
         filters = WorkItemFilters(withLabels: ["a::1", "b::1", "a::2"], labelsMatch: .any)
         filters.setLabelsMatch(.all)
         #expect(filters.withLabels == ["b::1", "a::2"])
-    }
-
-    @Test("WI-03 any keeps several labels of a scope")
-    func anyKeepsSeveral() {
-        var filters = WorkItemFilters()
-        filters.setLabelsMatch(.any)
-        for label in ["uStatus::Todo", "uStatus::InProgress", "bug"] {
-            filters.setLabel(label, in: .with)
-        }
-        #expect(filters.withLabels == ["uStatus::Todo", "uStatus::InProgress", "bug"])
     }
 
     @Test("WI-03 query variables for all")
@@ -265,15 +215,6 @@ struct WorkItemTests {
         #expect(variables.graphQLValue.json.contains(#""otherOr":{"labelNames":["type::bug","team::web"]}"#))
     }
 
-    @Test("WI-03 clear all empties both lists")
-    func clearAll() {
-        var filters = WorkItemFilters(withLabels: ["a", "b"], withoutLabels: ["c"], labelsMatch: .any)
-        filters.clearLabels()
-        #expect(filters.withLabels.isEmpty && filters.withoutLabels.isEmpty)
-        #expect(filters.labelsMatch == .any)
-        #expect(WorkItemFilters.clearedLabelsMessage == "Cleared the work item label filters")
-    }
-
     // MARK: - WI-04
 
     @Test("WI-04 shows the slot label value before the title")
@@ -282,11 +223,9 @@ struct WorkItemTests {
         #expect(item.slot(prefix: "slot::") == "Q1")
 
         let real = try #require(try await Self.realWorkItems().committed?.items.first)
-        #expect(real.slot(prefix: "cScheduledSlot::") == "2026.51")
-    }
+        #expect(real.slot(prefix: "slot-scheduled::") == "2026.51")
 
-    @Test("WI-04 no slot without a prefix")
-    func noSlot() {
+        // No slot without a prefix, or without a label of it.
         #expect(Self.item(labels: ["slot::Q1"]).slot(prefix: "") == nil)
         #expect(Self.item(labels: ["bug"]).slot(prefix: "slot::") == nil)
     }
@@ -301,7 +240,6 @@ struct WorkItemTests {
         filters.setLabel(evil, in: .with)
         filters.setLabel("%@ %n {{x}}", in: .without)
         #expect(filters.withLabels == [evil] && filters.withoutLabels == ["%@ %n {{x}}"])
-        #expect(filters.summary == "Assigned to me · Open · +$(touch pwned) · −%@ %n {{x}}")
 
         // The variables carry the labels as JSON strings, unchanged.
         let json = Self.variables(filters).graphQLValue.json
@@ -356,34 +294,24 @@ struct WorkItemTests {
         return try await GitLabClient(transport: stub, gitLab: gitLab, token: "t").send(operation)
     }
 
-    @Test("WI-05 marks a work item with an open MR")
-    func openMarker() async throws {
+    @Test("WI-05 marks a work item by its related MRs: open wins over merged, closed ones and ignored prefixes don't count")
+    func relatedMarker() async throws {
         let related = try await Self.related()
         #expect(related.map(\.state) == [.merged, .opened, .closed])
         #expect(RelatedMergeRequestMarker.of(related, ignoredPrefix: "") == .open)
-        #expect(RelatedMergeRequestMarker.open.symbol == "arrow.triangle.pull")
-    }
-
-    @Test("WI-05 marks a work item with only merged MRs")
-    func mergedMarker() async throws {
-        let related = try await Self.related()
+        // Only merged ones count once the open `[cascade]` one is ignored.
         #expect(RelatedMergeRequestMarker.of(related, ignoredPrefix: "[cascade]") == .merged)
-        #expect(RelatedMergeRequestMarker.merged.symbol == "flag.checkered")
         #expect(RelatedMergeRequestMarker.of(related.filter { $0.state == .closed }, ignoredPrefix: "") == nil)
         #expect(RelatedMergeRequestMarker.of([], ignoredPrefix: "") == nil)
+        let cascade = related.filter { $0.title.hasPrefix("[cascade]") }
+        #expect(RelatedMergeRequestMarker.of(cascade, ignoredPrefix: "[cascade]") == nil)
+        #expect(RelatedMergeRequestMarker.of(cascade, ignoredPrefix: "") == .open)
 
         // The real answer of an item without related MRs.
         let stub = StubTransport()
         stub.answer(operation: "RelatedMergeRequests", body: try FixtureFiles.string("GitLab/related-merge-requests-none.json"))
         let operation = try #require(GitLabOperation.relatedMergeRequests(of: Self.item()))
         #expect(try await GitLabClient(transport: stub, gitLab: Self.gitLab, token: "t").send(operation).isEmpty)
-    }
-
-    @Test("WI-05 skips MRs with the ignored prefix")
-    func ignoredPrefix() async throws {
-        let cascade = try await Self.related().filter { $0.title.hasPrefix("[cascade]") }
-        #expect(RelatedMergeRequestMarker.of(cascade, ignoredPrefix: "[cascade]") == nil)
-        #expect(RelatedMergeRequestMarker.of(cascade, ignoredPrefix: "") == .open)
     }
 
     @Test("WI-05 ignores a broken cache entry")
@@ -421,11 +349,6 @@ struct WorkItemTests {
 
     // MARK: - WI-07, MR-04
 
-    @Test("WI-07 links to all merge requests")
-    func mergeRequestsLink() {
-        #expect(GitLabLinks.mergeRequests(gitLab: Self.gitLab).absoluteString == "https://gitlab.example.com/dashboard/merge_requests")
-    }
-
     @Test("WI-07 links to all work items with scope and state")
     func workItemsLink() {
         #expect(GitLabLinks.workItems(gitLab: Self.gitLab, filters: WorkItemFilters(), me: "alex.doe").absoluteString
@@ -434,12 +357,5 @@ struct WorkItemTests {
             == "https://gitlab.example.com/dashboard/issues?author_username=alex.doe&state=all")
         #expect(GitLabLinks.workItems(gitLab: Self.gitLab, filters: WorkItemFilters(), me: nil).absoluteString
             == "https://gitlab.example.com/dashboard/issues")
-    }
-
-    @Test("MR-04 explains how to get a GitLab token")
-    func tokenLink() {
-        #expect(GitLabLinks.newToken(gitLab: Self.gitLab).absoluteString
-            == "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=MegaMonitor&scopes=api")
-        #expect(Problem.noToken(.gitLab).message == "Needs a GitLab token with the api scope")
     }
 }

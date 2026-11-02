@@ -12,16 +12,30 @@ public struct WorkItemDetailView: View {
     @Environment(WindowRouter.self) private var router
     @Environment(\.openURL) private var openURL
     private let selection: WorkItem.ID?
+    private let fallback: WorkItem?
 
-    /// - Parameter selection: the selected work item, by its full reference
-    public init(selection: WorkItem.ID?) {
+    /// - Parameters:
+    ///   - selection: the selected work item, by its full reference
+    ///   - fallback: the item to show when the loaded work items don't have it, like a slot's item of someone else
+    ///     (SLOT-09); only used when its reference is the selection
+    public init(selection: WorkItem.ID?, fallback: WorkItem? = nil) {
         self.selection = selection
+        self.fallback = fallback
     }
 
     public var body: some View {
         TimelineView(.periodic(from: .now, by: 10)) { context in
-            WorkItemDetailContent(model: detail(at: context.date), actions: .live(model: model, router: router, openURL: openURL))
+            WorkItemDetailContent(model: detail(at: context.date), actions: actions)
         }
+    }
+
+    /// The app's actions; inside Slots itself there is no "Show in Slots".
+    private var actions: GitLabSectionActions {
+        var actions = GitLabSectionActions.live(model: model, router: router, openURL: openURL)
+        if router.section == .slots {
+            actions.showInSlots = nil
+        }
+        return actions
     }
 }
 
@@ -30,10 +44,14 @@ extension WorkItemDetailView {
     /// under its last update on the item's birthday.
     private func detail(at date: Date) -> WorkItemDetailModel? {
         let data = WorkItemsData(model, now: date)
-        let item = data.lists?.all.first { $0.id == selection }
-        var detail = WorkItemDetailModel(data, selection: selection, reality: item.map { model.slotItem(of: $0, now: date) })
-        if model.pipelines.preferences.easterEggs, let item = detail?.workItem {
-            detail?.eggLine = EggRules.birthday(reference: data.shortReference(of: item), updatedAt: item.updatedAt, now: date)
+        guard let item = data.lists?.all.first(where: { $0.id == selection }) ?? fallback.flatMap({ $0.id == selection ? $0 : nil }),
+            data.showsWorkItems
+        else {
+            return nil
+        }
+        var detail = WorkItemDetailModel(data, workItem: item, reality: model.slotItem(of: item, now: date))
+        if model.pipelines.preferences.easterEggs {
+            detail.eggLine = EggRules.birthday(reference: data.shortReference(of: item), updatedAt: item.updatedAt, now: date)
         }
         return detail
     }
@@ -43,7 +61,8 @@ extension WorkItemDetailView {
 /// language. On top the header: the state badge, the project and the number, the type and the slot pill; the title; the
 /// author and the assignees; a strip of chips for the slot's next date, the flags, the merge requests and their builds,
 /// each jumping to its card or opening its page; the labels, quiet. Below, the cards in one column, or two when wide:
-/// Merge Requests, Slot and Claude; then the description and the discussion. "Open in GitLab" is in the toolbar, the rest in the ⋯ menu.
+/// Merge Requests, Slot and Claude; then the description and the discussion. "Open in GitLab" is in the toolbar, the
+/// frequent actions are buttons under the header, and there is no ⋯ menu.
 struct WorkItemDetailContent: View {
     let model: WorkItemDetailModel?
     let actions: GitLabSectionActions
@@ -71,7 +90,7 @@ struct WorkItemDetailContent: View {
                     WorkItemMergeRequestsCard(model: model, actions: actions)
                         .id(Card.mergeRequests)
                     if let slot = model.slot {
-                        WorkItemSlotCard(slot: slot, actions: actions)
+                        WorkItemSlotCard(slot: slot, dueSlot: model.dueSlot)
                             .id(Card.slot)
                     }
                     // The item's own text, loaded on selection (WIN-02).
@@ -84,7 +103,6 @@ struct WorkItemDetailContent: View {
                     WorkItemDiscussionCard(source: DescriptionSource(model.workItem), actions: actions)
                 }
             }
-            .detailPrimaryAction("Open in GitLab", help: model.openTitle) { actions.open(model.workItem.webURL) }
         } else {
             // Blank without a selection: nothing says "select something" next to a list that may have nothing to select.
             Color.clear
@@ -114,12 +132,15 @@ struct WorkItemDetailContent: View {
                 LabelPill(label: slot, style: .value)
             }
         } menu: {
-            moreMenu(model)
+            // Nothing is left for a ⋯ menu: "Open in GitLab" is in the toolbar.
         } byline: {
             byline(model)
         } chips: {
             chips(model, jump: jump)
         } footer: {
+            // The frequent actions as buttons, not behind a menu.
+            actionRow(model)
+                .padding(.top, 4)
             if !model.labels.isEmpty {
                 // Every label, scoped ones whole (WI-04), small: they describe the item, the chips say what to do.
                 PillFlowLayout(spacing: 4, lineSpacing: 4) {
@@ -172,13 +193,13 @@ struct WorkItemDetailContent: View {
             DetailChip(
                 symbol: slot.isOverdue ? "calendar.badge.exclamationmark" : "calendar",
                 tint: slot.isOverdue ? MergeRequestStatus.Color.orange.swiftUI : .accentColor, text: slot.countdown,
-                help: "Show the slot's dates"
+                help: "Jump to the Slot card"
             ) {
                 jump(.slot)
             }
         }
         ForEach(model.flags) { flag in
-            DetailChip(symbol: flag.kind.symbol, tint: flag.kind.tint, text: flag.kind.text, help: flag.fixTitle) {
+            DetailChip(symbol: flag.kind.symbol, tint: flag.kind.tint, text: flag.kind.text, help: Self.help(of: flag)) {
                 actions.follow(flag.fixURL)
             }
         }
@@ -192,12 +213,12 @@ struct WorkItemDetailContent: View {
                 }
             }
             if counted.count > Self.chipLimit {
-                DetailChip(symbol: nil, text: "\(counted.count - Self.chipLimit) more", help: "Show the merge requests") {
+                DetailChip(symbol: nil, text: "\(counted.count - Self.chipLimit) more", help: "Jump to the Merge Requests card") {
                     jump(.mergeRequests)
                 }
             } else if counted.isEmpty {
                 // Only closed or ignored ones: the card lists them.
-                DetailChip(symbol: "circle.dashed", text: "No open or merged MR", help: "Show the merge requests") {
+                DetailChip(symbol: "circle.dashed", text: "No open or merged MR", help: "Jump to the Merge Requests card") {
                     jump(.mergeRequests)
                 }
             }
@@ -210,13 +231,22 @@ struct WorkItemDetailContent: View {
         }
     }
 
+    /// What a flag's chip does: "Show the build in the app", "Show the work item in the app".
+    private static func help(of flag: SlotFlag) -> String {
+        switch flag.fixTitle {
+        case "Show Build": "Show the build in the app"
+        case "Show Work Item": "Show the work item in the app"
+        default: "\(flag.fixTitle) in the app"
+        }
+    }
+
     /// "!14 open" in its state's color; shows it in Merge Requests while that list has it, else opens it in GitLab.
     private func mergeRequestChip(_ row: RelatedMergeRequestRow) -> some View {
         let short = row.reference.components(separatedBy: " · ").first ?? row.reference
         let word = row.mergeRequest.state == .opened ? "open" : row.mergeRequest.state.rawValue.lowercased()
         return DetailChip(
             symbol: row.symbol, tint: row.tint,
-            help: row.showsInMergeRequests ? "Show in Merge Requests" : row.openTitle,
+            help: row.showsInMergeRequests ? "Show \(short) in Merge Requests" : "Show \(short) in the app",
             action: {
                 if row.showsInMergeRequests { actions.showInMergeRequests(row.id) } else { actions.follow(row.id) }
             }
@@ -244,7 +274,7 @@ struct WorkItemDetailContent: View {
         DetailChip(
             symbol: build.signal.symbol, tint: build.signal.tint,
             text: "\(build.label.map { "Build \($0)" } ?? "Pipeline") \(build.signal.word)",
-            help: build.url == nil ? "Show the merge requests" : "Show the build"
+            help: build.url == nil ? "Jump to the Merge Requests card" : build.label.map { "Show build \($0) in the app" } ?? "Show the build in the app"
         ) {
             if let url = build.url { actions.follow(url) } else { jump(.mergeRequests) }
         }
@@ -255,18 +285,25 @@ struct WorkItemDetailContent: View {
         }
     }
 
-    /// The item's links and the follow-up (NEW-04).
-    @ViewBuilder
-    private func moreMenu(_ model: WorkItemDetailModel) -> some View {
-        Button("Open in GitLab") { actions.open(model.workItem.webURL) }
-        if model.slot != nil {
-            Button("Show in Slots") { actions.showSection(.slots) }
-        }
-        Divider()
-        Button("Copy Link") { actions.copy(model.workItem.webURL) }
-        // GitLab's new issue page, prefilled with this item's link and related to it (NEW-04).
-        if let newWorkItem = actions.newWorkItem {
-            Button("New Follow-Up Item") { newWorkItem(.followUpOfWorkItem(model.workItem)) }
+    /// Copy Link, the follow-up item (NEW-04) and, for an item with a slot, Show in Slots, as the build detail has its
+    /// buttons.
+    private func actionRow(_ model: WorkItemDetailModel) -> some View {
+        DetailActionRow {
+            CopyLinkButton(help: "Copies the work item's link in GitLab") { actions.copy(model.workItem.webURL) }
+            // GitLab's new issue page, prefilled with this item's link and related to it (NEW-04).
+            if let newWorkItem = actions.newWorkItem {
+                DetailActionButton(
+                    "New Follow-Up Item", "plus.square.on.square",
+                    help: "Opens GitLab's new issue page, filled in from this work item"
+                ) {
+                    newWorkItem(.followUpOfWorkItem(model.workItem))
+                }
+            }
+            if model.slotName != nil, let showInSlots = actions.showInSlots {
+                DetailActionButton("Show in Slots", "calendar.badge.clock", help: "Shows the item in Slots") {
+                    showInSlots(model.workItem.id)
+                }
+            }
         }
     }
 }
@@ -450,11 +487,11 @@ private struct BuildBadge: View {
 
 // MARK: - Slot
 
-/// The slot the item is planned for: its countdown and its three dates as steps (SLOT-01, SLOT-02), with "Show in
-/// Slots".
+/// The slot the item is planned for: its countdown and its three dates as steps (SLOT-01, SLOT-02).
 private struct WorkItemSlotCard: View {
     let slot: WorkItemDetailModel.Slot
-    let actions: GitLabSectionActions
+    /// the due slot when it differs from the slot
+    let dueSlot: SlotName?
 
     var body: some View {
         let tint = slot.isOverdue ? MergeRequestStatus.Color.orange.swiftUI : Color.accentColor
@@ -469,11 +506,12 @@ private struct WorkItemSlotCard: View {
                     }
                 }
                 SlotMilestoneRow(dates: slot.dates, today: slot.today, tint: tint)
+                if let dueSlot {
+                    Text(verbatim: "due \(dueSlot.description)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-        } accessory: {
-            Button("Show in Slots") { actions.showSection(.slots) }
-                .buttonStyle(.link)
-                .font(.callout)
         }
     }
 }

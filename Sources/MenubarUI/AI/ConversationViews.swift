@@ -294,7 +294,11 @@ struct ClaudeComposer: View {
             if model.ai.settings.useMySetup {
                 SlashCommandList(commands: slashMatches, highlighted: highlighted, pick: insert)
             } else {
-                SlashCommandHint { router?.open(.settings(pane: .general)) }
+                SlashCommandHint {
+                    // The Claude pane, at the toggle the hint names.
+                    model.settings.reveal(.claudeSetup)
+                    router?.open(.settings(pane: .claude))
+                }
             }
         }
     }

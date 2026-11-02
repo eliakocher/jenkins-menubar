@@ -177,7 +177,7 @@ struct MenuFlyout: Sendable {
 
     /// Committed and Not Committed (WI-01), MR-04's note, the window and GitLab.
     private mutating func fillWorkItems(_ data: PanelData) {
-        let workItems = WorkItemsData(data, labelColors: data.workItems.labelColors)
+        let workItems = WorkItemsData(data, related: data.workItems.related, labelColors: data.workItems.labelColors)
         let list = WorkItemsListModel(workItems)
         if list.tokenNote != nil {
             note = PanelModel.SetupText.needsToken
@@ -263,7 +263,7 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
     var title: String
     /// the grey second line
     var subtitle: String
-    /// `nil` leaves the column empty: an open work item without a related MR, which every such item would share
+    /// `nil` for none: a work item never has one (its MR is a chip on line 2)
     var symbol: String?
     /// the symbol's color; `nil` for the label color
     var tint: MenuTint?
@@ -316,26 +316,17 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
         id = "mr:\(mergeRequest.id.absoluteString)"
     }
 
-    /// A work item: its related-MR marker, a check when closed, else none; the title; the slot's value as a pill, then "#31 · Task ·
-    /// design · 3d ago" (WI-04, WI-05), its age as the MRs' (MR-03).
+    /// A work item, as the window's row (Task 7.x, the user, 2026-11-02: no symbol column): the title, its age at the
+    /// right end, and line 2 with "#31", the slot's value as a pill, the MR chip ("!14 +1") and the type and labels
+    /// (WI-04, WI-05); the row draws them with the window's own parts. No symbol: an MR is the chip's, and a closed item
+    /// says "Closed" on line 2, since closed items only show under "Open and closed".
     init(workItem row: WorkItemRowModel, now: Date) {
         let item = row.workItem
         kind = .workItem(row)
         title = item.displayTitle
-        let age = "\(GitLabText.age(since: item.updatedAt, now: now)) ago"
-        subtitle = ([row.reference] + [row.secondLine].compactMap { $0 } + [age]).joined(separator: " · ")
-        switch row.marker {
-        case .open?:
-            symbol = WorkItemRowStyle.symbol(of: .open)
-            tint = .gitLab(.blue)
-        case .merged?:
-            symbol = WorkItemRowStyle.symbol(of: .merged)
-            tint = .gitLab(.green)
-        case nil:
-            // Open is what every listed item is: no marker (the user, 2026-10-29). Closed still says something.
-            symbol = item.state == .closed ? "checkmark.circle" : nil
-            tint = .secondary
-        }
+        subtitle = WorkItemDetailsLine.plainText(of: row)
+        symbol = nil
+        tint = nil
         progress = nil
         pill = row.slotLabel
         url = item.webURL

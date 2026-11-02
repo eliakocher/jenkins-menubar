@@ -20,8 +20,9 @@ extension WindowRouter {
             case .mergeRequests: selection.mergeRequests?.absoluteString
             case .workItems: selection.workItems
             case .workspaces: selection.workspaces
-            // Activity's entries come and go with the log, and Slots has no selection.
-            case .activity, .slots: nil
+            case .slots: selection.slots
+            // Activity's entries come and go with the log.
+            case .activity, .digest: nil
             }
         return NavigationLocation(section: section, item: item)
     }
@@ -96,7 +97,8 @@ extension WindowRouter {
             case .mergeRequests: selection.mergeRequests = location.item.flatMap { URL(string: $0) }
             case .workItems: selection.workItems = location.item
             case .workspaces: selection.workspaces = location.item
-            case .activity, .slots: break
+            case .slots: selection.slots = location.item
+            case .activity, .digest: break
             }
             section = location.section
         }

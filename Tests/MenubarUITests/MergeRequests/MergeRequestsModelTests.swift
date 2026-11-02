@@ -43,6 +43,26 @@ struct MergeRequestsModelTests {
         #expect(detail.jenkinsBuild?.job == (expected == nil ? nil : build.job))
     }
 
+    @Test("MR-03 row parts put together are the MR-03 details", arguments: [0, 1, 2, 3, 4])
+    func rowParts(_ index: Int) {
+        // Mine, someone else's, with and without a pipeline, in another project: the window's row shows the age apart,
+        // so its parts must add up to the details the tooltip has.
+        let m = Self.fixtures.mergeRequestsScreen
+        let mergeRequest = [m.mr21, m.mr24, m.mergeRequest(5, "No pipeline here", pipeline: nil), m.web8, m.mr16][index]
+        let row = MergeRequestRowModel(mergeRequest, me: "jdoe", project: "group/subgroup/project", now: Self.fixtures.now)
+        let byCount = row.more.first?.hasPrefix("by ") == true ? 1 : 0
+        #expect(byCount == (mergeRequest.author.username == "jdoe" ? 0 : 1))
+        var parts = [row.lead] + row.more
+        parts.insert("updated \(row.age)", at: 1 + byCount)
+        #expect(parts.joined(separator: " · ") == row.details)
+        // "pipeline success" shows when the badge doesn't name the pipeline; "Pipeline failed" already does.
+        let namesPipeline = MergeRequestStatus.textNamesPipeline(row.status.text)
+        #expect(row.more.contains { $0.hasPrefix("pipeline ") } == (mergeRequest.pipelineStatus != nil && !namesPipeline))
+        if index == 4 {
+            #expect(row.details.lowercased().components(separatedBy: "pipeline").count == 2)
+        }
+    }
+
     @Test(
         "WIN-03 search filters the current section by title, label and author",
         arguments: [

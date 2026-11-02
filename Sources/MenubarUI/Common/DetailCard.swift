@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A card of a detail page: a headline with a symbol and a trailing accessory, such as a count or a button, over its
 /// content, on a surface that lifts off the window: a faint white veil with a hairline edge in dark, a white card with a
-/// hairline and a soft shadow in light. The card tells ``SectionNav`` its title, and is where the nav jumps to.
+/// hairline and a soft shadow in light.
 ///
 /// The `width` is the page rule of every detail (MR, work item, build): compact fact cards flow in
 /// ``CardColumnsLayout``'s columns, tall or growing ones (Description, Claude, Changes, Discussion) take the full width
@@ -49,8 +49,6 @@ struct DetailCard<Accessory: View, Content: View>: View {
         }
         .shadow(color: .black.opacity(isDark ? 0 : 0.06), radius: 6, y: 1)
         .accessibilityElement(children: .contain)
-        .id(SectionTarget(title: title))
-        .preference(key: SectionTitlesKey.self, value: [title])
         .layoutValue(key: DetailCardWidthKey.self, value: width)
     }
 
@@ -155,16 +153,46 @@ struct CardColumnsLayout: Layout {
     }
 }
 
-/// A fact of the header's chip strip: a symbol in its tint and a short text in a capsule, a button where it links or
-/// jumps, which brightens on hover.
+/// A fact of the header's chip strip: a symbol in its tint and a short text in a capsule. A chip that links or jumps is a
+/// button that brightens on hover, and its tooltip, `help`, is required: it says what the click does ("Show build #4 in
+/// Pipelines"), because a chip doesn't look like it does anything. A chip that only states a fact takes no action and
+/// an optional tooltip.
 struct DetailChip<Label: View>: View {
     var symbol: String?
     var tint: Color = .secondary
-    var help: String?
-    var action: (() -> Void)?
-    @ViewBuilder var label: Label
+    private let help: String?
+    private let action: (() -> Void)?
+    private let label: Label
 
     @ViewState private var isHovered = false
+
+    /// Returns a chip that does something when clicked.
+    ///
+    /// - Parameters:
+    ///   - help: the tooltip, saying what the click does; never empty
+    ///   - action: what the click does
+    init(
+        symbol: String?, tint: Color = .secondary, help: String, action: @escaping () -> Void,
+        @ViewBuilder label: () -> Label
+    ) {
+        assert(!help.isEmpty, "a clickable chip needs a tooltip that says what the click does")
+        self.symbol = symbol
+        self.tint = tint
+        self.help = help
+        self.action = action
+        self.label = label()
+    }
+
+    /// Returns a chip that states a fact and does nothing when clicked.
+    ///
+    /// - Parameter help: the tooltip, if the chip's text needs more words
+    init(symbol: String?, tint: Color = .secondary, help: String? = nil, @ViewBuilder label: () -> Label) {
+        self.symbol = symbol
+        self.tint = tint
+        self.help = help
+        action = nil
+        self.label = label()
+    }
 
     var body: some View {
         let content = HStack(spacing: 5) {
@@ -194,12 +222,14 @@ struct DetailChip<Label: View>: View {
 }
 
 extension DetailChip where Label == Text {
-    init(symbol: String?, tint: Color = .secondary, text: String, help: String? = nil, action: (() -> Void)? = nil) {
-        self.symbol = symbol
-        self.tint = tint
-        self.help = help
-        self.action = action
-        label = Text(verbatim: text)
+    /// Returns a chip with a text that does something when clicked; `help` says what.
+    init(symbol: String?, tint: Color = .secondary, text: String, help: String, action: @escaping () -> Void) {
+        self.init(symbol: symbol, tint: tint, help: help, action: action) { Text(verbatim: text) }
+    }
+
+    /// Returns a chip with a text that states a fact.
+    init(symbol: String?, tint: Color = .secondary, text: String, help: String? = nil) {
+        self.init(symbol: symbol, tint: tint, help: help) { Text(verbatim: text) }
     }
 }
 

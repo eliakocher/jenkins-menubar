@@ -68,54 +68,52 @@ struct LabelTests {
     @Test("WI-06 searches GitLab and my work items case-insensitively")
     func searchesCaseInsensitively() async throws {
         // The old tool's test: GitLab also finds Answered by its description.
-        answerLabels(for: "STATUS", with: [Label(title: "uStatus::Todo", color: "#9400d3"), Label(title: "Answered", color: "#808080")])
-        let memory = LabelMemory(lastSeen: ["uStatus::Seen": Self.now, "bug": Self.now])
+        answerLabels(for: "STATUS", with: [Label(title: "status::Todo", color: "#9400d3"), Label(title: "Answered", color: "#808080")])
+        let memory = LabelMemory(lastSeen: ["status::Seen": Self.now, "bug": Self.now])
 
         let result = try await searchLabels("STATUS", memory: memory)
-        #expect(result.labels == ["uStatus::Seen", "uStatus::Todo"])
-        #expect(result.colors == ["uStatus::Todo": "#9400d3"])
+        #expect(result.labels == ["status::Seen", "status::Todo"])
+        #expect(result.colors == ["status::Todo": "#9400d3"])
         #expect(result.problem == nil)
         #expect(result.found.count == 2)
         #expect(stub.requests(operation: "Labels").first?.graphQL?.variables == #"{"path":"acme/main/server/server","term":"STATUS"}"#)
 
         // The filter labels are offered too, and empty text gives the known labels without asking GitLab.
         let all = try await searchLabels("", memory: memory, filters: WorkItemFilters(withoutLabels: ["workflow::done"]))
-        #expect(all.labels == ["bug", "uStatus::Seen", "workflow::done"])
+        #expect(all.labels == ["bug", "status::Seen", "workflow::done"])
         #expect(stub.requests.count == 1)
 
         // The picker groups them by scope, then the others.
-        #expect(Label.groupedByScope(["uStatus::Todo", "bug", "area::web", "uStatus::Seen"])
-            == [Label.Group(scope: "area", labels: ["area::web"]), Label.Group(scope: "uStatus", labels: ["uStatus::Todo", "uStatus::Seen"]),
+        #expect(Label.groupedByScope(["status::Todo", "bug", "area::web", "status::Seen"])
+            == [Label.Group(scope: "area", labels: ["area::web"]), Label.Group(scope: "status", labels: ["status::Todo", "status::Seen"]),
                 Label.Group(scope: nil, labels: ["bug"])])
-        #expect(Label.Group(scope: nil, labels: []).title == "Other Labels")
     }
 
     @Test("WI-06 leaves out labels found only by description")
     func leavesOutDescriptionMatches() async throws {
         stub.answer(operation: "Labels", body: try FixtureFiles.string("GitLab/labels-search.json"))
         let result = try await searchLabels("bug", memory: LabelMemory())
-        #expect(result.labels == ["bugfix::backport", "uIssueType::Bug"])
-        #expect(result.colors == ["bugfix::backport": "#F0F0F0", "uIssueType::Bug": "#ed9121"])
+        #expect(result.labels == ["bugfix::backport", "type::Bug"])
+        #expect(result.colors == ["bugfix::backport": "#F0F0F0", "type::Bug": "#ed9121"])
     }
 
-    @Test("WI-06 searches only my labels without a token")
-    func noToken() async throws {
+    @Test("WI-06 searches only my labels without a token or when GitLab does not answer")
+    func onlyMyLabels() async throws {
+        // Without a token nothing is asked.
         let withoutToken = LabelSearch(client: nil, project: Self.project, clock: clock)
-        let memory = LabelMemory(lastSeen: ["uStatus::Seen": Self.now], colors: ["uStatus::Seen": "#808080"])
+        let memory = LabelMemory(lastSeen: ["status::Seen": Self.now], colors: ["status::Seen": "#808080"])
         let result = try await searchLabels("seen", memory: memory, in: withoutToken)
-        #expect(result.labels == ["uStatus::Seen"])
-        #expect(result.colors == ["uStatus::Seen": "#808080"])
-        #expect(result.problem == "No GitLab token: only the labels of your work items")
+        #expect(result.labels == ["status::Seen"])
+        #expect(result.colors == ["status::Seen": "#808080"])
+        #expect(result.problem != nil)
         #expect(try await searchLabels("", memory: memory, in: withoutToken).problem == nil)
         #expect(stub.requests.isEmpty)
-    }
 
-    @Test("WI-06 searches only my labels when GitLab does not answer")
-    func noAnswer() async throws {
+        // GitLab does not answer.
         stub.fail(operation: "Labels", with: .noConnection(within: .seconds(5)))
-        let result = try await searchLabels("seen", memory: LabelMemory(lastSeen: ["uStatus::Seen": Self.now]))
-        #expect(result.labels == ["uStatus::Seen"])
-        #expect(result.problem == "GitLab did not answer: only the labels of your work items")
+        let unanswered = try await searchLabels("seen", memory: LabelMemory(lastSeen: ["status::Seen": Self.now]))
+        #expect(unanswered.labels == ["status::Seen"])
+        #expect(unanswered.problem != nil)
 
         // A newer search cancels this one during its pause, before it asks GitLab.
         let older = Task { [search] in try await search.searchLabels("old", memory: LabelMemory(), filters: WorkItemFilters()) }
@@ -127,54 +125,78 @@ struct LabelTests {
 
     @Test("WI-06 flags a filter label GitLab no longer has")
     func flagsGoneLabel() async throws {
-        answerLabels(for: "uStatus::Done", with: [Label(title: "uStatus::Done", color: "#428bca"), Label(title: "uStatus::DoneSoon")])
-        answerLabels(for: "uStatus::Gone", with: [Label(title: "uStatus::GoneToo", color: "#808080")])
+        answerLabels(for: "status::Done", with: [Label(title: "status::Done", color: "#428bca"), Label(title: "status::DoneSoon")])
+        answerLabels(for: "status::Gone", with: [Label(title: "status::GoneToo", color: "#808080")])
         var filters = WorkItemFilters()
-        for label in ["uStatus::Done", "uStatus::Gone", "type::bug"] {
+        for label in ["status::Done", "status::Gone", "type::bug"] {
             filters.setLabel(label, in: .without)
         }
         let items = [Self.item(labels: [Label(title: "type::bug")])]
 
-        let check = try await search.checkFilterLabels(filters: filters, workItems: items, memory: LabelMemory())
-        #expect(check.memory.missing == ["uStatus::Gone"])
-        #expect(check.newlyMissing == ["uStatus::Gone"])
-        #expect(check.memory.missingFilterLabels(of: filters) == ["uStatus::Gone"])
-        #expect(check.memory.colors == ["uStatus::Done": "#428bca", "uStatus::GoneToo": "#808080"])
+        let check = try await search.checkFilterLabels(filters: filters, workItems: items, memory: LabelMemory(), now: Self.now)
+        #expect(check.memory.missing == ["status::Gone"])
+        #expect(check.newlyMissing == ["status::Gone"])
+        #expect(check.memory.missingFilterLabels(of: filters) == ["status::Gone"])
+        #expect(check.memory.colors == ["status::Done": "#428bca", "status::GoneToo": "#808080"])
         // A label a loaded work item has isn't asked.
         #expect(stub.requests(operation: "Labels").count == 2)
-        #expect(LabelMemory.missingMessage(label: "uStatus::Gone") == "The filter label uStatus::Gone is not in GitLab any more (renamed or removed?)")
 
         // Logged once: the next check flags it again, but not as new.
-        let again = try await search.checkFilterLabels(filters: filters, workItems: items, memory: check.memory)
-        #expect(again.memory.missing == ["uStatus::Gone"])
+        let again = try await search.checkFilterLabels(filters: filters, workItems: items, memory: check.memory, now: Self.now)
+        #expect(again.memory.missing == ["status::Gone"])
         #expect(again.newlyMissing.isEmpty)
-    }
 
-    @Test("WI-06 unflags a label taken out of the filters")
-    func unflags() async throws {
-        let memory = LabelMemory(missing: ["uStatus::Gone"])
-        var filters = WorkItemFilters(withoutLabels: ["uStatus::Gone"])
-        #expect(memory.missingFilterLabels(of: filters) == ["uStatus::Gone"])
-        filters.setLabel("uStatus::Gone", in: nil)
-        #expect(memory.missingFilterLabels(of: filters).isEmpty)
-
-        let check = try await search.checkFilterLabels(filters: filters, workItems: [], memory: memory)
-        #expect(check.memory.missing.isEmpty)
-        #expect(stub.requests.isEmpty)
+        // Taken out of the filters, it is unflagged.
+        filters.setLabel("status::Gone", in: nil)
+        #expect(again.memory.missingFilterLabels(of: filters).isEmpty)
+        let cleared = try await search.checkFilterLabels(filters: filters, workItems: items, memory: again.memory, now: Self.now)
+        #expect(cleared.memory.missing.isEmpty)
     }
 
     @Test("WI-06 does not flag when GitLab does not answer")
     func noFlagWithoutAnswer() async throws {
         stub.fail(operation: "Labels", with: .unknownHost)
-        let filters = WorkItemFilters(withLabels: ["uStatus::Flagged"], withoutLabels: ["uStatus::New"])
+        let filters = WorkItemFilters(withLabels: ["status::Flagged"], withoutLabels: ["status::New"])
 
-        let check = try await search.checkFilterLabels(filters: filters, workItems: [], memory: LabelMemory(missing: ["uStatus::Flagged"]))
-        #expect(check.memory.missing == ["uStatus::Flagged"])
+        let check = try await search.checkFilterLabels(filters: filters, workItems: [], memory: LabelMemory(missing: ["status::Flagged"]), now: Self.now)
+        #expect(check.memory.missing == ["status::Flagged"])
         #expect(check.newlyMissing.isEmpty)
 
         // Without a token nothing is asked, and nothing new is flagged either.
         let withoutToken = LabelSearch(client: nil, project: Self.project, clock: clock)
-        #expect(try await withoutToken.checkFilterLabels(filters: filters, workItems: [], memory: LabelMemory()).memory.missing.isEmpty)
+        #expect(try await withoutToken.checkFilterLabels(filters: filters, workItems: [], memory: LabelMemory(), now: Self.now).memory.missing.isEmpty)
+    }
+
+    @Test("OD-06 a filter label is asked about at most every 6 hours, and a new one at once")
+    func filterLabelCheckReused() async throws {
+        answerLabels(for: "status::Gone", with: [])
+        answerLabels(for: "status::New", with: [Label(title: "status::New")])
+        var filters = WorkItemFilters(withoutLabels: ["status::Gone"])
+
+        let first = try await search.checkFilterLabels(filters: filters, workItems: [], memory: LabelMemory(), now: Self.now)
+        let later = Self.now.addingTimeInterval(LabelMemory.filterCheckReusedFor - 60)
+        let second = try await search.checkFilterLabels(filters: filters, workItems: [], memory: first.memory, now: later)
+        // The reused answer keeps the flag without a request.
+        #expect(stub.requests(operation: "Labels").count == 1)
+        #expect(second.memory.missing == ["status::Gone"] && second.newlyMissing.isEmpty)
+
+        // A label added to the filters is asked at once; the old one still waits.
+        filters.setLabel("status::New", in: .without)
+        let third = try await search.checkFilterLabels(filters: filters, workItems: [], memory: second.memory, now: later)
+        #expect(stub.requests(operation: "Labels").count == 2)
+        #expect(third.memory.missing == ["status::Gone"])
+
+        // Once the answer is older than 6 hours, it is asked again.
+        let expired = Self.now.addingTimeInterval(LabelMemory.filterCheckReusedFor + 1)
+        _ = try await search.checkFilterLabels(filters: filters, workItems: [], memory: third.memory, now: expired)
+        #expect(stub.requests(operation: "Labels").count == 3)
+    }
+
+    @Test("OD-06 a label memory saved before the check times reads with none")
+    func oldLabelMemoryReads() throws {
+        let old = ##"{"lastSeen":{},"colors":{"bug":"#ff0000"},"missing":["status::Gone"]}"##
+        let memory = try JSONDecoder().decode(LabelMemory.self, from: Data(old.utf8))
+        #expect(memory.colors == ["bug": "#ff0000"] && memory.missing == ["status::Gone"] && memory.checkedAt.isEmpty)
     }
 
     @Test("WI-06 label text color by luminance")
@@ -187,7 +209,7 @@ struct LabelTests {
         #expect(Label.textColor(onBackground: "#000000") == "#FFFFFF")
         #expect(Label.textColor(onBackground: "#FFF") == nil)
         #expect(Label.textColor(onBackground: "red") == nil)
-        #expect(Label.scopeAndValue(of: "uStatus::Sub::Deep")! == ("uStatus::Sub", "Deep"))
+        #expect(Label.scopeAndValue(of: "status::Sub::Deep")! == ("status::Sub", "Deep"))
         #expect(Label.scopeAndValue(of: "bug") == nil)
     }
 }

@@ -8,7 +8,7 @@ import Testing
 private final class FakeBrowsers: DefaultBrowserSystem {
     static let safari = BrowserApp(url: URL(filePath: "/Applications/Safari.app"), bundleID: "com.apple.Safari", name: "Safari")
     static let firefox = BrowserApp(url: URL(filePath: "/Applications/Firefox.app"), bundleID: "org.mozilla.firefox", name: "Firefox")
-    static let me = BrowserApp(url: URL(filePath: "/Applications/MegaMonitor.app"), bundleID: "local.menubar-monitor", name: "MegaMonitor")
+    static let me = BrowserApp(url: URL(filePath: "/Applications/MegaMonitor.app"), bundleID: "local.megamonitor", name: "MegaMonitor")
 
     var thisApp: BrowserApp? { Self.me }
     var current: BrowserApp?

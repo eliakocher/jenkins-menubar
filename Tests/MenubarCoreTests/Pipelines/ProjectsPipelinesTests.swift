@@ -132,46 +132,41 @@ struct ProjectsPipelinesTests {
         #expect(projects.names[added.id] == "client")
     }
 
-    @Test("PROJ-04 with several projects, an alert and the log entries name their project")
-    func namesTheProject() async throws {
+    @Test("PROJ-04 with several projects an alert and the log entries name their project, with one nothing does", arguments: [true, false])
+    func namesTheProject(several: Bool) async throws {
         let harness = try Harness()
-        harness.answer("server", job: "MR-1", number: 7, result: "SUCCESS")
-        harness.answer("client", job: "MR-1", number: 3, result: nil)
+        if !several {
+            try harness.services.team.remove(Self.clientID)
+            harness.projects.syncProjects()
+        }
+        // The project whose build finishes: the client's with several projects, the only one otherwise.
+        let finishing = several ? "client" : "server"
+        if several {
+            harness.answer("server", job: "MR-1", number: 7, result: "SUCCESS")
+        }
+        harness.answer(finishing, job: "MR-1", number: 3, result: nil)
         let projects = harness.projects
         _ = try await projects.check(reason: .scheduled)
         _ = try await projects.check(reason: .scheduled)
-        harness.answer("client", job: "MR-1", number: 3, result: "FAILURE")
+        harness.answer(finishing, job: "MR-1", number: 3, result: "FAILURE")
         _ = try await projects.check(reason: .scheduled)
 
         let banners = await harness.effects.calls.compactMap { call -> BuildAlert? in
             if case .alertWindow(let alert) = call { alert } else if case .banner(let alert) = call { alert } else { nil }
         }
-        #expect(banners.map(\.content.project) == ["client"])
-        #expect(banners.first?.content.hide?.project == Self.clientID)
         await projects.primary.waitForLog()
         let entries = await harness.services.log.entries()
-        #expect(entries.contains { $0.project == "client" })
-        #expect(entries.contains { $0.project == "server" })
-        #expect(entries.allSatisfy { $0.project != nil || $0.source != .jenkins })
-    }
-
-    @Test("PROJ-04 with one project, nothing names it")
-    func oneProjectNamesNothing() async throws {
-        let harness = try Harness()
-        try harness.services.team.remove(Self.clientID)
-        harness.projects.syncProjects()
-        harness.answer("server", job: "MR-1", number: 7, result: nil)
-        _ = try await harness.projects.check(reason: .scheduled)
-        _ = try await harness.projects.check(reason: .scheduled)
-        harness.answer("server", job: "MR-1", number: 7, result: "SUCCESS")
-        _ = try await harness.projects.check(reason: .scheduled)
-
-        let alerts = await harness.effects.calls.compactMap { call -> BuildAlert? in
-            if case .alertWindow(let alert) = call { alert } else if case .banner(let alert) = call { alert } else { nil }
+        if several {
+            #expect(banners.map(\.content.project) == ["client"])
+            #expect(banners.first?.content.hide?.project == Self.clientID)
+            #expect(entries.contains { $0.project == "client" })
+            #expect(entries.contains { $0.project == "server" })
+            #expect(entries.allSatisfy { $0.project != nil || $0.source != .jenkins })
+        } else {
+            #expect(banners.count == 1)
+            #expect(banners.allSatisfy { $0.content.project == nil })
+            #expect(entries.allSatisfy { $0.project == nil })
         }
-        #expect(alerts.count == 1)
-        #expect(alerts.allSatisfy { $0.content.project == nil })
-        #expect(await harness.services.log.entries().allSatisfy { $0.project == nil })
     }
 
     @Test("PROJ-06 a link is watched in the project it points into, a number in the chosen one, an MR in its own")

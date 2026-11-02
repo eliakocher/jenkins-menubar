@@ -58,8 +58,8 @@ struct BuildDetailModel: Hashable, Sendable {
     var canStopWatching: Bool
     /// whether "Rebuild" shows: for finished builds (PIPE-09)
     var canRebuild: Bool
-    /// whether "New Bug from This Build" shows: for finished failed or unstable builds (NEW-03)
-    var canReportBug: Bool
+    /// whether Why Did It Fail? shows: for finished failed or unstable builds (AI-02)
+    var canExplain: Bool
     /// the job's rebuild: "Rebuilding…" with Cancel Rebuild while queued, or its failure (PIPE-09)
     var rebuild: JenkinsRebuild?
     /// Jenkins's Build with Parameters page, for "Rebuild with Changes…" in Links (PIPE-09)
@@ -98,8 +98,10 @@ struct BuildDetailModel: Hashable, Sendable {
     var tests: TestCounts?
     /// the failed stages' names, which the chip shows when the stages themselves aren't known
     var failedStageNames: [String]
-    /// the job's notifications, for the ⋯ menu's "Notifications for This Job" (ALERT-09)
+    /// the job's notifications, for the action row's "Notifications" (ALERT-09)
     var notifications = JobNotifications()
+    /// the team's Jenkins job, which makes the links of the Recent Builds' tiles; `nil` without it in Team
+    var jobURL: URL?
 
     /// the Stages notes (`pipelines.md`, Stage notes)
     enum StageNote {
@@ -120,6 +122,7 @@ struct BuildDetailModel: Hashable, Sendable {
         case .build(let row)?:
             self.init(row: row, now: data.panel.now)
             notifications = row.notifications
+            jobURL = data.jobURL
         case .waiting(let watched)?:
             self.init(waiting: watched, jobURL: data.jobURL)
             notifications = JobNotifications(data.panel.jenkins.notifications, job: watched.job, group: .watching)
@@ -146,7 +149,7 @@ struct BuildDetailModel: Hashable, Sendable {
         canHide = false
         canStopWatching = true
         canRebuild = false
-        canReportBug = false
+        canExplain = false
         rebuild = nil
         rebuildWithChanges = nil
         progress = nil
@@ -171,7 +174,7 @@ struct BuildDetailModel: Hashable, Sendable {
         canHide = true
         canStopWatching = build.kind == .watched
         canRebuild = row.offersRebuild
-        canReportBug = build.result == .failure || build.result == .unstable
+        canExplain = build.result == .failure || build.result == .unstable
         rebuild = row.rebuild
         rebuildWithChanges = row.rebuildWithChanges
         showsStages = true

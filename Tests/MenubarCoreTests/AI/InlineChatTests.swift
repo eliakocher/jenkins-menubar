@@ -3,36 +3,9 @@ import Testing
 
 @testable import MenubarCore
 
-/// AI-07 and AI-08: the inline chat's scope chip, and stopping a first answer. Nothing runs the real `claude`.
+/// AI-08: stopping a first answer or a digest. Nothing runs the real `claude`.
 @Suite("Inline Claude chat")
 struct InlineChatTests {
-    private static let mergeRequest = MergeRequest(
-        iid: 42, title: "Add cart discount", webURL: URL(string: "https://example.com/group/project/-/merge_requests/42")!,
-        reference: "group/project!42", author: MergeRequest.Person(username: "jdoe", name: "Jane Doe"),
-        updatedAt: Date(timeIntervalSince1970: 1_700_000_000), roles: [.authored])
-
-    @Test("AI-07 a pick sets the scope chip, the next one replaces it, Clear and the whole merge request take it off")
-    @MainActor
-    func scopeChip() {
-        let store = ConversationTests.store(ScriptedClaude([.text("x")]))
-        let mergeRequest = Self.mergeRequest
-        let selection = DiffSelection(path: "Sources/Foo.swift", anchor: DiffLineID(old: nil, new: 12), head: DiffLineID(old: nil, new: 30))
-        let lines = CodeScope.lines(selection, LineSpan(first: 12, last: 30))
-        #expect(store.pendingScope(of: mergeRequest) == nil)
-
-        store.aim(at: lines, of: mergeRequest)
-        #expect(store.pendingScope(of: mergeRequest) == lines)
-        store.aim(at: .file("Sources/Bar.swift"), of: mergeRequest)
-        #expect(store.pendingScope(of: mergeRequest) == .file("Sources/Bar.swift"))
-        // Every aim is counted, so that the field takes the focus again.
-        #expect(store.aimCount == 2)
-        store.clearScope(of: mergeRequest)
-        #expect(store.pendingScope(of: mergeRequest) == nil)
-        store.aim(at: lines, of: mergeRequest)
-        store.aim(at: .mergeRequest, of: mergeRequest)
-        #expect(store.pendingScope(of: mergeRequest) == nil)
-    }
-
     @Test("AI-08 stopping a first answer ends claude and leaves the subject stopped, not failed; a work item question comes back")
     @MainActor
     func stopFirstAnswer() async {

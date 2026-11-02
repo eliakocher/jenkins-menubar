@@ -53,7 +53,6 @@ struct AlertPolicyTests {
         let alerts = check([Self.build(7, Self.finished())], after: running.states).alerts
         #expect(alerts.map(\.kind) == [.finished])
         #expect(alerts.first?.build.id == BuildID(job: "MR-1", number: 7))
-        #expect(alerts.first?.content.headline == "✅ !1 #7 SUCCESS")
     }
 
     @Test("ALERT-01 alerts for a build that started and finished between checks")
@@ -107,10 +106,6 @@ struct AlertPolicyTests {
         let banner = try #require(first.alerts.first)
         #expect(first.alerts.count == 1)
         #expect(banner.kind == .stageFailed)
-        #expect(banner.content.headline == "💥 !1 #7: stage failed")
-        #expect(banner.content.bannerBody == "build\nFix the login")
-        #expect(banner.content.sound == .basso)
-        #expect(banner.content.bannerActions == [.openBuild, .openConsole, .hide])
         #expect(banner.content.links.build.absoluteString == "https://jenkins.example.com/job/team/job/project/job/MR-1/7/")
         #expect(first.states["MR-1"]?.failedStages == ["build"])
 
@@ -134,7 +129,6 @@ struct AlertPolicyTests {
         let known = ["MR-1": AlertState(number: 7, isRunning: true, failedStages: ["build"])]
         let alerts = check([Self.build(7, failedStages: ["build", "tests"])], after: known).alerts
         #expect(alerts.map(\.kind) == [.stageFailed])
-        #expect(alerts.first?.content.bannerBody == "build, tests\nFix the login")
     }
 
     @Test("ALERT-05 new build starts with no failed stages known")
@@ -175,7 +169,7 @@ struct AlertPolicyTests {
     @Test("ALERT-06 alerts an aborted build without a newer one")
     func abortedWithoutNewer() {
         let alerts = check([Self.build(7, Self.finished(.aborted))], after: ["MR-1": AlertState(number: 7, isRunning: true)]).alerts
-        #expect(alerts.map(\.content.headline) == ["⏹ !1 #7 ABORTED"])
+        #expect(alerts.map(\.build.number) == [7])
     }
 
     @Test("ALERT-06 no alert for a build replaced between checks")

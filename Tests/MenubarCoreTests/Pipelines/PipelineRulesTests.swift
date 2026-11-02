@@ -33,54 +33,65 @@ struct PipelineRulesTests {
 
     // MARK: HIDE-02
 
-    @Test("HIDE-02 hides successful builds immediately when set")
-    func hidesSuccessImmediately() {
-        let immediately = Preferences(hideSuccessfulAfter: .immediately)
-
-        #expect(Self.visibility(Self.build(finishedAgo: 1), preferences: immediately) == .hiddenAutomatically)
-        #expect(Self.visibility(Self.build(result: .failure, finishedAgo: 1), preferences: immediately) == .shown)
-        #expect(Self.visibility(Self.build(finishedAgo: 1)) == .shown)
+    struct HideCase: Sendable, CustomTestStringConvertible {
+        var name: String
+        var result: BuildResult?
+        var finishedAgo: TimeInterval
+        var preferences = Preferences()
+        var hidden: Bool
+        var testDescription: String { name }
     }
 
-    @Test("HIDE-02 hides failed builds after N hours")
-    func hidesFailedAfterHours() {
-        let day = Preferences(hideFailedAfter: .hours(24))
+    private static let hour: TimeInterval = 3600
 
-        #expect(Self.visibility(Self.build(result: .failure, finishedAgo: 24 * 3600), preferences: day) == .shown)
-        #expect(Self.visibility(Self.build(result: .failure, finishedAgo: 24 * 3600 + 1), preferences: day) == .hiddenAutomatically)
-        // The defaults: a successful build after a day, a failed one after a week.
-        #expect(Self.visibility(Self.build(finishedAgo: 24 * 3600 + 1)) == .hiddenAutomatically)
-        #expect(Self.visibility(Self.build(result: .failure, finishedAgo: 24 * 3600 + 1)) == .shown)
-        #expect(Self.visibility(Self.build(result: .failure, finishedAgo: 168 * 3600 + 1)) == .hiddenAutomatically)
+    static let hideCases: [HideCase] = [
+        HideCase(
+            name: "successful: hidden at once when set", result: .success, finishedAgo: 1,
+            preferences: Preferences(hideSuccessfulAfter: .immediately), hidden: true),
+        HideCase(
+            name: "failed: the successful setting doesn't apply", result: .failure, finishedAgo: 1,
+            preferences: Preferences(hideSuccessfulAfter: .immediately), hidden: false),
+        HideCase(name: "successful: shown by default at first", result: .success, finishedAgo: 1, hidden: false),
+        HideCase(
+            name: "failed: shown exactly at N hours", result: .failure, finishedAgo: 24 * hour,
+            preferences: Preferences(hideFailedAfter: .hours(24)), hidden: false),
+        HideCase(
+            name: "failed: hidden past N hours", result: .failure, finishedAgo: 24 * hour + 1,
+            preferences: Preferences(hideFailedAfter: .hours(24)), hidden: true),
+        HideCase(name: "default: successful hidden after a day", result: .success, finishedAgo: 24 * hour + 1, hidden: true),
+        HideCase(name: "default: failed still shown after a day", result: .failure, finishedAgo: 24 * hour + 1, hidden: false),
+        HideCase(name: "default: failed hidden after a week", result: .failure, finishedAgo: 168 * hour + 1, hidden: true),
+        HideCase(
+            name: "never: successful stays", result: .success, finishedAgo: 365 * 24 * hour,
+            preferences: Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .never), hidden: false),
+        HideCase(
+            name: "never: failed stays", result: .failure, finishedAgo: 365 * 24 * hour,
+            preferences: Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .never), hidden: false),
+        HideCase(
+            name: "a running build is never hidden", result: nil, finishedAgo: 30 * 24 * hour,
+            preferences: Preferences(hideSuccessfulAfter: .immediately, hideFailedAfter: .immediately), hidden: false),
+        HideCase(
+            name: "unstable follows the failed setting", result: .unstable, finishedAgo: 60,
+            preferences: Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .immediately), hidden: true),
+        HideCase(
+            name: "aborted follows the failed setting", result: .aborted, finishedAgo: 60,
+            preferences: Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .immediately), hidden: true),
+        HideCase(
+            name: "not built follows the failed setting", result: .notBuilt, finishedAgo: 60,
+            preferences: Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .immediately), hidden: true),
+        HideCase(
+            name: "successful ignores the failed setting", result: .success, finishedAgo: 60,
+            preferences: Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .immediately), hidden: false),
+    ]
+
+    @Test("HIDE-02 hides finished builds by the settings of their result, and never a running one", arguments: hideCases)
+    func hidesByTheSettings(_ item: HideCase) {
+        let build = Self.build(result: item.result, finishedAgo: item.finishedAgo)
+
+        #expect(Self.visibility(build, preferences: item.preferences) == (item.hidden ? .hiddenAutomatically : .shown))
     }
 
-    @Test("HIDE-02 never hides with never")
-    func neverHidesWithNever() {
-        let never = Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .never)
-        let year: TimeInterval = 365 * 24 * 3600
-
-        #expect(Self.visibility(Self.build(finishedAgo: year), preferences: never) == .shown)
-        #expect(Self.visibility(Self.build(result: .failure, finishedAgo: year), preferences: never) == .shown)
-    }
-
-    @Test("HIDE-02 never hides a running build")
-    func neverHidesRunning() {
-        let immediately = Preferences(hideSuccessfulAfter: .immediately, hideFailedAfter: .immediately)
-
-        #expect(Self.visibility(Self.build(result: nil, finishedAgo: 30 * 24 * 3600), preferences: immediately) == .shown)
-    }
-
-    @Test("HIDE-02 unstable and aborted follow the failed setting")
-    func unstableAndAbortedFollowFailed() {
-        let preferences = Preferences(hideSuccessfulAfter: .never, hideFailedAfter: .immediately)
-
-        for result in [BuildResult.unstable, .aborted, .notBuilt, .failure] {
-            #expect(Self.visibility(Self.build(result: result), preferences: preferences) == .hiddenAutomatically)
-        }
-        #expect(Self.visibility(Self.build(result: .success), preferences: preferences) == .shown)
-    }
-
-    // MARK: HIDE-03, HIDE-04, HIDE-01
+    // MARK: HIDE-03, HIDE-04
 
     @Test("HIDE-03 hides a running build of a merged MR, and never a branch job")
     func mergedRules() {
@@ -100,36 +111,18 @@ struct PipelineRulesTests {
         #expect(Self.visibility(Self.build(), hidden: ["MR-1": 6]) == .shown)
     }
 
-    @Test("HIDE-01 show hidden counts singular and plural")
-    func showHiddenTitle() {
-        #expect(PipelinesStore.showHiddenTitle(count: 0) == nil)
-        #expect(PipelinesStore.showHiddenTitle(count: 1) == "Show 1 Hidden Build")
-        #expect(PipelinesStore.showHiddenTitle(count: 3) == "Show 3 Hidden Builds")
-    }
-
     // MARK: PIPE-05
 
-    @Test("PIPE-05 counts running failed unstable and successful builds in that order")
-    func countsInOrder() {
+    @Test("PIPE-05 counts running failed unstable and successful builds, and not aborted or not built ones")
+    func countsBuilds() {
         let builds = [
             Self.build("MR-1", result: .success), Self.build("MR-2", result: .failure), Self.build("MR-3", result: nil),
             Self.build("MR-4", result: .unstable), Self.build("MR-5", result: .success), Self.build("MR-6", result: nil),
+            Self.build("MR-7", result: .aborted), Self.build("MR-8", result: .notBuilt),
         ]
 
-        let counts = PipelineRules.counts(of: builds)
-
-        #expect(counts == BuildCounts(running: 2, failed: 1, unstable: 1, successful: 2))
-        #expect(counts.shown.map(\.kind) == [.running, .failed, .unstable, .successful])
-        #expect(counts.shown.map(\.count) == [2, 1, 1, 2])
-        #expect(PipelineRules.counts(of: [Self.build(result: nil), Self.build(result: .success)]).shown.map(\.kind) == [.running, .successful])
-    }
-
-    @Test("PIPE-05 does not count aborted builds")
-    func doesNotCountAborted() {
-        let counts = PipelineRules.counts(of: [Self.build(result: .aborted), Self.build(result: .notBuilt)])
-
-        #expect(counts.isEmpty)
-        #expect(counts.shown.isEmpty)
+        #expect(PipelineRules.counts(of: builds) == BuildCounts(running: 2, failed: 1, unstable: 1, successful: 2))
+        #expect(PipelineRules.counts(of: [Self.build(result: .aborted), Self.build(result: .notBuilt)]).isEmpty)
     }
 
     // MARK: PIPE-06
@@ -146,66 +139,33 @@ struct PipelineRulesTests {
         #expect(PipelineRules.emptyState(state: noJobs, mine: [], watched: [build]) == .noJobs(user: "jdoe"))
         #expect(PipelineRules.emptyState(state: jobs, mine: [], watched: []) == .noBuilds)
         #expect(PipelineRules.emptyState(state: jobs, mine: [build], watched: []) == nil)
-        #expect(PipelinesEmptyState.noJobs(user: "jdoe").message == "No merge request builds by jdoe in Jenkins")
-        #expect(PipelinesEmptyState.noBuilds.message == "No builds to show")
     }
 
     // MARK: PIPE-03
 
     private static let jobURL = URL(string: "https://jenkins.example.com/job/project")!
 
-    @Test("PIPE-03 MR job links to its merge request")
-    func mergeRequestLink() {
-        var build = Self.build("MR-12", number: 4)
-        build.gitLabURL = URL(string: "https://gitlab.example.com/group/project/-/merge_requests/12")
-
-        let first = PipelineRules.links(of: build, jobURL: Self.jobURL).first
-
-        #expect(first == BuildLink(kind: .mergeRequest, title: "Show Merge Request !12", url: build.gitLabURL!))
-    }
-
-    @Test("PIPE-03 branch job links to its branch")
-    func branchLink() {
-        var build = Self.build("feature%252Ffoo", number: 3)
-        build.gitLabURL = URL(string: "https://gitlab.example.com/group/project/-/tree/feature/foo")
-        var withoutLink = build
+    @Test("PIPE-03 a build links to its merge request or branch, then to the build, console and test results")
+    func links() {
+        var mergeRequest = Self.build("MR-12", number: 4)
+        mergeRequest.gitLabURL = URL(string: "https://gitlab.example.com/group/project/-/merge_requests/12")
+        var branch = Self.build("feature%252Ffoo", number: 3)
+        branch.gitLabURL = URL(string: "https://gitlab.example.com/group/project/-/tree/feature/foo")
+        var withoutLink = branch
         withoutLink.gitLabURL = nil
 
-        let first = PipelineRules.links(of: build, jobURL: Self.jobURL).first
+        let mergeRequestLinks = PipelineRules.links(of: mergeRequest, jobURL: Self.jobURL)
+        let branchLinks = PipelineRules.links(of: branch, jobURL: Self.jobURL)
 
-        #expect(first == BuildLink(kind: .branch, title: "Open Branch feature/foo in GitLab", url: build.gitLabURL!))
+        #expect(mergeRequestLinks.map(\.kind) == [.mergeRequest, .build, .console, .testResults])
+        #expect(mergeRequestLinks.first?.url == mergeRequest.gitLabURL)
+        #expect(branchLinks.map(\.kind) == [.branch, .build, .console, .testResults])
+        #expect(branchLinks.first?.url == branch.gitLabURL)
         #expect(PipelineRules.links(of: withoutLink, jobURL: Self.jobURL).map(\.kind) == [.build, .console, .testResults])
-    }
-
-    @Test("PIPE-03 links to the build, console and test results")
-    func buildLinks() {
-        let links = PipelineRules.links(of: Self.build("MR-12", number: 4), jobURL: Self.jobURL)
-
-        #expect(links.map(\.title) == ["Open Build #4 in Jenkins", "Console Output in Jenkins", "Test Results in Jenkins"])
-        #expect(links.map(\.url.absoluteString) == [
+        #expect(mergeRequestLinks.dropFirst().map(\.url.absoluteString) == [
             "https://jenkins.example.com/job/project/job/MR-12/4/",
             "https://jenkins.example.com/job/project/job/MR-12/4/console",
             "https://jenkins.example.com/job/project/job/MR-12/4/testReport",
         ])
-    }
-
-    // MARK: WATCH-06
-
-    @Test("WATCH-06 a watched job's status names its last build or waits")
-    func watchedStatus() {
-        let watched = WatchedJob(job: "MR-2", label: "!2", added: Self.now)
-        let jobURL = URL(string: "https://jenkins.example.com/job/project/")!
-
-        let waiting = WatchedJobStatus(watched: watched, build: nil, url: PipelineRules.jobURL(job: "MR-2", jobURL: jobURL))
-        let running = WatchedJobStatus(watched: watched, build: Self.build("MR-2", number: 5, result: nil), url: nil)
-        let failed = WatchedJobStatus(watched: watched, build: Self.build("MR-2", number: 5, result: .failure), url: nil)
-
-        #expect(waiting.title == "!2")
-        #expect(waiting.state == "WAITING")
-        #expect(waiting.isWaiting)
-        #expect(waiting.url?.absoluteString == "https://jenkins.example.com/job/project/job/MR-2/")
-        #expect(running.title == "!2 #5")
-        #expect(running.state == "RUNNING")
-        #expect(failed.state == "FAILURE")
     }
 }

@@ -46,17 +46,17 @@ struct ActivityToolbarItems: ToolbarContent {
             } label: {
                 Label("Show in Finder", systemImage: "folder")
             }
-            .help("Show the log file in Finder")
+            .help("Show in Finder")
             Button {
                 clear()
             } label: {
                 Label("Clear Activity…", systemImage: "trash")
             }
-            .help("Delete the log, the check times and the kept requests")
+            .help("Clear Activity…")
             Toggle(isOn: $isInspectorShown) {
                 Label(isInspectorShown ? "Hide Inspector" : "Show Inspector", systemImage: "sidebar.trailing")
             }
-            .help(isInspectorShown ? "Hide the details" : "Show the details of the selected entry")
+            .help(isInspectorShown ? "Hide Inspector" : "Show Inspector")
         }
     }
 }

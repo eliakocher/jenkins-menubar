@@ -106,7 +106,7 @@ struct SlotRoadmap: View {
                 }
             }
             GeometryReader { proxy in
-                axis(SlotRoadmapLayout(slots: slots.map(\.dates), today: today, width: proxy.size.width))
+                axis(SlotRoadmapLayout(slots: slots.compactMap(\.dates), today: today, width: proxy.size.width))
             }
             .frame(height: height)
         }
@@ -174,6 +174,7 @@ struct SlotRoadmap: View {
         switch slot.state {
         case .current: .accentColor
         case .overdue: .orange
+        case .released: Color.primary.opacity(0.28)
         case .upcoming: Color.primary.opacity(0.28)
         }
     }
@@ -200,6 +201,7 @@ struct SlotRoadmap: View {
 
     private func help(_ slot: SlotSummary) -> String {
         let format = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
-        return "\(slot.name) · Code freeze \(slot.dates.codeFreeze.formatted(format)), early access \(slot.dates.earlyAccess.formatted(format)), release \(slot.dates.release.formatted(format))"
+        guard let dates = slot.dates else { return "\(slot.name)" }
+        return "\(slot.name) · Code freeze \(dates.codeFreeze.formatted(format)), early access \(dates.earlyAccess.formatted(format)), release \(dates.release.formatted(format))"
     }
 }

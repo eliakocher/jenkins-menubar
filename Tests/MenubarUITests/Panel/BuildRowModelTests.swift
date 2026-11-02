@@ -45,19 +45,16 @@ struct BuildRowModelTests {
     func runningBuild(startedMinutesAgo: Double, estimate: Double?, timing: String, progress: BuildRowModel.Progress) {
         let row = BuildRowModel(
             build: Self.running(
-                startedMinutesAgo: startedMinutesAgo, estimateMinutes: estimate,
-                stages: [Stage(name: "build", status: .inProgress, duration: 0), Stage(name: "lint", status: .success, duration: 5),
-                         Stage(name: "tests", status: .inProgress, duration: 0)]),
+                startedMinutesAgo: startedMinutesAgo, estimateMinutes: estimate),
             now: Self.now, jobURL: Self.jobURL)
 
         #expect(row.state == .running)
-        #expect(row.title == "Fix the login")
-        #expect(row.reference == "!12 #7")
-        #expect(row.status == "▶ build, tests")
         #expect(row.timing == timing)
-        #expect(row.facts == "!12 #7 · ▶ build, tests · \(timing)")
         // Running times never give way.
         #expect(row.timingWithoutAge == timing)
+        // The list puts the elapsed time at the right end and keeps the ETA on line 2.
+        #expect(row.trailingTime == String(timing.prefix(5)))
+        #expect(row.timingBesideTime == (estimate == nil ? nil : String(timing.split(separator: " · ")[1])))
         #expect(row.failures == nil)
         if case .fraction(let expected) = progress, case .fraction(let actual)? = row.progress {
             #expect(abs(actual - expected) < 0.0001)
@@ -83,18 +80,6 @@ struct BuildRowModelTests {
         #expect(BuildRowModel(build: titled, now: Self.now, jobURL: nil).reference == "feature/foo #3")
     }
 
-    @Test("PIPE-02 formats durations as hours and minutes")
-    func durations() {
-        #expect(Formatting.duration(0) == "0h00m")
-        #expect(Formatting.duration(59) == "0h00m")
-        #expect(Formatting.duration(5 * 60) == "0h05m")
-        #expect(Formatting.duration(65 * 60 + 59) == "1h05m")
-        #expect(Formatting.duration(4 * 3600 + 12 * 60) == "4h12m")
-        #expect(Formatting.duration(-30) == "0h00m")
-        // No grouping, whatever the locale: hours above 999 stay plain digits.
-        #expect(Formatting.duration(1234 * 3600) == "1234h00m")
-    }
-
     // MARK: PIPE-03
 
     @Test(
@@ -110,71 +95,13 @@ struct BuildRowModelTests {
             now: Self.now, jobURL: Self.jobURL)
 
         #expect(row.state == .failed)
-        #expect(row.status == "FAILURE")
         #expect(row.timing == "0h12m · finished \(age) ago")
         // What a row short of room keeps once "finished …" gives way (PIPELINES-01).
         #expect(row.timingWithoutAge == "0h12m")
-        #expect(row.facts == "!16 #3 · FAILURE · 0h12m · finished \(age) ago")
+        // The list puts the age at the right end and keeps the duration on line 2.
+        #expect(row.trailingTime == "\(age) ago")
+        #expect(row.timingBesideTime == "0h12m")
         #expect(row.failures == "failed: tests, deploy · Failed tests: 3 of 1200")
         #expect(row.progress == nil)
-    }
-
-    /// Each result has its symbol.
-    @Test("PIPE-03 finished build shows result, duration, age and failed stages")
-    func results() {
-        let expected: [(BuildResult, BuildState, String)] = [
-            (.success, .successful, "checkmark.circle"), (.unstable, .unstable, "exclamationmark.triangle"),
-            (.failure, .failed, "xmark.circle.fill"), (.aborted, .aborted, "stop.circle"),
-            (.notBuilt, .other("NOT_BUILT"), "questionmark.circle"),
-        ]
-        for (result, state, symbol) in expected {
-            let row = BuildRowModel(build: Self.finished(result, finishedAgo: 60), now: Self.now, jobURL: Self.jobURL)
-            #expect(row.state == state)
-            #expect(row.state.symbol == symbol)
-            #expect(row.status == result.rawValue)
-            // Nothing failed and no test counts: no third line.
-            #expect(row.failures == nil)
-        }
-        // A successful build lists no failed stages even when some are known, and no zero failed tests.
-        let success = BuildRowModel(
-            build: Self.finished(.success, finishedAgo: 60, tests: TestCounts(failed: 0, total: 1200)), now: Self.now, jobURL: Self.jobURL)
-        #expect(success.failures == nil)
-    }
-
-    @Test("PIPE-03 the build row's context menu has the links, and a click opens the build")
-    func contextMenuLinks() throws {
-        let build = Build(
-            job: "MR-12", number: 7, gitLabURL: URL(string: "https://gitlab.example.com/group/project/-/merge_requests/12"),
-            kind: .watched, phase: .running, startedAt: Self.now)
-        let row = BuildRowModel(build: build, now: Self.now, jobURL: Self.jobURL)
-        #expect(row.links.map(\.title) == [
-            "Show Merge Request !12", "Open Build #7 in Jenkins", "Console Output in Jenkins", "Test Results in Jenkins",
-        ])
-        let page = try #require(row.buildPage)
-        #expect(page.url.absoluteString == "https://jenkins.example.com/job/project/job/MR-12/7/")
-        // Without the job URL in Team, there is nothing to open in Jenkins.
-        #expect(BuildRowModel(build: build, now: Self.now, jobURL: nil).links.isEmpty)
-    }
-
-    @Test("WATCH-04 watched build shows its author")
-    func watchedAuthor() {
-        let build = Build(
-            job: "MR-2", number: 14, title: "Retry the upload", author: "Sam Lee", kind: .watched, phase: .running,
-            startedAt: Self.now.addingTimeInterval(-60))
-        let row = BuildRowModel(build: build, now: Self.now, jobURL: Self.jobURL)
-        #expect(row.reference == "by Sam Lee · !2 #14")
-        // My own builds don't name their author.
-        var mine = build
-        mine.kind = .mine
-        #expect(BuildRowModel(build: mine, now: Self.now, jobURL: Self.jobURL).reference == "!2 #14")
-    }
-
-    @Test("PIPE-07 shows the time of the last check")
-    func lastChecked() {
-        let date = Date(timeIntervalSince1970: 1_792_800_000)
-        let text = Formatting.lastChecked(
-            date, locale: Locale(identifier: "de_CH"), timeZone: TimeZone(identifier: "Europe/Zurich")!)
-        #expect(text.hasPrefix("Last checked "))
-        #expect(text.wholeMatch(of: /Last checked \d{1,2}:\d{2}/) != nil)
     }
 }

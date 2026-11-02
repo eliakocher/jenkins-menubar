@@ -25,32 +25,28 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// Returns the paragraph under the heading; page 6 says where to find the app instead (``WelcomeSummary``).
-    ///
-    /// - Parameter notifications: what macOS answered; page 4 says that Continue asks only while it never asked
-    /// - Returns: the paragraph
-    func intro(notifications: NotificationPermission?) -> String? {
+    /// the SF Symbol of the step's header icon: the matching Settings pane's, a wave for the first step
+    var symbol: String {
         switch self {
-        case .welcome:
-            "It follows the Jenkins builds of your merge requests, and your merge requests and work items in GitLab, "
-                + "from the menu bar."
-        case .team:
-            "The Jenkins job and GitLab project your team works on. Ask a colleague for the team file, or fill in the "
-                + "values."
-        case .accounts:
-            "MegaMonitor signs in to Jenkins with an API token and to GitLab with a personal access token. Both "
-                + "stay in your login keychain."
-        case .notifications:
-            // Pre-alert screens "make it clear that [the one button] opens the system alert" (HIG Privacy).
-            "MegaMonitor shows a banner as soon as a stage fails, and, if you choose banners, when a build "
-                + "finishes."
-                + (Self.asksForNotifications(notifications)
-                    ? " When you continue, macOS asks whether MegaMonitor may show notifications." : "")
-        case .menuBarAndLogin:
-            "MegaMonitor checks Jenkins in the background and alerts you when builds finish, so it works best in "
-                + "the menu bar and when it opens at login."
-        case .done:
-            nil
+        case .welcome: "hand.wave.fill"
+        case .team: SettingsPane.projects.symbol
+        case .accounts: SettingsPane.accounts.symbol
+        case .notifications: SettingsPane.notifications.symbol
+        case .menuBarAndLogin: SettingsPane.general.symbol
+        case .done: "checkmark.seal.fill"
+        }
+    }
+
+    /// Returns the one line under the heading on what the step is for; page 6 says where to find the app instead
+    /// (``WelcomeSummary``).
+    var intro: String? {
+        switch self {
+        case .welcome: "Follow your builds, merge requests and work items from the menu bar."
+        case .team: "The Jenkins job and GitLab project your team works on."
+        case .accounts: "Sign in to Jenkins and GitLab. Tokens stay in your keychain."
+        case .notifications: "Banners when a stage fails, and when a build finishes if you choose banners."
+        case .menuBarAndLogin: "Checks and alerts run in the background, so the menu bar suits MegaMonitor best."
+        case .done: nil
         }
     }
 
@@ -90,7 +86,7 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
     }
 
     /// whether Continue on page 4 asks macOS: it never asked, or its answer isn't read yet
-    private static func asksForNotifications(_ notifications: NotificationPermission?) -> Bool {
+    static func asksForNotifications(_ notifications: NotificationPermission?) -> Bool {
         notifications == nil || notifications == .notAsked
     }
 }
@@ -131,7 +127,7 @@ struct WelcomeImportSummary: Hashable, Sendable {
     static let wrongFolderText =
         "That folder has no config/settings or config/team.conf: choose the jenkins-menubar folder"
     /// the line without the old tool
-    static let freshText = "Setup takes a minute: your team's Jenkins job and GitLab project, your tokens, and notifications."
+    static let freshText = "Setup takes a minute: the team's job and project, your tokens, and notifications"
 
     /// whether neither was found: page 1 shows ``freshText``
     var isFresh: Bool {

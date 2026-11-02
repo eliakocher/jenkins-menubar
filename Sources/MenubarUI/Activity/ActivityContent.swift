@@ -49,19 +49,25 @@ struct ActivityContent<Inspector: View>: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            CheckTimesChartView(
-                chart: data.chart, isLoaded: data.isLoaded, isExpanded: $chartExpanded, hoveredTime: $hoveredTime)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-            Divider()
-            ActivityFilterBar(
-                level: $level, source: $source, countText: data.isLoaded && data.totalCount > 0 ? data.countText : nil)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 8)
-            Divider()
-            list
-                .frame(minHeight: 0, maxHeight: .infinity)
+        // The chart, the filters and the rows (tint, selection and divider included) keep to the content width of
+        // Settings → General, centered; the hairlines, the day headings' backgrounds and the scroll bar stay the
+        // window's full width.
+        ContentWidthMargins { margin in
+            VStack(spacing: 0) {
+                CheckTimesChartView(
+                    chart: data.chart, isLoaded: data.isLoaded, isExpanded: $chartExpanded, hoveredTime: $hoveredTime)
+                    .padding(.horizontal, 20 + margin)
+                    .padding(.vertical, 10)
+                Divider()
+                ActivityFilterBar(
+                    level: $level, source: $source,
+                    countText: data.isLoaded && data.totalCount > 0 ? data.countText : nil)
+                    .padding(.horizontal, 20 + margin)
+                    .padding(.vertical, 8)
+                Divider()
+                list(margin: margin)
+                    .frame(minHeight: 0, maxHeight: .infinity)
+            }
         }
         .onGeometryChange(for: Bool.self) { proxy in
             proxy.size.width < ActivityRow.compactListWidth
@@ -87,42 +93,37 @@ struct ActivityContent<Inspector: View>: View {
         }
     }
 
-    private var list: some View {
+    private func list(margin: CGFloat) -> some View {
         ScrollViewReader { proxy in
-            List(selection: $selection) {
-                if !data.isLoaded {
+            Group {
+                if data.isLoaded {
+                    // The rows draw their own tint, selection and divider inside the content width, so they line up
+                    // with the chart and the filters; the scroll bar and the day headings stay the window's width.
+                    ActivityLogList(
+                        days: rows, selection: $selection, isCompact: isCompact, margin: margin, isFocused: $isFocused,
+                        inspect: { inspect($0) }, dismiss: { isInspectorShown = false },
+                        copy: { ids in
+                            if let text = actions.copyText(ids) {
+                                ActivityPasteboard.put(text)
+                            }
+                        }, proxy: proxy)
+                } else {
                     // The first read of the log: rows of bars in the entries' shape.
-                    SkeletonRows(count: 9, leading: .symbol(column: 16), spacing: 8)
-                }
-                ForEach(rows) { day in
-                    Section(day.title) {
-                        ForEach(day.items) { item in
-                            ActivityRow(item: item, isCompact: isCompact) { inspect([item.id]) }
-                                .listRowBackground(ActivityRowTint.color(of: item.entry.level))
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            SkeletonRows(count: 9, leading: .symbol(column: 16), spacing: 8)
                         }
+                        .padding(.horizontal, ActivityLogList.inset + margin)
+                        .padding(.vertical, 8)
                     }
+                    .background(.background)
                 }
             }
-            .listStyle(.inset)
             .allowsHitTesting(data.isLoaded)
-            .focused($isFocused)
-            .contextMenu(forSelectionType: ActivityItem.ID.self) { ids in
-                Button("Show Details") { inspect(ids) }
-                    .disabled(ids.isEmpty)
-                Button("Copy") {
-                    if let text = actions.copyText(ids) {
-                        ActivityPasteboard.put(text)
-                    }
-                }
-                .disabled(ids.isEmpty)
-            } primaryAction: { ids in
-                // Double-click or Return: the details, as in the old Logs.
-                inspect(ids)
-            }
             // Edit › Copy (⌘C): the selected entries only, disabled without a selection (LOG-04).
             .onCopyCommand(perform: copyAction)
             .safeAreaBar(edge: .bottom) {
-                bottomBar
+                bottomBar(margin: margin)
             }
             .overlay {
                 emptyState
@@ -192,7 +193,7 @@ struct ActivityContent<Inspector: View>: View {
 
     /// The bottom bar: the 1000-row cap, then where the log starts and how big it is; nothing while the log is empty.
     @ViewBuilder
-    private var bottomBar: some View {
+    private func bottomBar(margin: CGFloat) -> some View {
         if data.truncationMessage != nil || data.footerText != nil {
             VStack(alignment: .leading, spacing: 2) {
                 if let truncation = data.truncationMessage {
@@ -206,8 +207,11 @@ struct ActivityContent<Inspector: View>: View {
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 20 + margin)
             .padding(.vertical, 6)
+            // Opaque with a hairline, so the rows scroll under it without their text showing through.
+            .background(.background)
+            .overlay(alignment: .top) { Divider() }
         }
     }
 

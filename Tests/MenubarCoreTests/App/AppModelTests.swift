@@ -110,6 +110,11 @@ struct AppModelTests {
         // Check now looks the jobs up again (PIPE-07).
         #expect(setup.jobListRequests() == 2)
         #expect(await eventually { await setup.messages().contains("Check now") })
+
+        // The network coming back clears the offline problem (OD-05).
+        setup.network.set(reachable: true)
+        #expect(await eventually { !model.pipelines.isOffline })
+        #expect(model.pipelines.problem != .offline)
         model.stop()
     }
 
@@ -202,40 +207,6 @@ struct AppModelTests {
         #expect(model.caches.load(.mergeRequestList, for: .main) == nil)
         #expect(model.mergeRequests.problem == .noToken(.gitLab))
         #expect(model.workItems.problem == .noToken(.gitLab))
-        model.stop()
-    }
-
-    @Test("IMP-01 the import's values and report reach the stores")
-    func importFinished() async throws {
-        let setup = try Setup()
-        let model = setup.model
-        var preferences = model.preferencesStore.load()
-        preferences.hidesMergedBuilds = false
-        _ = model.preferencesStore.save(preferences)
-        try model.userStates.save(
-            UserState(watched: [WatchedJob(job: "MR-2", label: "!2", added: Date())]), for: .main)
-        let report = LegacyImportReport(date: Date())
-
-        await model.importFinished(report)
-
-        #expect(!model.pipelines.preferences.hidesMergedBuilds)
-        #expect(model.pipelines.userState.watched.map(\.job) == ["MR-2"])
-        #expect(model.settings.importReport == report)
-        #expect(model.settings.storedTokens.contains(.jenkins))
-    }
-
-    @Test("OD-05 the network coming back clears the offline problem")
-    func networkBack() async throws {
-        let setup = try Setup()
-        let model = setup.model
-        setup.network.set(reachable: false)
-        model.start()
-        #expect(await eventually { model.pipelines.isOffline })
-
-        setup.network.set(reachable: true)
-
-        #expect(await eventually { !model.pipelines.isOffline })
-        #expect(model.pipelines.problem != .offline)
         model.stop()
     }
 }

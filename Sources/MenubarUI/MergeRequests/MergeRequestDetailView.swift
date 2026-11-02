@@ -95,14 +95,14 @@ struct MergeRequestDetailContent: View {
                                 // The code itself, read only, folded where it is big or generated (MR-11).
                                 ChangesCard(mergeRequest: model.mergeRequest, changesURL: model.changesURL, actions: actions)
                                     .id(Card.changes)
-                                // With Summarize Discussion and Open in Claude Code while the Claude features are on (AI-03, AI-05).
+                                // With Summarize Discussion while the Claude features are on (AI-03).
                                 DiscussionCard(
                                     details: state.details, mergeRequest: model.mergeRequest, actions: actions,
-                                    isLoading: state.isAwaiting)
+                                    // The discussions come apart from the approvals and the pipeline (OD-07).
+                                    isLoading: state.isAwaiting || state.details?.discussionsLoaded == false)
                                     .id(Card.discussion)
                             }
                         }
-                        .sectionNavigation(proxy: proxy)
                         .pageContentWidth()
                     }
                     // Another merge request starts at the top, with its own disclosures and re-request state.
@@ -118,14 +118,6 @@ struct MergeRequestDetailContent: View {
                     .askClaudeAboutCode(model.mergeRequest) {
                         withAnimation(.snappy) { proxy.scrollTo(Card.claude, anchor: .bottom) }
                     }
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { actions.open(model.mergeRequest.webURL) } label: {
-                        Label("Open in GitLab", systemImage: "arrow.up.forward.app")
-                    }
-                    .help(model.openTitle)
                 }
             }
         } else {
@@ -165,15 +157,14 @@ struct MergeRequestDetailContent: View {
             }
             chips(model, state: state, jump: jump)
                 .padding(.top, 4)
+            // The frequent actions as buttons, not behind the ⋯ menu.
+            actionRow(model)
             if let eggLine = model.eggLine {
                 Text(verbatim: eggLine)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
-            // The cards below, each a jump.
-            SectionNav()
-                .padding(.leading, -6)
         }
     }
 
@@ -185,24 +176,27 @@ struct MergeRequestDetailContent: View {
         let red = MergeRequestStatus.Color.red.swiftUI
         let hasBuildsCard = state.details?.pipeline != nil || model.jenkinsBuild != nil || model.watch != .hidden
         return PillFlowLayout(spacing: 6, lineSpacing: 6) {
-            // The badge already says "Pipeline failed" when the pipeline decides the status.
-            if let pipeline = model.pipeline, !model.status.text.hasPrefix("Pipeline") {
-                DetailChip(
-                    symbol: pipeline.symbol, tint: pipeline.tint.chipColor, text: "Pipeline \(pipeline.word)",
-                    help: hasBuildsCard ? "Show the builds" : "Pipelines in GitLab"
-                ) {
-                    if hasBuildsCard { jump(.builds) } else { actions.open(model.pipelinesURL) }
+            // One chip for the pipeline: the Jenkins build when the app knows it, else GitLab's (MR-14).
+            switch MergeRequestPipelineChip.of(model) {
+            case .jenkins(let help):
+                if let build = model.jenkinsBuild {
+                    DetailChip(symbol: build.state.symbol, tint: build.state.color ?? .secondary, text: build.chip, help: help) {
+                        actions.showInPipelines(build.job)
+                    }
                 }
-            } else if model.pipeline == nil {
+            case .gitLab:
+                if let pipeline = model.pipeline {
+                    DetailChip(
+                        symbol: pipeline.symbol, tint: pipeline.tint.chipColor, text: "Pipeline \(pipeline.word)",
+                        help: hasBuildsCard ? "Jump to the Builds card" : "Open the merge request's pipelines in GitLab"
+                    ) {
+                        if hasBuildsCard { jump(.builds) } else { actions.open(model.pipelinesURL) }
+                    }
+                }
+            case .none:
                 DetailChip(symbol: "circle.dashed", text: "No pipeline")
-            }
-            if let build = model.jenkinsBuild {
-                DetailChip(
-                    symbol: build.state.symbol, tint: build.state.color ?? .secondary, text: build.chip,
-                    help: "Show in Pipelines"
-                ) {
-                    actions.showInPipelines(build.job)
-                }
+            case .hidden:
+                EmptyView()
             }
             // The work item the title names or GitLab links: "Work Item #19202" (MR-12).
             WorkItemLinkChips(
@@ -212,7 +206,7 @@ struct MergeRequestDetailContent: View {
                 let satisfied = approvals.isSatisfied == true
                 DetailChip(
                     symbol: satisfied ? "checkmark.seal.fill" : "checkmark.seal", tint: satisfied ? green : .secondary,
-                    text: approvals.summary, help: "Show the approvals"
+                    text: approvals.summary, help: "Jump to the Approvals card"
                 ) {
                     jump(.approvals)
                 }
@@ -221,12 +215,12 @@ struct MergeRequestDetailContent: View {
                     DetailChip(
                         symbol: "bubble.left.and.bubble.right.fill", tint: MergeRequestStatus.Color.orange.swiftUI,
                         text: "\(count)\(details.hasMoreDiscussions ? "+" : "") open \(count == 1 ? "thread" : "threads")",
-                        help: "Show the threads"
+                        help: "Jump to the open threads in the Discussion card"
                     ) {
                         jump(.discussion)
                     }
                 } else if details.resolvedThreadCount > 0 {
-                    DetailChip(symbol: "checkmark.bubble.fill", tint: green, text: "Threads resolved", help: "Show the discussion") {
+                    DetailChip(symbol: "checkmark.bubble.fill", tint: green, text: "Threads resolved", help: "Jump to the Discussion card") {
                         jump(.discussion)
                     }
                 }
@@ -235,7 +229,7 @@ struct MergeRequestDetailContent: View {
                     .skeletonShimmer(announces: false)
             }
             let stats = model.mergeRequest.diffStats ?? MergeRequest.DiffStats(additions: 0, deletions: 0, fileCount: 0)
-            DetailChip(symbol: "doc.text.magnifyingglass", help: "Show the changes", action: { jump(.changes) }) {
+            DetailChip(symbol: "doc.text.magnifyingglass", help: "Jump to the Changes card", action: { jump(.changes) }) {
                 HStack(spacing: 4) {
                     Text(verbatim: "+\(String(stats.additions))")
                         .foregroundStyle(green)
@@ -255,19 +249,31 @@ struct MergeRequestDetailContent: View {
         reference.split(separator: "!").dropLast().joined(separator: "!")
     }
 
-    /// The links the header doesn't show as chips: GitLab's pages, the link to copy and a follow-up item (NEW-04).
+    /// Copy Link, Ask Claude while the Claude features are on, and the follow-up item (NEW-04), as the build detail has its
+    /// buttons; the ⋯ menu keeps GitLab's pages.
+    private func actionRow(_ model: MergeRequestDetailModel) -> some View {
+        DetailActionRow {
+            CopyLinkButton(help: "Copies the merge request's link in GitLab") { actions.copy(model.mergeRequest.webURL) }
+            AskClaudeAboutMergeRequestButton()
+            // GitLab's new issue page, prefilled with this merge request's link (NEW-04).
+            if let newWorkItem = actions.newWorkItem {
+                DetailActionButton(
+                    "New Follow-Up Item", "plus.square.on.square",
+                    help: "Opens GitLab's new issue page, filled in from this merge request"
+                ) {
+                    newWorkItem(.followUp(model.mergeRequest))
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    /// The links the header doesn't show as chips: GitLab's pages.
     private func moreMenu(_ model: MergeRequestDetailModel) -> some View {
         Menu {
             Button("Open in GitLab") { actions.open(model.mergeRequest.webURL) }
             Button("Changes in GitLab") { actions.open(model.changesURL) }
             Button("Pipelines in GitLab") { actions.open(model.pipelinesURL) }
-            Divider()
-            Button("Copy Link") { actions.copy(model.mergeRequest.webURL) }
-            AskClaudeAboutMergeRequestItem()
-            // GitLab's new issue page, prefilled with this merge request's link (NEW-04).
-            if let newWorkItem = actions.newWorkItem {
-                Button("New Follow-Up Item") { newWorkItem(.followUp(model.mergeRequest)) }
-            }
         } label: {
             Image(systemName: "ellipsis.circle")
                 .imageScale(.large)
@@ -276,6 +282,18 @@ struct MergeRequestDetailContent: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .help("More")
+    }
+}
+
+/// "Ask Claude" as a button of the merge request's action row: it aims the Claude card's chat at the whole merge request
+/// (AI-07); nothing while Claude is off.
+private struct AskClaudeAboutMergeRequestButton: View {
+    @Environment(\.askClaudeAboutCode) private var ask
+
+    var body: some View {
+        if let ask {
+            DetailActionButton("Ask Claude", "sparkles", help: "Asks Claude about this merge request's code") { ask(.mergeRequest) }
+        }
     }
 }
 

@@ -55,17 +55,6 @@ private struct AskClaudeAboutCodeModifier: ViewModifier {
     }
 }
 
-/// "Ask Claude About This MR…" as a menu item, for the header's ⋯ menu; nothing while Claude is off.
-struct AskClaudeAboutMergeRequestItem: View {
-    @Environment(\.askClaudeAboutCode) private var ask
-
-    var body: some View {
-        if let ask {
-            Button("Ask Claude About This MR…") { ask(.mergeRequest) }
-        }
-    }
-}
-
 // MARK: - The card
 
 /// The merge request's Claude card: one inline chat about the merge request's code (AI-07). Quick picks (Review This,

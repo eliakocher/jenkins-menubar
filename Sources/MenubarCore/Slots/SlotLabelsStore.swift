@@ -9,7 +9,7 @@ import Observation
 @Observable @MainActor
 public final class SlotLabelsStore {
     /// how long an answer is reused before the section asks again
-    public nonisolated static let reusedFor: TimeInterval = 600
+    public nonisolated static let reusedFor: TimeInterval = 1800
     public nonisolated static let noAnswerProblem = "GitLab did not answer: only the slots of your work items and the remembered ones"
 
     /// the slot labels as last loaded, with GitLab's colors
@@ -42,7 +42,7 @@ public final class SlotLabelsStore {
     ///
     /// - Parameter force: asks even when the last answer is recent
     public func load(force: Bool = false) async {
-        let prefix = services.team.primaryProject().team.slotLabelPrefix
+        let prefix = services.team.primaryProject().team.slotPrefix
         guard !prefix.isEmpty, !isLoading else { return }
         if !force, problem == nil, let fetchedAt, services.now().timeIntervalSince(fetchedAt) < Self.reusedFor { return }
         isLoading = true

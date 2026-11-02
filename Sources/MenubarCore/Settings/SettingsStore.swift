@@ -134,7 +134,7 @@ public final class SettingsStore {
         projects = team.projects()
         storedPreferences = preferences.load()
         openAtLogin = launchAtLogin.status
-        if let pane = preferences.userDefaults.string(forKey: Self.selectedPaneKey).flatMap(SettingsPane.init(rawValue:)) {
+        if let pane = preferences.userDefaults.string(forKey: Self.selectedPaneKey).flatMap(SettingsPane.init(name:)) {
             selectedPane = pane
         }
     }
@@ -270,16 +270,33 @@ public final class SettingsStore {
         }
     }
 
-    /// Reads a team file into Team and saves it (TEAM-02). Edits that wait for typing to pause are dropped.
+    /// Reads a team file into Team and saves it (TEAM-02), for the welcome flow's first setup. Edits that wait for
+    /// typing to pause are dropped. A file that would move the GitLab or Jenkins host from one that is set is refused:
+    /// the tokens follow the host, so that goes through ``previewTeamFile(from:)`` and the user's confirmation.
     ///
     /// - Parameter url: the team file
-    /// - Throws: a ``TeamFileError`` that says why the file was refused, or the error of saving
+    /// - Throws: a ``TeamFileError`` that says why the file was refused, a ``TeamFileImport/HostChangeError``, or the
+    ///   error of saving
     public func importTeamFile(from url: URL) throws {
         let values = try TeamStore.readTeamFile(from: url)
+        guard !TeamFileImport.Preview(current: primaryTeam, incoming: values).needsHostConfirmation else {
+            throw TeamFileImport.HostChangeError()
+        }
         teamSave?.cancel()
         teamSave = nil
         try commitTeam(values, announcing: "Imported the team values from \(url.lastPathComponent)")
         storedTeamDraft = team
+    }
+
+    /// Reads a team file from disk and compares it with the primary project's values, without applying anything
+    /// (TEAM-02): Settings → Team shows the same preview as for a link, and ``applyTeamFile(_:fromFile:confirmedHosts:)``
+    /// saves it after the user's click.
+    ///
+    /// - Parameter url: the team file
+    /// - Returns: what importing it would change
+    /// - Throws: a ``TeamFileError`` that says why the file was refused
+    public func previewTeamFile(from url: URL) throws -> TeamFileImport.Preview {
+        TeamFileImport.Preview(current: primaryTeam, incoming: try TeamStore.readTeamFile(from: url))
     }
 
     /// Writes the saved team values to a team file, without any token (TEAM-02). Edits that wait for typing to pause
@@ -315,6 +332,13 @@ public final class SettingsStore {
         if !changed.isEmpty {
             try teamStore.save(Project(id: projectID, team: next))
         }
+        // Every project must stay on the primary project's GitLab (PROJ-02), so its URL goes to the others too.
+        if projectID == primaryID, changed.contains(.gitLabURL) {
+            for var other in teamStore.projects() where other.id != primaryID && other.team.gitLabURL != next.gitLabURL {
+                other.team.gitLabURL = next.gitLabURL
+                try teamStore.save(other)
+            }
+        }
         teamError = nil
         let old = team
         team = next
@@ -331,6 +355,89 @@ public final class SettingsStore {
             let checkNow = checkNow
             enqueue { await checkNow() }
         }
+    }
+
+    // MARK: - Team file from a link (TEAM-02)
+
+    /// the UserDefaults key of ``teamFileLink``
+    public static let teamFileLinkKey = "teamFile.link"
+
+    /// The https link the team values were last imported from, for Share Setup's import link; nil before.
+    public var teamFileLink: URL? {
+        preferencesStore.userDefaults.string(forKey: Self.teamFileLinkKey).flatMap(URL.init(string:))
+    }
+
+    /// an import link that waits for Settings → Team to show its preview, as `megamonitor://import?url=…` sets it
+    public private(set) var pendingTeamFileLink: URL?
+
+    /// Opens Settings → Team with the import of a team file link: the pane fetches it and shows the preview, and
+    /// nothing is applied before the user confirms.
+    ///
+    /// - Parameter link: the team file's https link
+    public func requestTeamFileImport(_ link: URL) {
+        selectedPane = .team
+        pendingTeamFileLink = link
+    }
+
+    /// Notes that Settings → Team took the waiting import link.
+    public func teamFileImportRequested() {
+        pendingTeamFileLink = nil
+    }
+
+    /// Fetches a team file from a link and compares it with the primary project's values. The GitLab token stays in
+    /// here and goes along only to the GitLab those values use (``TeamFileImport/fetch(_:gitLabURL:gitLabToken:transport:timeout:)``).
+    ///
+    /// - Parameter link: the team file's https link
+    /// - Returns: what importing it would change
+    public func previewTeamFile(at link: URL) async throws(TeamFileImport.FetchError) -> TeamFileImport.Preview {
+        let team = primaryTeam
+        let token = try? await tokenStore.token(.gitlab)
+        let transport = self.transport(Project(id: primaryID, team: team))
+        let incoming = try await TeamFileImport.fetch(
+            link, gitLabURL: team.gitLabURL, gitLabToken: token, transport: transport, timeout: timeouts.gitLab)
+        return TeamFileImport.Preview(current: team, incoming: incoming)
+    }
+
+    /// Applies a previewed team file to the primary project, and remembers its link. Refused while a changed server
+    /// host isn't among the confirmed ones.
+    ///
+    /// - Parameters:
+    ///   - preview: what ``previewTeamFile(at:)`` showed
+    ///   - link: where it came from
+    ///   - confirmedHosts: the new hosts the user confirmed by name
+    /// - Returns: whether it was applied
+    @discardableResult
+    public func applyTeamFile(
+        _ preview: TeamFileImport.Preview, from link: URL, confirmedHosts: Set<String>
+    ) throws -> Bool {
+        guard try commit(preview, source: link.host() ?? "a link", confirmedHosts: confirmedHosts) else { return false }
+        preferencesStore.userDefaults.set(link.absoluteString, forKey: Self.teamFileLinkKey)
+        return true
+    }
+
+    /// Applies a previewed team file from disk to the primary project. Refused while a changed server host isn't among
+    /// the confirmed ones. The share link stays as it was: a file has none.
+    ///
+    /// - Parameters:
+    ///   - preview: what ``previewTeamFile(from:)`` showed
+    ///   - name: the file's name, for the log
+    ///   - confirmedHosts: the new hosts the user confirmed by name
+    /// - Returns: whether it was applied
+    @discardableResult
+    public func applyTeamFile(
+        _ preview: TeamFileImport.Preview, fromFile name: String, confirmedHosts: Set<String>
+    ) throws -> Bool {
+        try commit(preview, source: name, confirmedHosts: confirmedHosts)
+    }
+
+    private func commit(_ preview: TeamFileImport.Preview, source: String, confirmedHosts: Set<String>) throws -> Bool {
+        guard preview.canApply(confirmedHosts: confirmedHosts) else { return false }
+        editPrimaryProject()
+        teamSave?.cancel()
+        teamSave = nil
+        try commitTeam(preview.incoming, announcing: "Imported the team values from \(source)")
+        storedTeamDraft = team
+        return true
     }
 
     // MARK: - Projects (PROJ-02)
@@ -360,6 +467,12 @@ public final class SettingsStore {
         team = project.team
         storedTeamDraft = project.team
         teamError = nil
+    }
+
+    /// Edits the primary project, whose values the accounts, Slots and the team's conventions use: what waits for
+    /// typing to pause is saved first. Settings → Accounts and Team call it when they show.
+    public func editPrimaryProject() {
+        selectProject(primaryID)
     }
 
     /// Adds a project with complete values on the primary project's servers, edits it, and starts a check.
@@ -425,12 +538,20 @@ public final class SettingsStore {
             return SlotRules.weekday(of: value) == nil ? "Enter a weekday, like Monday, or a number from 1 (Monday) to 7" : nil
         case .slotCodeFreezeNth, .slotEarlyAccessNth, .slotUpcomingShown:
             return SlotRules.nth(of: value) == nil ? "Enter a number from 1 to 12, like 4" : nil
+        case .slotPastShown:
+            return SlotRules.count(of: value) == nil ? "Enter a number from 0 to 12, like 2" : nil
         case .slotWarnDays:
             return SlotRules.days(of: value) == nil ? "Enter a number of days from 0 to 365" : nil
         case .slotPlanningURL:
             return TeamValues(slotPlanningURL: value).slotPlanning == nil ? "Enter a URL that starts with https:// or http://" : nil
         case .squadCapacity:
             return SquadCapacity(value) == nil ? "Enter points like Alpha: 60, Delta: 120, or one number for every squad" : nil
+        case .slotTeams:
+            return SlotTeams(value) == nil ? "Enter teams like Alpha: user1, user2; Bravo: user3" : nil
+        case .slotMemberWorkDays:
+            return SlotWorkDays(value) == nil ? "Enter work days per week like user1: 4, user2: 3, each from 1 to 7" : nil
+        case .blockedLabel, .sizeLabelPrefix, .priorityLabelPrefix, .slotCommitmentGroup:
+            return nil
         case .committedLabel, .slotLabelPrefix, .ignoredMergeRequestPrefix, .typeLabelPrefix, .inProgressLabel, .slotGroup,
             .slotScheduledLabelPrefix, .squadLabelPrefix, .statusLabelPrefix:
             return nil
@@ -448,6 +569,23 @@ public final class SettingsStore {
         guard let pane = SettingsPane.pane(for: problem) else { return false }
         selectedPane = pane
         return true
+    }
+
+    /// The field Settings reveals next: the pane that shows it scrolls to it and highlights it, then calls
+    /// ``fieldRevealed()``.
+    public private(set) var revealedField: SettingsField?
+
+    /// Selects a field's pane and marks the field to scroll to and highlight, before the app opens Settings.
+    ///
+    /// - Parameter field: the field to reveal
+    public func reveal(_ field: SettingsField) {
+        selectedPane = field.pane
+        revealedField = field
+    }
+
+    /// Clears the revealed field once its pane has scrolled to it.
+    public func fieldRevealed() {
+        revealedField = nil
     }
 
     // MARK: - Tokens (ACC-05, ACC-06)

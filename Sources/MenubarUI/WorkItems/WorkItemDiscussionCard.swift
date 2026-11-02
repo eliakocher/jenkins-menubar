@@ -30,9 +30,7 @@ struct WorkItemDiscussionCard: View {
                 let count = discussion.commentCount
                 HStack(spacing: 8) {
                     CountBadge(text: "\(count)\(discussion.hasMore ? "+" : "") \(count == 1 ? "comment" : "comments")")
-                    if discussion.threads.count > 1 {
-                        CommentSortMenu()
-                    }
+                    CommentSortMenu(threadCount: discussion.threads.count)
                 }
             }
         } else if state.isCurrent {

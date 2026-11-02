@@ -16,7 +16,7 @@ extension FocusedValues {
 }
 
 /// The menu bar's commands for the main window (`docs/design/main-window.md`, Keyboard; WIN-05): Rebuild and Relaunch
-/// in the app menu, New Work Item… (⌘N), Open in Browser (⌘O), Find… (⌘F), Activity's inspector (⌃⌘I), the sections (⌘1 to ⌘4), the
+/// in the app menu, New Work Item… (⌘N), Open in Browser (⌘O), Find… (⌘F), Activity's inspector (⌃⌘I), the sections (⌘1 and on), the
 /// Builds menu (⌘R, ⌘L, the hidden builds, the selected build's commands), the window (⌘0), the reading size of descriptions (View ›
 /// Make Text Bigger ⌘+, Smaller ⌘−, Actual Size ⌘0 while the main window is key) and no help book.
 ///
@@ -168,7 +168,10 @@ public struct MainWindowCommands: Commands {
             .keyboardShortcut("i", modifiers: [.control, .command])
             .disabled(activityCommands == nil)
             Divider()
-            ForEach(Array(MainWindowSection.allCases.enumerated()), id: \.element) { index, section in
+            ForEach(
+                Array(MainWindowSection.sidebarSections(claudeIsOffered: model.ai.isOffered, shown: router.section).enumerated()),
+                id: \.element
+            ) { index, section in
                 Button(section.title) {
                     router.open(section)
                     router.focusList()
@@ -179,6 +182,7 @@ public struct MainWindowCommands: Commands {
             Divider()
             Menu("Work Item Filters") {
                 WorkItemFilterItems(filters: WorkItemFilterItems.binding(model.settings)) {
+                    model.settings.reveal(.workItemFilters)
                     router.open(.settings(pane: .gitLab))
                 }
             }
@@ -227,13 +231,17 @@ public struct MainWindowCommands: Commands {
         CommandMenu("Builds") {
             // While the main window is key, ⌘R reloads its section only (the user, 2026-10-30), and the app-wide Check Now
             // takes ⇧⌘R; otherwise Check Now keeps ⌘R.
-            Button(focusedSection.map { MainWindowReload.title(for: $0) } ?? "Reload") {
+            Button(focusedSection.map { MainWindowReload.title(for: $0, opened: router.opened != nil) } ?? "Reload") {
                 if let section = focusedSection {
-                    MainWindowReload.run(section, selection: router.selection, model: model)
+                    MainWindowReload.run(section, selection: router.selection, opened: router.opened, model: model)
                 }
             }
             .keyboardShortcut(focusedSection == nil ? nil : KeyboardShortcut("r"))
-            .disabled(sheetIsUp || focusedSection.map { !MainWindowReload.isAvailable(in: $0) } ?? true)
+            .disabled(
+                sheetIsUp
+                    || focusedSection.map {
+                        !MainWindowReload.isAvailable(in: $0, opened: router.opened != nil)
+                    } ?? true)
             Button("Check Now") {
                 model.checkNow()
             }

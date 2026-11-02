@@ -46,7 +46,7 @@ public struct ActivityView: View {
             chartExpanded: $chartExpanded, hoveredTime: $hoveredTime, isInspectorShown: $isInspectorShown,
             isConfirmingClear: $isConfirmingClear, actions: actions, focusRequest: router.listFocusRequest
         ) {
-            ActivityDetailView(selection: selection)
+            ActivityDetailView(selection: selection) { isInspectorShown = false }
         }
         .onChange(of: searchText, initial: true) {
             store.searchText = searchText

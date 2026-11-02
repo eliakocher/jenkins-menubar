@@ -32,6 +32,12 @@ public struct BuildRowModel: Hashable, Sendable, Identifiable {
     /// the timing without a finished build's trailing "finished 30m ago", for a row short of room; the whole timing
     /// while running
     public var timingWithoutAge: String
+    /// the time at the first line's right end in the window's list: "30m ago" once finished, "0h05m" (the elapsed time)
+    /// while running
+    public var trailingTime: String
+    /// what the facts line keeps of the timing beside ``trailingTime``: "0h12m" once finished, "~0h20m left" while
+    /// running; `nil` while running without an estimate
+    public var timingBesideTime: String?
     /// the progress bar of a running build; `nil` once finished
     public var progress: Progress?
     /// "failed: tests, deploy · Failed tests: 3 of 1200" when known; `nil` otherwise
@@ -87,6 +93,8 @@ public struct BuildRowModel: Hashable, Sendable, Identifiable {
             timing = ([Formatting.elapsed(build, now: now)] + [Formatting.remaining(build, now: now)].compactMap { $0 })
                 .joined(separator: " · ")
             timingWithoutAge = timing
+            trailingTime = Formatting.duration(build.elapsed(at: now))
+            timingBesideTime = Formatting.remaining(build, now: now)
             if let fraction = build.progress(at: now), fraction < 1 {
                 progress = .fraction(fraction)
             } else {
@@ -97,6 +105,8 @@ public struct BuildRowModel: Hashable, Sendable, Identifiable {
             let finished = build.finishedAt ?? now
             timing = "\(Formatting.duration(duration)) · finished \(Formatting.age(since: finished, now: now)) ago"
             timingWithoutAge = Formatting.duration(duration)
+            trailingTime = "\(Formatting.age(since: finished, now: now)) ago"
+            timingBesideTime = Formatting.duration(duration)
             progress = nil
         }
         var failures: [String] = []

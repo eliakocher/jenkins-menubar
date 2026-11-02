@@ -33,7 +33,10 @@ struct NavigationResolver {
             return model.workItems.lists.map { $0.all.contains { $0.id == item } } ?? true
         case .workspaces:
             return workspaces.row(item) != nil
-        case .activity, .slots:
+        case .slots:
+            return item.isEmpty || (model.workItems.lists.map { $0.all.contains { $0.id == item } } ?? true)
+                || model.slotItems.items.contains { $0.id == item }
+        case .activity, .digest:
             return true
         }
     }
@@ -72,7 +75,10 @@ struct NavigationResolver {
             return found.map { "\($0.iid.map { "#\($0)" } ?? $0.reference) \($0.displayTitle)" } ?? location.section.title
         case .workspaces:
             return URL(fileURLWithPath: item).lastPathComponent
-        case .activity, .slots:
+        case .slots:
+            let found = (model.slotItems.items + (model.workItems.lists?.all ?? [])).first { $0.id == item }
+            return found.map { "\($0.iid.map { "#\($0)" } ?? $0.reference) \($0.displayTitle)" } ?? location.section.title
+        case .activity, .digest:
             return location.section.title
         }
     }

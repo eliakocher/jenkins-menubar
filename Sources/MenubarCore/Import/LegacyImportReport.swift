@@ -130,7 +130,7 @@ public struct TokenImport: Codable, Hashable, Sendable {
 
 /// What the import did with a token (ACC-02).
 public enum TokenOutcome: Codable, Hashable, Sendable {
-    /// stored under menubar-monitor; it was found here
+    /// stored under MegaMonitor's keychain service; it was found here
     case imported(LegacyToken.Source)
     /// MegaMonitor already had one, which was kept
     case kept

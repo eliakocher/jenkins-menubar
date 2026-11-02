@@ -55,12 +55,16 @@ struct MainWindowGalleryView<Content: View, Detail: View>: View {
     }
 }
 
-/// Group 1 of the toolbar from plain values: lane S's filter menu in Work Items, lane T's items in Activity.
+/// The section's toolbar items from plain values: Watch a Build in Pipelines, lane S's filter menu in Work Items, lane T's
+/// items in Activity.
 struct GallerySectionToolbar: ToolbarContent {
     let section: MainWindowSection
     let filters: WorkItemFilters
 
     var body: some ToolbarContent {
+        if section == .pipelines {
+            PipelinesToolbarItems(watchBuild: {})
+        }
         if section == .workItems {
             WorkItemsFilterToolbar(filters: filters)
         }

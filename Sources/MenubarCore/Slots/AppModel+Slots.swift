@@ -25,16 +25,17 @@ extension AppModel {
             team: team, today: now ?? dependencies.now(), calendar: calendar)
     }
 
-    /// The slots of the Slots section under a chip (SLOT-06 to SLOT-08): the slot group's issues of the shown slots
-    /// with my work items, the ones the chip matches, each slot's load against the chip's capacity. Without a slot
+    /// The slots of the Slots section under the chips (SLOT-06 to SLOT-08, SLOT-13): the slot group's issues of the shown
+    /// slots with my work items, the ones the chips match, each slot's load against the capacity of the selected
+    /// members. Without a slot
     /// group in Team, only my work items, as ``slotPlan(now:calendar:)``.
     ///
     /// - Parameters:
-    ///   - chip: the chip
+    ///   - chips: the chips that are on; none is Everyone
     ///   - now: the current time; the model's clock by default
     ///   - calendar: the calendar whose days count
     /// - Returns: the plan
-    public func slotPlan(chip: SlotChip, now: Date? = nil, calendar: Calendar = .current) -> SlotPlan {
+    public func slotPlan(chips: SlotChipSelection, now: Date? = nil, calendar: Calendar = .current) -> SlotPlan {
         let team = pipelines.project.team
         let related = workItems.relatedMergeRequests
         let labels = workItems.labels
@@ -44,24 +45,37 @@ extension AppModel {
         let me = slotUsername
         let squads = SlotChip.squads(of: source, prefix: team.squadLabelPrefix)
         return SlotPlan.make(
-            workItems: source.filter { chip.matches($0, team: team, me: me) },
+            workItems: source.filter { chips.matches($0, team: team, me: me) },
             mergeRequests: { related.entries[$0.reference]?.mergeRequests },
             build: { mergeRequest in
                 Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
             },
             knownLabels: slotLabels.labels + labels.known.map { Label(title: $0, color: labels.colors[$0]) },
-            team: team, capacity: chip.capacity(SquadCapacity(team.squadCapacity), squads: squads),
+            team: team, capacity: chips.capacity(team: team, squads: squads, me: me), epicWeights: slotItems.epicWeights,
+            commitments: slotItems.commitments,
             today: now ?? dependencies.now(), calendar: calendar)
     }
 
-    /// The chips of the Slots section: Me, Everyone, one per squad of the loaded items, Triage, Remaining Work and
-    /// Open Bugs (SLOT-07).
+    /// The chips of the Slots section: Everyone, Triage, Remaining Work, Open Bugs, Me, then one per team of Team (else
+    /// one per squad of the loaded items) (SLOT-07, SLOT-13). A team has its chip only while one of its members is an
+    /// assignee of a loaded item, as in the team's tool.
     public var slotChips: [SlotChip] {
-        SlotChip.chips(squads: SlotChip.squads(of: slotSourceItems, prefix: pipelines.project.team.squadLabelPrefix))
+        let team = pipelines.project.team
+        let source = slotSourceItems
+        return SlotChip.chips(
+            squads: SlotChip.squads(of: source, prefix: team.squadLabelPrefix),
+            teams: SlotTeams(team.slotTeams).map { SlotChip.teamsWithWork($0, items: source) })
     }
 
-    /// The slots whose group issues the section loads: the shown ones of my work items and every slot label, and the
-    /// two latest slots already released, whose open items make them overdue (SLOT-06).
+    /// The team value the squad labels of the loaded items suggest, for "Suggest Members" in the Slots section; read
+    /// only, Team is never written from here.
+    public var slotSuggestedTeams: String {
+        SlotChip.suggestedTeams(of: slotSourceItems, prefix: pipelines.project.team.squadLabelPrefix)
+    }
+
+    /// The slots whose group issues the section loads: the shown ones of my work items and every slot label, which are the
+    /// latest released ones Team's past slots shown asks for, and at least the two latest slots already released, whose
+    /// open items make them overdue (SLOT-06).
     ///
     /// - Parameters:
     ///   - now: the current time; the model's clock by default
@@ -72,9 +86,9 @@ extension AppModel {
         let today = calendar.startOfDay(for: now ?? dependencies.now())
         let rules = SlotRules(team: team)
         let shown = slotPlan(now: now, calendar: calendar).slots.map(\.name)
-        let past = Set(slotLabels.labels.compactMap { SlotName(label: $0.title, prefix: team.slotLabelPrefix) })
+        let past = Set(slotLabels.labels.compactMap { SlotName(label: $0.title, prefix: team.slotPrefix) })
             .filter { (rules.dates(of: $0, calendar: calendar)?.release ?? .distantFuture) < today }
-            .sorted().suffix(2)
+            .sorted().suffix(max(2, rules.pastShown))
         return Set(shown + past).sorted()
     }
 

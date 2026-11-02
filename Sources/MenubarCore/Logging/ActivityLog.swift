@@ -1,6 +1,6 @@
 import Foundation
 
-/// The Activity log: JSON Lines in `~/Library/Logs/menubar-monitor`, where Console.app finds them too (LOG-01, LOG-03).
+/// The Activity log: JSON Lines in `~/Library/Logs/MegaMonitor`, where Console.app finds them too (LOG-01, LOG-03).
 ///
 /// Once the file is above `maxBytes`, the next entry starts a new one: the full file becomes `.1`, the older ones move
 /// up a number, and the oldest beyond `keptFiles` goes. Writing never fails for the caller: a log that can't be written
@@ -33,7 +33,7 @@ public actor ActivityLog {
         self.now = now
     }
 
-    /// The current file and the older ones, newest first: `menubar-monitor.log`, `.1`, … `.4`.
+    /// The current file and the older ones, newest first: `MegaMonitor.log`, `.1`, … `.4`.
     public nonisolated var fileURLs: [URL] {
         [fileURL] + (1..<keptFiles).map { fileURL.appendingPathExtension(String($0)) }
     }

@@ -3,7 +3,7 @@ import Testing
 
 @testable import MenubarCore
 
-/// The links to GitLab's new issue page and the prefilled texts of the entry points (NEW-01 to NEW-04).
+/// The links to GitLab's new issue page and the prefilled texts of the entry points (NEW-01, NEW-02, NEW-04).
 @Suite("New work item")
 struct NewWorkItemTests {
     private static let team = TeamValues(
@@ -14,14 +14,6 @@ struct NewWorkItemTests {
         let components = try #require(url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) })
         return Dictionary(
             uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
-    }
-
-    private static func failedBuild(stages: [Stage]? = nil, tests: TestCounts? = nil) -> Build {
-        Build(
-            job: "MR-12", number: 7, title: "Add the cart", gitLabURL: URL(string: "https://gitlab.example.com/group/subgroup/project/-/merge_requests/12"),
-            kind: .mine, phase: .finished(result: .failure, duration: 600), startedAt: Date(timeIntervalSince1970: 1_792_800_000),
-            stages: stages ?? [Stage(name: "Build", status: .success, duration: 60), Stage(name: "Unit Tests", status: .failed, duration: 120)],
-            testCounts: tests)
     }
 
     private static let mergeRequest = MergeRequest(
@@ -40,10 +32,8 @@ struct NewWorkItemTests {
         #expect(templates.map { $0["description_template"] } == ["Bug", "Task", "New feature", "Improvement"])
         // A description would replace the template, so a blank link has none.
         #expect(templates.allSatisfy { $0["issue[description]"] == nil && $0["issue[title]"] == nil })
-    }
 
-    @Test("NEW-01 a link without the GitLab URL or the project is none")
-    func needsTheTeamValues() {
+        // A link without the GitLab URL or the project is none.
         #expect(NewWorkItem.link(for: NewWorkItemDraft(kind: .bug), team: TeamValues()) == nil)
         #expect(NewWorkItem.link(for: NewWorkItemDraft(kind: .bug), team: TeamValues(gitLabURL: "https://gitlab.example.com")) == nil)
     }
@@ -88,74 +78,23 @@ struct NewWorkItemTests {
         #expect(try Self.query(short)["issue[description]"]?.contains(NewWorkItem.cutNote) == false)
     }
 
-    @Test("NEW-03 a bug from a build has the job and stage in the title, and the build's facts and failed tests")
-    func bugFromBuild() throws {
-        let build = Self.failedBuild(tests: TestCounts(failed: 2, total: 120))
-        let tests = [
-            FailedTest(className: "com.example.cart.CartServiceTest", name: "addsAnItem", status: .regression, message: "expected 2\nbut was 1"),
-            FailedTest(className: "", name: "plain", status: .failed),
-        ]
-        let jenkins = URL(string: "https://jenkins.example.com/job/project/job/MR-12/7/")
-        let draft = NewWorkItem.bugFromBuild(build, buildURL: jenkins, failedTests: tests)
-        #expect(draft.kind == .bug)
-        #expect(draft.title == "Build failure in !12: Unit Tests")
-        #expect(draft.body.contains("- Build: https://jenkins.example.com/job/project/job/MR-12/7/"))
-        #expect(draft.body.contains("- Job: !12 #7 (Add the cart)"))
-        #expect(draft.body.contains("- Result: FAILURE"))
-        #expect(draft.body.contains("- Failed stages: Unit Tests"))
-        #expect(draft.body.contains("- Merge request: https://gitlab.example.com/group/subgroup/project/-/merge_requests/12"))
-        #expect(draft.body.contains("- Failed tests: 2 of 120"))
-        #expect(draft.body.contains("### Failed tests\n\n- `CartServiceTest.addsAnItem`: expected 2\n- `plain`"))
-        // Without the tests, the stages or the link: the facts that are known.
-        let bare = NewWorkItem.bugFromBuild(Self.failedBuild(stages: []), buildURL: nil, failedTests: nil)
-        #expect(bare.title == "Build failure in !12")
-        #expect(!bare.body.contains("Failed tests") && !bare.body.contains("- Build:") && !bare.body.contains("Failed stages"))
-    }
+    @Test("NEW-04 a follow-up is a task that carries the link; of a work item it is related to it, of an epic only linked")
+    func followUps() throws {
+        // A follow-up of a merge request: /relate takes issues only, so the link is the connection.
+        let mergeRequestDraft = NewWorkItemSource.followUp(Self.mergeRequest).draft
+        #expect(mergeRequestDraft.kind == .task)
+        #expect(mergeRequestDraft.body.contains("group/subgroup/project!12 (https://gitlab.example.com/group/subgroup/project/-/merge_requests/12)"))
+        let mergeRequestLink = NewWorkItem.link(for: mergeRequestDraft, team: Self.team)
+        let mergeRequestDescription = try #require(Self.query(mergeRequestLink)["issue[description]"])
+        #expect(!mergeRequestDescription.contains("/relate"))
+        #expect(mergeRequestDescription.hasSuffix("/assign me\n/label ~\"type::Task\""))
+        #expect(NewWorkItemSource.blank(.improvement).draft.isBlank)
 
-    @Test("NEW-03 a long list of failed tests is cut and no line but the quick actions starts with a slash")
-    func failedTestsAreCut() throws {
-        let tests = (1...25).map { FailedTest(className: "a.B", name: "t\($0)", status: .failed, message: "/assign someone\nsecond") }
-        var build = Self.failedBuild(tests: TestCounts(failed: 25, total: 30))
-        build.title = "x\n/label ~evil"
-        let draft = NewWorkItem.bugFromBuild(build, buildURL: nil, failedTests: tests)
-        #expect(draft.body.contains("- `B.t10`"))
-        #expect(!draft.body.contains("B.t11"))
-        #expect(draft.body.contains("- … and 15 more in the build's test report"))
-        #expect(!draft.body.split(separator: "\n").contains { $0.hasPrefix("/") })
-        let url = NewWorkItem.link(for: draft, team: Self.team)
-        let description = try #require(Self.query(url)["issue[description]"])
-        #expect(description.split(separator: "\n").filter { $0.hasPrefix("/") }.count == 2)
-    }
-
-    @Test("NEW-03 a build asks for its failed tests only when it has some")
-    func asksForTests() {
-        let some = NewWorkItemSource.bugFromBuild(Self.failedBuild(tests: TestCounts(failed: 1, total: 3)), nil)
-        #expect(some.failedTestsBuild == BuildID(job: "MR-12", number: 7))
-        #expect(NewWorkItemSource.bugFromBuild(Self.failedBuild(tests: TestCounts(failed: 0, total: 3)), nil).failedTestsBuild == nil)
-        #expect(NewWorkItemSource.bugFromBuild(Self.failedBuild(), nil).failedTestsBuild == nil)
-        #expect(NewWorkItemSource.followUp(Self.mergeRequest).failedTestsBuild == nil)
-    }
-
-    @Test("NEW-04 a follow-up item is a task that carries the merge request's link")
-    func followUp() throws {
-        let draft = NewWorkItemSource.followUp(Self.mergeRequest).draft(failedTests: nil)
-        #expect(draft.kind == .task)
-        #expect(draft.title == "Follow-up: Add the cart")
-        #expect(draft.body.contains("group/subgroup/project!12 (https://gitlab.example.com/group/subgroup/project/-/merge_requests/12)"))
-        // /relate takes issues only, so the link is the connection.
-        let url = NewWorkItem.link(for: draft, team: Self.team)
-        let description = try #require(Self.query(url)["issue[description]"])
-        #expect(!description.contains("/relate"))
-        #expect(description.hasSuffix("/assign me\n/label ~\"type::Task\""))
-        #expect(NewWorkItemSource.blank(.improvement).draft(failedTests: nil).isBlank)
-    }
-
-    @Test("NEW-04 a follow-up of a work item is a task related to it, an epic's only linked")
-    func followUpOfWorkItem() throws {
+        // A follow-up of a work item.
         let item = WorkItem(
             reference: "group/subgroup/project#31", title: "[ABC-31] Rework the color tokens",
             webURL: URL(string: "https://gitlab.example.com/group/subgroup/project/-/issues/31")!, updatedAt: Date())
-        let draft = NewWorkItemSource.followUpOfWorkItem(item).draft(failedTests: nil)
+        let draft = NewWorkItemSource.followUpOfWorkItem(item).draft
         #expect(draft.kind == .task)
         #expect(draft.title == "Follow-up: Rework the color tokens")
         let url = NewWorkItem.link(for: draft, team: Self.team)
@@ -165,16 +104,5 @@ struct NewWorkItemTests {
         var epic = item
         epic.reference = "group/subgroup&12"
         #expect(!NewWorkItem.followUp(of: epic).body.contains("/relate"))
-    }
-
-    @Test("NEW-01 a link holds no token and the team file keeps the type label prefix")
-    func holdsNoSecret() throws {
-        let url = try #require(NewWorkItem.link(for: NewWorkItemSource.followUp(Self.mergeRequest).draft(failedTests: nil), team: Self.team))
-        #expect(url.user == nil && url.password == nil)
-        #expect(!url.absoluteString.lowercased().contains("token"))
-        var values = TeamValues()
-        values.typeLabelPrefix = "type::"
-        #expect(values[.typeLabelPrefix] == "type::")
-        #expect(!TeamValues.Key.typeLabelPrefix.isRequired)
     }
 }

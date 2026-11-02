@@ -38,7 +38,11 @@ final class AlertPanels: NSObject, NSWindowDelegate {
             }
             panel?.close()
         }
-        panel.setContent(NSHostingView(rootView: view))
+        let hosting = NSHostingView(rootView: view)
+        // The panel keeps `.titled` (so it can become key) with a hidden title bar; without this the content honours
+        // that title bar's safe area and starts ~28 pt down, leaving an untinted strip of glass at the top.
+        hosting.safeAreaRegions = []
+        panel.setContent(hosting)
         panel.delegate = self
         if let cascadePoint, !panels.isEmpty {
             self.cascadePoint = panel.cascadeTopLeft(from: cascadePoint)

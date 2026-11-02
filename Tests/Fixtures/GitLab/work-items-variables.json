@@ -8,12 +8,12 @@
   "sort": "UPDATED_DESC",
   "withCommitted": true,
   "committedLabels": [
-    "cLevelOfCommitment::Committed"
+    "commitment::Committed"
   ],
   "committedOr": null,
   "committedNot": {
     "labelName": [
-      "uStatus::InVerification"
+      "status::InVerification"
     ]
   },
   "withOthers": true,
@@ -21,8 +21,8 @@
   "otherOr": null,
   "otherNot": {
     "labelName": [
-      "cLevelOfCommitment::Committed",
-      "uStatus::InVerification"
+      "commitment::Committed",
+      "status::InVerification"
     ]
   },
   "first": 20

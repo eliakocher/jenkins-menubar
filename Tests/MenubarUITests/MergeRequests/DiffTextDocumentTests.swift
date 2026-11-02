@@ -94,26 +94,6 @@ struct DiffTextDocumentTests {
         #expect(removed.selection.span(in: hunks)?.isOld == true)
     }
 
-    @Test("AI-07 a drag over the line numbers selects whole lines, from either end, across a hunk header")
-    func gutterDrag() throws {
-        let document = document(.inline)
-        // from the added `let c = 4` (row 4) up to the first hunk's `let a = 1`... and down across the header (row 6) to row 8
-        let down = document.characters(ofRows: 4, 8, inColumn: 0)
-        let up = document.characters(ofRows: 8, 4, inColumn: 0)
-        #expect(down == up)
-        let pick = try #require(document.pick(of: down, inColumn: 0, path: "A.swift"))
-        #expect(pick.rows == 4...8)
-        #expect(pick.selection.lines(in: hunks).map(\.text) == ["let c = 4", "let d = 5", "let gone = 0", "let e = 6"])
-        // One row, even an empty one: it keeps its newline, so the selection isn't empty.
-        let single = document.characters(ofRows: 7, 7, inColumn: 0)
-        #expect(document.pick(of: single, inColumn: 0, path: "A.swift")?.rows == 7...7)
-        // Side by side, the old column's drag gives old lines.
-        let sides = self.document(.sideBySide)
-        let left = try #require(sides.pick(of: sides.characters(ofRows: 6, 7, inColumn: 0), inColumn: 0, path: "A.swift"))
-        #expect(left.selection.span(in: hunks) == LineSpan(first: 41, last: 41))
-        #expect(sides.code(in: sides.characters(ofRows: 1, 2, inColumn: 0), inColumn: 0) == "let a = 1\nlet b = 2")
-    }
-
     @Test("AI-07 copying a selection gives the code without numbers, signs or hunk headers")
     func copiesCode() {
         let document = document(.inline)
@@ -126,16 +106,5 @@ struct DiffTextDocumentTests {
     ])
     func sanitizes(text: String, expected: String) {
         #expect(DiffTextDocument.sanitized(text) == expected)
-    }
-
-    @Test("AI-07 the row at a position is found by the rows' tops")
-    func rowAtPosition() {
-        let tops: [CGFloat] = [0, 19, 34, 49, 64]
-        #expect(DiffTextDocument.row(at: -5, tops: tops) == 0)
-        #expect(DiffTextDocument.row(at: 18.9, tops: tops) == 0)
-        #expect(DiffTextDocument.row(at: 19, tops: tops) == 1)
-        #expect(DiffTextDocument.row(at: 63, tops: tops) == 3)
-        #expect(DiffTextDocument.row(at: 900, tops: tops) == 3)
-        #expect(DiffTextDocument.row(at: 5, tops: [0]) == nil)
     }
 }

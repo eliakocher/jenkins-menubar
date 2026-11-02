@@ -77,13 +77,13 @@ struct JenkinsClientTests {
 
     @Test("ACC-04 tells a rejected Jenkins token")
     func accountTellsWhatIsWrong() async throws {
-        let cases: [(status: Int?, error: TransportError?, body: String, message: String)] = [
-            (401, nil, try Team.fixture("error-401.html"), "Jenkins rejected the token"),
-            (403, nil, "", "Jenkins rejected the token"),
-            (404, nil, try Team.fixture("error-404.html"), "Jenkins does not know the job: check the job URL in Team"),
-            (500, nil, try Team.fixture("error-500.html"), "Jenkins answered with HTTP 500"),
-            (nil, .noAnswer(within: .seconds(20)), "", "Jenkins unreachable (VPN?)"),
-            (nil, .unknownHost, "", "Jenkins unreachable (VPN?)"),
+        let cases: [(status: Int?, error: TransportError?, body: String, problem: Problem)] = [
+            (401, nil, try Team.fixture("error-401.html"), .rejectedToken(.jenkins)),
+            (403, nil, "", .rejectedToken(.jenkins)),
+            (404, nil, try Team.fixture("error-404.html"), .unknownJob),
+            (500, nil, try Team.fixture("error-500.html"), .httpStatus(.jenkins, status: 500)),
+            (nil, .noAnswer(within: .seconds(20)), "", .unreachable(.jenkins)),
+            (nil, .unknownHost, "", .unreachable(.jenkins)),
         ]
         for item in cases {
             let stub = StubTransport()
@@ -94,9 +94,9 @@ struct JenkinsClientTests {
             }
             do {
                 _ = try await Team.client(stub).account()
-                Issue.record("expected \(item.message)")
+                Issue.record("expected \(item.problem)")
             } catch let error as JenkinsError {
-                #expect(error.problem.message == item.message)
+                #expect(error.problem == item.problem)
             }
         }
     }
@@ -108,39 +108,44 @@ struct WatchTargetTests {
         WatchTarget.parse(text, project: Team.project)
     }
 
-    @Test("WATCH-01 accepts build job and console links")
-    func acceptsJenkinsLinks() {
+    static let typedByHand =
+        "https://jenkins.example.com/jenkins/job/GitLab Team/job/team%252Fproduct/job/feature%252Ffoo/3/"
+
+    /// what the Watch a Build sheet accepts: text and the job it names
+    static let accepted: [(String, String)] = {
+        var cases: [(String, String)] = [
+            (Team.jobURL + "/job/develop/lastBuild/", "develop"),
+            ("  \(Team.jobURL)/job/feature%252Ffoo/3/ \n", "feature%252Ffoo"),
+            (WatchTargetTests.typedByHand, "feature%252Ffoo"),
+            ("https://gitlab.example.com/team/product/-/merge_requests/12", "MR-12"),
+            (" https://gitlab.example.com/Team/Product/-/merge_requests/7 ", "MR-7"),
+        ]
         for link in [
             "/job/MR-12/5/", "/job/MR-12/5", "/job/MR-12/", "/job/MR-12", "/job/MR-12/5/console", "/job/MR-12?tab=x",
             "/job/MR-12#top", "/job/MR-12/5/testReport/",
         ] {
-            #expect(Self.parse(Team.jobURL + link) == .success("MR-12"), "\(link)")
+            cases.append((Team.jobURL + link, "MR-12"))
         }
-        #expect(Self.parse(Team.jobURL + "/job/develop/lastBuild/") == .success("develop"))
-    }
-
-    @Test("WATCH-01 accepts a branch build link with spaces around")
-    func acceptsBranchLinks() {
-        #expect(Self.parse("  \(Team.jobURL)/job/feature%252Ffoo/3/ \n") == .success("feature%252Ffoo"))
-        let typedByHand = "https://jenkins.example.com/jenkins/job/GitLab Team/job/team%252Fproduct/job/feature%252Ffoo/3/"
-        #expect(Self.parse(typedByHand) == .success("feature%252Ffoo"))
-        let typedJobURL = Project(id: .main, team: TeamValues(jenkinsJobURL: typedByHand.replacingOccurrences(of: "/job/feature%252Ffoo/3/", with: "")))
-        #expect(WatchTarget.parse(Team.jobURL + "/job/develop/", project: typedJobURL) == .success("develop"))
-    }
-
-    @Test("WATCH-01 accepts a merge request link with a suffix")
-    func acceptsMergeRequestLinks() {
-        for suffix in ["", "/", "/diffs", "/diffs?commit_id=abc", "#note_123", "?tab=pipelines"] {
-            #expect(Self.parse("https://gitlab.example.com/team/product/-/merge_requests/12" + suffix) == .success("MR-12"), "\(suffix)")
+        for suffix in ["/", "/diffs", "/diffs?commit_id=abc", "#note_123", "?tab=pipelines"] {
+            cases.append(("https://gitlab.example.com/team/product/-/merge_requests/12" + suffix, "MR-12"))
         }
-        #expect(Self.parse(" https://gitlab.example.com/Team/Product/-/merge_requests/7 ") == .success("MR-7"))
-    }
-
-    @Test("WATCH-01 accepts !N MR-N mr-N and N")
-    func acceptsNumbers() {
         for text in ["!12", "MR-12", "mr-12", "12", " 12\n", "!012"] {
-            #expect(Self.parse(text) == .success("MR-12"), "\(text)")
+            cases.append((text, "MR-12"))
         }
+        return cases
+    }()
+
+    @Test("WATCH-01 accepts Jenkins build, job and console links, merge request links, !N MR-N mr-N and N", arguments: WatchTargetTests.accepted)
+    func accepts(text: String, job: String) {
+        #expect(Self.parse(text) == .success(job), "\(text)")
+    }
+
+    @Test("WATCH-01 accepts a team job URL typed by hand with spaces")
+    func acceptsTypedJobURL() {
+        let typedJobURL = Project(
+            id: .main,
+            team: TeamValues(jenkinsJobURL: Self.typedByHand.replacingOccurrences(of: "/job/feature%252Ffoo/3/", with: "")))
+        #expect(WatchTarget.parse(Team.jobURL + "/job/develop/", project: typedJobURL) == .success("develop"))
     }
 
     @Test("WATCH-01 labels a branch job by its decoded name")
@@ -178,33 +183,33 @@ struct WatchTargetTests {
         #expect(WatchTarget.suggestion(fromClipboard: "", watchedJobs: []) == nil)
     }
 
-    @Test("WATCH-02 refuses another GitLab project")
-    func refusesAnotherProject() {
-        let refusal = Self.parse("https://gitlab.example.com/team/other/-/merge_requests/12")
-        #expect(refusal == .failure(.otherProject("team/product")))
-        #expect(refusal.failureMessage == "That is not in team/product, the GitLab project in Team")
-        #expect(Self.parse("https://gitlab.example.com/team/product/sub/-/merge_requests/12") == .failure(.otherProject("team/product")))
-    }
-
-    @Test("WATCH-02 refuses a GitLab pipeline link")
-    func refusesPipelineLinks() {
+    /// what the sheet refuses: text and why
+    static let refused: [(String, WatchRefusal)] = {
+        let gitLab = "https://gitlab.example.com/team/product"
+        var cases: [(String, WatchRefusal)] = [
+            ("https://gitlab.example.com/team/other/-/merge_requests/12", .otherProject("team/product")),
+            (gitLab + "/sub/-/merge_requests/12", .otherProject("team/product")),
+        ]
         for path in ["/-/pipelines/55", "/-/merge_requests", "/-/merge_requests/new", "/-/issues/3"] {
-            let refusal = Self.parse("https://gitlab.example.com/team/product" + path)
-            #expect(refusal == .failure(.notAMergeRequest), "\(path)")
-            #expect(refusal.failureMessage == "That GitLab link is not a merge request")
+            cases.append((gitLab + path, .notAMergeRequest))
         }
-    }
-
-    @Test("WATCH-02 refuses another Jenkins")
-    func refusesAnotherJenkins() {
         for link in [
             "https://other.example.com/jenkins/job/MR-12/5/", Team.jobURL + "/view/all", Team.jobURL + "/job/",
             "https://gitlab.example.com/team/product", "http://jenkins.example.com/job/MR-1/",
         ] {
-            let refusal = Self.parse(link)
-            #expect(refusal == .failure(.otherJenkins(jobURL: Team.jobURL)), "\(link)")
-            #expect(refusal.failureMessage == "That is not a link into the Jenkins job in Team, \(Team.jobURL)")
+            cases.append((link, .otherJenkins(jobURL: Team.jobURL)))
         }
+        for text in ["", "   ", "develop", "feature/foo", "Mr-12", "!", "MR-", "12a", "!12 13", "ftp://jenkins.example.com/job/MR-1/"] {
+            cases.append((text, .notUnderstood))
+        }
+        return cases
+    }()
+
+    @Test(
+        "WATCH-02 refuses another GitLab project, a GitLab link that is no merge request, another Jenkins, and text that is no link or number",
+        arguments: WatchTargetTests.refused)
+    func refuses(text: String, refusal: WatchRefusal) {
+        #expect(Self.parse(text) == .failure(refusal), "\(text)")
     }
 
     @Test("WATCH-02 refuses a job Jenkins does not have")
@@ -217,20 +222,10 @@ struct WatchTargetTests {
 
         let missing = try await WatchTarget.confirm("MR-9", client: .success(client), myJobs: [])
         #expect(missing == .failure(.noJob(job: "MR-9")))
-        #expect(missing.failureMessage == "Jenkins has no job !9")
         let failing = try await WatchTarget.confirm("MR-8", client: .success(client), myJobs: [])
-        #expect(failing.failureMessage == "Jenkins answered with HTTP 500")
+        #expect(failing == .failure(.problem(.httpStatus(.jenkins, status: 500))))
         let unreachable = try await WatchTarget.confirm("MR-7", client: .success(client), myJobs: [])
-        #expect(unreachable.failureMessage == "Jenkins unreachable (VPN?)")
-    }
-
-    @Test("WATCH-02 refuses text that is not a link or number")
-    func refusesOtherText() {
-        for text in ["", "   ", "develop", "feature/foo", "Mr-12", "!", "MR-", "12a", "!12 13", "ftp://jenkins.example.com/job/MR-1/"] {
-            let refusal = Self.parse(text)
-            #expect(refusal == .failure(.notUnderstood), "\(text)")
-            #expect(refusal.failureMessage == "Paste a link to a Jenkins build or a GitLab merge request, or !123")
-        }
+        #expect(unreachable == .failure(.problem(.unreachable(.jenkins))))
     }
 
     @Test("WATCH-02 refuses without a Jenkins token")
@@ -239,7 +234,7 @@ struct WatchTargetTests {
         for token in [nil, ""] {
             let client = JenkinsClient.make(project: Team.project, token: token, transport: stub)
             let refusal = try await WatchTarget.confirm("MR-12", client: client, myJobs: [])
-            #expect(refusal.failureMessage == "No Jenkins token: add it in Settings → Accounts")
+            #expect(refusal == .failure(.problem(.noToken(.jenkins))))
         }
         let noTeam = JenkinsClient.make(project: Project(id: .main, team: TeamValues()), token: Team.token, transport: stub)
         #expect(try await WatchTarget.confirm("MR-12", client: noTeam, myJobs: []) == .failure(.problem(.teamValuesMissing)))
@@ -254,16 +249,9 @@ struct WatchTargetTests {
 
         let mine = try await WatchTarget.confirm("MR-1", client: .success(client), myJobs: ["MR-1", "MR-3"])
         #expect(mine == .failure(.mine(job: "MR-1")))
-        #expect(mine.failureMessage == "!1 is yours: it shows with your builds anyway")
         #expect(stub.requests.isEmpty)
 
         let someoneElses = try await WatchTarget.confirm("MR-2", client: .success(client), myJobs: ["MR-1", "MR-3"])
         #expect(someoneElses == .success(WatchCandidate(job: "MR-2", label: "!2", title: #"#4711: Resolve "Update the reporting API version""#)))
-    }
-}
-
-private extension Result where Failure == WatchRefusal {
-    var failureMessage: String? {
-        if case .failure(let refusal) = self { refusal.message } else { nil }
     }
 }

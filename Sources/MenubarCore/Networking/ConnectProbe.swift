@@ -21,7 +21,7 @@ public enum ProbeResult: Sendable, Hashable {
 /// seconds and couldn't be tested. Task 1.4 in `docs/decisions.md` has what macOS does in each case.
 public struct ConnectProbe: Sendable {
     private let clock: any Clock<Duration>
-    private static let queue = DispatchQueue(label: "menubar-monitor.connect-probe")
+    private static let queue = DispatchQueue(label: "\(AppIdentity.bundleID).connect-probe")
 
     public init(clock: any Clock<Duration> = ContinuousClock()) {
         self.clock = clock

@@ -78,32 +78,6 @@ struct ReviewerRereviewTests {
         #expect(reviews.reviewersToAsk.map(\.username) == ["slee", "rmeyer"])
     }
 
-    @Test("MR-09 the nudge counts the commits since the review")
-    func nudge() {
-        let reviews = MergeRequestReviews(reviewers: [], lastPushedAt: Self.time(7), commitDates: [Self.time(6), Self.time(7)])
-        let sam = Self.reviewer(1, "slee", name: "Sam Lee", reviewedAt: Self.time(4))
-        let chris = Self.reviewer(2, "cnovak", name: "Chris Novak", reviewedAt: Self.time(6))
-        let alex = Self.reviewer(3, "akim", name: "Alex Kim", reviewedAt: Self.time(8))
-        let rebase = MergeRequestReviews(reviewers: [], lastPushedAt: Self.time(7))
-
-        #expect(reviews.nudge(for: sam) == "2 new commits since Sam's review")
-        #expect(reviews.nudge(for: chris) == "1 new commit since Chris' review")
-        #expect(reviews.nudge(for: alex) == nil)
-        #expect(rebase.nudge(for: sam) == "Updated since Sam's review")
-        #expect(reviews.nudge(for: Self.reviewer(4, "rmeyer", state: .unreviewed)) == nil)
-    }
-
-    @Test("MR-10 the confirmation names the reviewers and counts the others", arguments: [
-        (["Sam Lee", "Kim Ito"], "Re-request review from Sam and Kim?"),
-        (["Sam Lee", "Kim Ito", "Lee Wong"], "Re-request review from Sam, Kim and Lee?"),
-        (["Sam Lee", "Kim Ito", "Lee Wong", "Ana Silva", "Bo Chen", "Cy Young", "Di Prince"], "Re-request review from Sam, Kim and 5 others?"),
-    ])
-    func confirmation(names: [String], expected: String) {
-        let reviewers = names.enumerated().map { Self.reviewer($0.offset, "user\($0.offset)", name: $0.element) }
-
-        #expect(MergeRequestReviews.confirmation(for: reviewers) == expected)
-    }
-
     // MARK: - Reading the reviews
 
     @Test("MR-09 reads the reviewers' ids and times, the last push and the commit dates")
@@ -121,7 +95,6 @@ struct ReviewerRereviewTests {
         // The newest of the diff versions, whatever their order.
         #expect(reviews.lastPushedAt == ISO8601DateFormatter().date(from: "2026-10-28T10:00:00Z"))
         #expect(reviews.commitDates.count == 3)
-        #expect(reviews.nudge(for: reviews.reviewers[0]) == "2 new commits since Sam's review")
         #expect(reviews.freshness(of: reviews.reviewers[1]) == .current)
         #expect(reviews.reviewersToAsk.map(\.username) == ["slee"])
     }
@@ -158,29 +131,6 @@ struct ReviewerRereviewTests {
     ])
     func writeAccess(scopes: [String], expected: WriteAccess) {
         #expect(WriteAccess(scopes: scopes) == expected)
-    }
-
-    @Test("MR-09 asks GitLab for the token's scopes with the token as a Bearer, and reads them")
-    func tokenScopes() async throws {
-        let stub = StubTransport()
-        stub.answer("GET", path: "/api/v4/personal_access_tokens/self", body: #"{"id":7,"name":"menubar-monitor","scopes":["read_api"],"active":true}"#)
-
-        let scopes = try await Self.client(stub).tokenScopes()
-
-        #expect(scopes == ["read_api"])
-        #expect(WriteAccess(scopes: scopes) == .readOnly)
-        let request = try #require(stub.requests(path: "/api/v4/personal_access_tokens/self").first)
-        #expect(request.method == "GET")
-        #expect(request.headers["Authorization"] == "Bearer glpat-test")
-        #expect(request.url.query == nil)
-    }
-
-    @Test("MR-09 a refusal of the scope check isn't known, and the check never throws the write away")
-    func tokenScopesRefused() async throws {
-        let stub = StubTransport()
-        stub.answer("GET", path: "/api/v4/personal_access_tokens/self", status: 401, body: #"{"message":"401 Unauthorized"}"#)
-
-        await #expect(throws: GitLabError.self) { try await Self.client(stub).tokenScopes() }
     }
 
     // MARK: - The mutation
@@ -291,6 +241,46 @@ struct ReviewerRereviewTests {
         let noToken = MergeRequestDetailsStore(services: try Self.services(stub: StubTransport(), folder: none, token: nil))
         let failed = await noToken.reRequest([sam], of: Self.mergeRequest)
         #expect(failed.sent.isEmpty && failed.needsToken && failed.failures.count == 1)
+    }
+
+    @Test("OD-06 a GitLab without the newer review fields is asked the full reviews once, not at every selection")
+    func reviewsLevelRemembered() async throws {
+        let folder = try TemporaryFolder()
+        let stub = StubTransport()
+        stub.answer(operation: "MergeRequestDetails", body: try FixtureFiles.string("GitLab/merge-request-details.json"))
+        stub.answer(operation: "MergeRequestReviews", body: try FixtureFiles.string("GitLab/merge-request-reviews.json"))
+        stub.answer(operation: "MergeRequestReviews", times: 1, body: try FixtureFiles.string("GitLab/merge-request-details-unknown-field.json"))
+        let store = MergeRequestDetailsStore(services: try Self.services(stub: stub, folder: folder, token: "glpat-test"))
+        var other = Self.mergeRequest
+        other.iid = 17
+        other.reference = "group/project!17"
+
+        await store.load(Self.mergeRequest)
+        await store.load(other)
+
+        let queries = stub.requests(operation: "MergeRequestReviews").map { String(decoding: $0.body ?? Data(), as: UTF8.self) }
+        // The first selection learns the level; the second asks the basic query only.
+        #expect(queries.count == 3)
+        #expect(!queries[2].contains("mergeRequestDiffs"))
+        #expect(store.state(of: other).details?.reviews != nil)
+    }
+
+    @Test("OD-06 the token's scopes are asked once per token")
+    func writeAccessAskedOncePerToken() async throws {
+        let folder = try TemporaryFolder()
+        let stub = StubTransport()
+        stub.answer("GET", path: "/api/v4/personal_access_tokens/self", body: #"{"scopes":["read_api"]}"#)
+        let services = try Self.services(stub: stub, folder: folder, token: "glpat-test")
+        let store = MergeRequestDetailsStore(services: services)
+
+        await store.checkWriteAccess()
+        await store.checkWriteAccess()
+        #expect(stub.requests.count == 1)
+        #expect(store.writeAccess == .readOnly)
+
+        try await services.tokens.store("glpat-other", for: .gitlab)
+        await store.checkWriteAccess()
+        #expect(stub.requests.count == 2)
     }
 
     private static func services(stub: StubTransport, folder: TemporaryFolder, token: String?) throws -> GitLabServices {

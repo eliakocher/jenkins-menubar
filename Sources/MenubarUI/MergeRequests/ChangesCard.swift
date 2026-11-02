@@ -25,6 +25,8 @@ struct ChangesCard: View {
     @ViewState private var toggled: [String: Bool] = [:]
     /// the folders the user folded or unfolded, by path, over the defaults
     @ViewState private var toggledFolders: [String: Bool] = [:]
+    /// Settings → Appearance: every folder starts open instead of folded when there are several
+    @AppStorage(ChangesOutline.foldersOpenKey) private var foldersStartOpen = false
     @ViewState private var filter = ""
     /// how many diffs Expand All Diffs would open, while it asks first
     @ViewState private var confirmingExpand: Int?
@@ -320,7 +322,8 @@ struct ChangesCard: View {
 
     /// the folders start folded when there are several; the user's own toggles win
     private func isFolded(_ folder: String, in changes: MergeRequestChanges) -> Bool {
-        toggledFolders[folder] ?? (ChangesOutline.startsFolded(changes.files) && !unfoldedFolders.contains(folder))
+        toggledFolders[folder]
+            ?? (!foldersStartOpen && ChangesOutline.startsFolded(changes.files) && !unfoldedFolders.contains(folder))
     }
 
     private func rows(of changes: MergeRequestChanges) -> [ChangesOutline.Row] {

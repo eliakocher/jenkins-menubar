@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// One comment of a thread: a merge request's review note or a work item's comment (MR-07, WIN-02).
-public struct ThreadNote: Hashable, Sendable, Identifiable {
+public struct ThreadNote: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     /// who wrote it; `nil` for a deleted user
     public var author: MergeRequest.Person?
@@ -23,7 +23,7 @@ public struct ThreadNote: Hashable, Sendable, Identifiable {
 
 /// A thread of comments: the first one and the replies to it, oldest first. The merge request and the work item detail
 /// draw the same thing from it (MR-07, WIN-02).
-public struct CommentThread: Hashable, Sendable, Identifiable {
+public struct CommentThread: Codable, Hashable, Sendable, Identifiable {
     public var id: String
     public var first: ThreadNote
     public var replies: [ThreadNote]
@@ -116,7 +116,7 @@ struct NoteShape: Decodable {
 // MARK: - A work item's discussion
 
 /// A work item's discussion: its comment threads, system notes left out (WIN-02).
-public struct WorkItemDiscussion: Hashable, Sendable {
+public struct WorkItemDiscussion: Codable, Hashable, Sendable {
     public var threads: [CommentThread]
     /// whether GitLab has more discussions than were asked for
     public var hasMore: Bool
@@ -256,6 +256,8 @@ public final class ItemDiscussionsStore {
         var loadedUpdatedAt: Date?
         var isLoading = false
         var failed = false
+        /// whether `discussion` came from the disk and wasn't asked this launch (OD-07)
+        var fromDisk = false
     }
 
     private var entries: [String: Entry] = [:]
@@ -285,7 +287,14 @@ public final class ItemDiscussionsStore {
     public func load(_ source: DescriptionSource, force: Bool = false) async {
         let key = source.reference
         var entry = entries[key] ?? Entry()
-        if entry.isLoading || (!force && state(of: source).isCurrent) {
+        // The copy on disk shows at once; it is asked again below (OD-07).
+        if entries[key] == nil, let kept = services.details?.load(.workItemDiscussion, key: key) {
+            entry.discussion = kept.value
+            entry.loadedUpdatedAt = kept.updatedAt
+            entry.fromDisk = true
+            entries[key] = entry
+        }
+        if entry.isLoading || (!force && !entry.fromDisk && state(of: source).isCurrent) {
             return
         }
         guard let operation = GitLabOperation.discussion(of: source) else {
@@ -306,9 +315,16 @@ public final class ItemDiscussionsStore {
         if let discussion {
             entry.discussion = discussion
             entry.loadedUpdatedAt = source.updatedAt
+            entry.fromDisk = false
+            services.details?.save(discussion, updatedAt: source.updatedAt, as: .workItemDiscussion, key: key)
         } else {
             entry.failed = true
         }
         entries[key] = entry
     }
+}
+
+extension DetailKind where Value == WorkItemDiscussion {
+    /// a work item's discussion (OD-07)
+    public static var workItemDiscussion: DetailKind { DetailKind("discussion") }
 }

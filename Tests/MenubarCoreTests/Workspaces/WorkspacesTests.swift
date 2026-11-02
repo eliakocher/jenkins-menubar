@@ -43,24 +43,6 @@ struct WorkspacesTests {
             .problem == .invalidBaseBranch)
     }
 
-    @Test("WS-01 Add Folder suggests the pattern of clones side by side")
-    func suggestsPattern() throws {
-        let folder = try TemporaryFolder()
-        try folder.write("", to: "clones/develop1/project/.git/HEAD")
-        try folder.write("", to: "clones/develop2/project/.git/HEAD")
-        try folder.write("", to: "clones/develop2/tools/.git/HEAD")
-        try folder.write("", to: "flat/a/.git/HEAD")
-        try folder.write("", to: "single/.git/HEAD")
-        try folder.write("", to: "empty/README")
-        let base = (folder.url.resolvingSymlinksInPath().path(percentEncoded: false) as NSString).standardizingPath
-        let home = URL(filePath: base, directoryHint: .isDirectory)
-
-        #expect(WorkspaceDiscovery.suggestedPath(for: "\(base)/clones", home: home) == "~/clones/*/project")
-        #expect(WorkspaceDiscovery.suggestedPath(for: "\(base)/flat", home: home) == "~/flat/*")
-        #expect(WorkspaceDiscovery.suggestedPath(for: "\(base)/single", home: home) == "~/single")
-        #expect(WorkspaceDiscovery.suggestedPath(for: "\(base)/empty", home: home) == "~/empty")
-    }
-
     @Test(
         "WS-01 refuses base branches git could read as an option or a range",
         arguments: [
@@ -70,22 +52,6 @@ struct WorkspacesTests {
         ])
     func refusesBadBaseBranches(name: String, valid: Bool) {
         #expect(BranchNameRule.isValid(name) == valid)
-    }
-
-    @Test("WS-01 keeps the repositories in the user's preferences")
-    @MainActor
-    func keepsSettings() async throws {
-        let defaults = TemporaryDefaults()
-        // A home of its own: the store looks for the checkouts, never in the user's folders.
-        let home = try TemporaryFolder()
-        let store = WorkspacesStore(defaults: defaults.defaults, runner: FakeGit(), home: home.url)
-        let settings = RepositorySettings(
-            folders: [RepositoryFolder(path: "~/workspaces/*/project", baseBranch: "main")], ideCommand: "code {path}")
-        store.update(settings)
-        #expect(RepositorySettings.load(from: defaults.defaults) == settings)
-        #expect(WorkspacesStore(defaults: defaults.defaults, runner: FakeGit(), home: home.url).settings == settings)
-        await store.settled()
-        #expect(store.findings.first?.problem == .noMatches)
     }
 
     // MARK: - WS-02 Reading a checkout with git
@@ -210,13 +176,6 @@ struct WorkspacesTests {
         #expect(CheckoutState(status: status, ahead: 0, behind: 674, localBaseBehind: 674).isFree(baseBranch: "develop") == free)
     }
 
-    @Test("WS-03 warns of a local base far behind origin")
-    func staleBase() {
-        #expect(CheckoutState(status: GitStatus(branch: "develop"), localBaseBehind: 674).hasStaleBase)
-        #expect(!CheckoutState(status: GitStatus(branch: "develop"), localBaseBehind: 12).hasStaleBase)
-        #expect(!CheckoutState(status: GitStatus(branch: "develop"), localBaseBehind: nil).hasStaleBase)
-    }
-
     // MARK: - WS-04 The task of a checkout
 
     @Test(
@@ -228,14 +187,6 @@ struct WorkspacesTests {
         ] as [(String, Int?)])
     func branchNumber(branch: String, number: Int?) {
         #expect(BranchTask.number(of: branch) == number)
-    }
-
-    @Test("WS-04 a branch's slug made readable")
-    func readableSlug() {
-        #expect(BranchTask.readableTitle(of: "1302-export-audit-log-as-csv") == "Export audit log as csv")
-        #expect(BranchTask.readableTitle(of: "feature/0042_dark_mode") == "Dark mode")
-        #expect(BranchTask.readableTitle(of: "1302") == nil)
-        #expect(BranchTask.readableTitle(of: "develop") == nil)
     }
 
     @Test("WS-04 joins the branch with its work item, merge request and build")

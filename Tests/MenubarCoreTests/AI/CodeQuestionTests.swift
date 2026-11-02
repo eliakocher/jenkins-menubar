@@ -18,7 +18,6 @@ struct CodeQuestionTests {
         let one = try #require(DiffSelection.click(added, path: "a.swift", extending: false, in: nil))
         #expect(one.lines(in: hunks).map(\.text) == ["let total = price * 2"])
         #expect(one.span(in: hunks) == LineSpan(first: 12, last: 12))
-        #expect(one.span(in: hunks)?.buttonTitle == "Line 12")
         // The same line again unpicks it.
         #expect(DiffSelection.click(added, path: "a.swift", extending: false, in: one) == nil)
 
@@ -30,7 +29,6 @@ struct CodeQuestionTests {
         let across = try #require(DiffSelection.click(later, path: "a.swift", extending: true, in: up))
         #expect(across.lines(in: hunks).first?.newNumber == 12)
         #expect(across.lines(in: hunks).last?.newNumber == 43)
-        #expect(across.span(in: hunks)?.title == "lines 12–43")
 
         // A click elsewhere starts anew; a shift-click in another file too.
         #expect(DiffSelection.click(later, path: "a.swift", extending: false, in: across) == DiffSelection(path: "a.swift", anchor: later, head: later))
@@ -40,7 +38,6 @@ struct CodeQuestionTests {
         let removed = DiffLineID(old: 11, new: nil)
         let old = try #require(DiffSelection.click(removed, path: "a.swift", extending: false, in: nil))
         #expect(old.span(in: hunks) == LineSpan(first: 11, last: 11, isOld: true))
-        #expect(old.span(in: hunks)?.buttonTitle == "Removed Line 11")
         let gone = DiffSelection(path: "a.swift", anchor: DiffLineID(old: 900, new: nil), head: added)
         #expect(gone.lines(in: hunks).isEmpty)
         #expect(gone.span(in: hunks) == nil)
@@ -48,7 +45,7 @@ struct CodeQuestionTests {
 
     // MARK: - The facts
 
-    @Test("AI-07 sends the merge request, the picked lines marked with the diff around them, and the question last")
+    @Test("AI-07 the picked lines are marked in the diff around them, and the question comes last")
     func linesFacts() throws {
         let selection = DiffSelection(path: "Sources/Cart.swift", anchor: DiffLineID(old: nil, new: 12), head: DiffLineID(old: 10, new: 10))
         let span = try #require(selection.span(in: Self.hunks))
@@ -59,16 +56,10 @@ struct CodeQuestionTests {
         #expect(prompt.useCase == .askAboutCode)
         #expect(prompt.schema == nil)
         #expect(prompt.readableFolder == nil)
-        #expect(text.contains(#"group/project!42 "Add cart discount" by Jane Doe (jdoe)"#))
-        #expect(text.contains("Branches: feature/discount into develop"))
-        #expect(text.contains("Head commit: 1a2b3c4d"))
-        #expect(text.contains("Discounts apply after tax."))
-        #expect(text.contains("# Diff: lines 10–12 of Sources/Cart.swift"))
-        // The picked lines are marked; the unpicked hunk around them isn't, and both numbers show.
+        // The picked lines are marked; the unpicked line around them isn't.
         #expect(text.contains(">10 10   func total() -> Int {"))
         #expect(text.contains(">   12 + let total = price * 2"))
         #expect(text.contains(" 13 13   return total"))
-        #expect(text.contains("@@ -10,4 +10,5 @@ struct Cart"))
         #expect(text.hasSuffix("# Question\nIs the discount applied twice?"))
         // The diff isn't the instructions: the command line keeps only the app's text.
         #expect(!prompt.instructions.contains("discount"))

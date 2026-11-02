@@ -20,7 +20,7 @@ extension AppModel {
     public func digestFacts() -> DigestFacts {
         DigestFacts.gather(
             mergeRequests: mergeRequests.sections, builds: projects.myBuilds + projects.watchedBuilds,
-            workItems: workItems.lists?.all ?? [], slotPrefix: team.primaryProject().team.slotLabelPrefix,
+            workItems: workItems.lists?.all ?? [], slotPrefix: team.primaryProject().team.slotPrefix,
             now: dependencies.now())
     }
 }

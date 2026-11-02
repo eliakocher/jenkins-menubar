@@ -5,24 +5,14 @@ import Testing
 
 @Suite("TokenStore")
 struct TokenStoreTests {
-    @Test("ACC-03 refuses a token with spaces", arguments: ["glpat abc", "glpat\tabc", "a\nb"])
-    func refusesSpaces(token: String) async throws {
-        let keychain = InMemoryKeychain()
-        let store = TokenStore(keychain: keychain)
-
-        let error = await #expect(throws: TokenError.invalidFormat) {
-            try await store.store(token, for: .gitlab)
-        }
-        #expect(error?.localizedDescription == "That does not look like a token: it has spaces or quotes")
-        #expect(await keychain.values.isEmpty)
-    }
-
-    @Test("ACC-03 refuses a token with quotes", arguments: [#"glpat"abc"#, "glpat'abc", #"back\slash"#, "", "caf\u{E9}"])
-    func refusesQuotes(token: String) async throws {
+    @Test("ACC-03 refuses a token with spaces, quotes, a backslash or non-ASCII, or an empty one", arguments: [
+        "glpat abc", "glpat\tabc", "a\nb", #"glpat"abc"#, "glpat'abc", #"back\slash"#, "", "caf\u{E9}",
+    ])
+    func refusesInvalidTokens(token: String) async throws {
         let keychain = InMemoryKeychain()
 
         await #expect(throws: TokenError.invalidFormat) {
-            try await TokenStore(keychain: keychain).store(token, for: .jenkins)
+            try await TokenStore(keychain: keychain).store(token, for: .gitlab)
         }
         #expect(await keychain.values.isEmpty)
     }
@@ -67,7 +57,7 @@ struct TokenStoreTests {
         let entries = await log.entries()
         #expect(entries.map(\.message) == ["Saved the GitLab token in the keychain", "Removed the Jenkins token from the keychain"])
         #expect(entries.allSatisfy { $0.level == .info && $0.source == .settings })
-        #expect(try !folder.read("menubar-monitor.log").contains("glpat-secret"))
+        #expect(try !folder.read("MegaMonitor.log").contains("glpat-secret"))
     }
 
     @Test("ACC-06 a token the keychain didn't take is not logged as saved")
@@ -86,6 +76,6 @@ struct TokenStoreTests {
     @Test("ACC-01 the accounts keep the names of jenkins-menubar")
     func accountNames() {
         #expect(TokenAccount.allCases.map(\.rawValue) == ["JENKINS_MCP_BASIC_AUTH", "GITLAB_TOKEN"])
-        #expect(SecurityCLIKeychain().service == "menubar-monitor")
+        #expect(SecurityCLIKeychain().service == "megamonitor")
     }
 }

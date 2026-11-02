@@ -4,7 +4,7 @@ import Markdown
 /// A description's Markdown as the blocks ``MarkdownView`` draws, with the safety rules applied (WIN-02).
 ///
 /// Parsed by swift-markdown (GitHub Flavored Markdown: tables, task lists, strikethrough). The rules:
-/// - a link is a link only when it resolves to an `http` or `https` URL; any other scheme, `menubar-monitor://` and
+/// - a link is a link only when it resolves to an `http` or `https` URL; any other scheme, `megamonitor://` and
 ///   `file:` included, shows its text as plain text;
 /// - an image is never loaded: it becomes a link to its URL, under the same rule;
 /// - raw HTML shows as text, never rendered. HTML comments are left out, as GitLab hides them (the templates' hints),

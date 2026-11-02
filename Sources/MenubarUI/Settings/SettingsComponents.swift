@@ -123,30 +123,145 @@ public struct SettingsProblemRows: View {
     }
 }
 
-/// The sizes of the Settings window (`docs/design/settings.md`, Size).
+/// The sizes of the Settings window and its panes.
 enum SettingsMetrics {
-    /// every pane's width
+    /// a single pane's width outside the window, as the gallery and the welcome flow show a form
     static let width: CGFloat = 560
+    /// the sidebar's width
+    static let sidebarWidth: CGFloat = 200
+    /// the window's size when it first opens; it can grow and shrink to ``minimumWindow``
+    static let window = CGSize(width: 820, height: 640)
+    /// the smallest window
+    static let minimumWindow = CGSize(width: 680, height: 520)
     /// what stays free of the screen's visible height for the window's title bar and pane toolbar
     static let screenMargin: CGFloat = 100
 
-    /// Returns a pane's height before its form has measured itself: about its typical state's, so the window opens
-    /// close to its size.
-    static func estimate(of pane: SettingsPane) -> CGFloat {
-        switch pane {
-        case .general: 510
-        case .jenkins: 310
-        case .gitLab: 627
-        case .repositories: 560
-        case .team: 600
-        case .accounts: 620
+    /// the most a single pane may be high outside the window: the screen's visible height without the window's bars
+    @MainActor static var cap: CGFloat {
+        max(300, (NSScreen.main?.visibleFrame.height ?? 800) - screenMargin)
+    }
+}
+
+/// The capsule that marks a team value: it comes from the team file and is the same for everyone on the team.
+struct SharedBadge: View {
+    var body: some View {
+        Label("Shared", systemImage: "person.2.fill")
+            .labelStyle(.titleAndIcon)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.teal)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.teal.opacity(0.14), in: Capsule())
+            .help("From the team file: the same for everyone on the team")
+            .accessibilityLabel("Shared with the team")
+    }
+}
+
+/// A section's header in Title Style, with the ``SharedBadge`` when the section holds team values.
+struct SettingsSectionHeader: View {
+    private let title: String
+    private let shared: Bool
+
+    init(_ title: String, shared: Bool = false) {
+        self.title = title
+        self.shared = shared
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: title)
+            if shared {
+                SharedBadge()
+            }
+        }
+    }
+}
+
+/// A setting's label: its name and one plain line on what it does, as System Settings writes it under the name.
+struct SettingsRowLabel: View {
+    private let title: String
+    private let caption: String?
+    private let shared: Bool
+
+    /// - Parameters:
+    ///   - shared: whether the value comes from the team file, which the ``SharedBadge`` after the name says
+    init(_ title: String, _ caption: String? = nil, shared: Bool = false) {
+        self.title = title
+        self.caption = caption
+        self.shared = shared
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(verbatim: title)
+                if shared {
+                    SharedBadge()
+                }
+            }
+            if let caption {
+                Text(verbatim: caption)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// A text setting: the label with its line on the left, the field on the right, and the field's issue under it.
+struct SettingsTextRow: View {
+    private let title: String
+    private let caption: String?
+    private let prompt: String
+    @Binding private var text: String
+    private let issue: String?
+    private let width: CGFloat
+    private let shared: Bool
+    private let stacked: Bool
+
+    /// - Parameters:
+    ///   - stacked: whether the field takes the row's whole width under the label, as a long URL needs it
+    init(
+        _ title: String, caption: String? = nil, text: Binding<String>, prompt: String, issue: String? = nil,
+        width: CGFloat = 240, shared: Bool = false, stacked: Bool = false
+    ) {
+        self.shared = shared
+        self.stacked = stacked
+        self.title = title
+        self.caption = caption
+        self.prompt = prompt
+        _text = text
+        self.issue = issue
+        self.width = width
+    }
+
+    var body: some View {
+        if stacked {
+            VStack(alignment: .leading, spacing: 6) {
+                SettingsRowLabel(title, caption, shared: shared)
+                field
+                    .frame(maxWidth: .infinity)
+            }
+        } else {
+            LabeledContent {
+                field
+                    .frame(width: width)
+            } label: {
+                SettingsRowLabel(title, caption, shared: shared)
+            }
+        }
+        if let issue {
+            StatusLine(.problem, issue)
         }
     }
 
-    /// the most a pane may be high: the screen's visible height without the window's bars; taller content, as with
-    /// many labels, scrolls inside the form
-    @MainActor static var cap: CGFloat {
-        max(estimate(of: .jenkins), (NSScreen.main?.visibleFrame.height ?? 800) - screenMargin)
+    private var field: some View {
+        TextField(title, text: $text, prompt: Text(verbatim: prompt))
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .multilineTextAlignment(.leading)
+            .help(text)
     }
 }
 
@@ -280,5 +395,115 @@ struct SettingsFlowLayout: Layout {
             lines.append(line)
         }
         return lines
+    }
+}
+
+// MARK: - Field anchors
+
+/// The field Settings highlights right now, set by ``SwiftUICore/View/revealsSettingsFields()`` for the rows below it.
+private struct HighlightedSettingsFieldKey: EnvironmentKey {
+    static let defaultValue: SettingsField? = nil
+}
+
+extension EnvironmentValues {
+    fileprivate var highlightedSettingsField: SettingsField? {
+        get { self[HighlightedSettingsFieldKey.self] }
+        set { self[HighlightedSettingsFieldKey.self] = newValue }
+    }
+}
+
+/// Marks a row as a settings field: the scroll target of a reveal, tinted for a moment while it is the highlighted one.
+private struct SettingsAnchor: ViewModifier {
+    let field: SettingsField
+    @Environment(\.highlightedSettingsField) private var highlighted
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.accentColor.opacity(highlighted == field ? 0.18 : 0))
+                    .padding(.horizontal, -6)
+                    .animation(.easeOut(duration: 0.6), value: highlighted == field)
+            )
+            .id(field)
+    }
+}
+
+/// Scrolls a pane's form to the field `SettingsStore.revealedField` names and highlights it for about a second and a
+/// half, then clears the field. Without a store in the environment, as in the gallery's forms, it does nothing.
+private struct RevealsSettingsFields: ViewModifier {
+    @Environment(SettingsStore.self) private var settings: SettingsStore?
+    @ViewState private var highlighted: SettingsField?
+
+    func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            content
+                .environment(\.highlightedSettingsField, highlighted)
+                .task(id: settings?.revealedField) {
+                    guard let field = settings?.revealedField else { return }
+                    // The pane has to lay out first, when the reveal also changed the pane.
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    withAnimation { proxy.scrollTo(field, anchor: .top) }
+                    highlighted = field
+                    try? await Task.sleep(for: .milliseconds(1500))
+                    guard !Task.isCancelled else { return }
+                    highlighted = nil
+                    settings?.fieldRevealed()
+                }
+        }
+    }
+}
+
+extension View {
+    /// Marks the row (or a section's first row) of a setting, so a link, the gear button or the Settings search can
+    /// scroll to it and highlight it.
+    ///
+    /// - Parameter field: the field the row shows
+    func settingsAnchor(_ field: SettingsField) -> some View {
+        modifier(SettingsAnchor(field: field))
+    }
+
+    /// ``settingsAnchor(_:)`` for the rows of a list that only one of them, the first, marks.
+    ///
+    /// - Parameters:
+    ///   - field: the field the list shows
+    ///   - enabled: whether this row is the marked one
+    @ViewBuilder func settingsAnchor(_ field: SettingsField, enabled: Bool) -> some View {
+        if enabled {
+            settingsAnchor(field)
+        } else {
+            self
+        }
+    }
+
+    /// Lets a pane's form scroll to and highlight the field `SettingsStore.revealedField` names.
+    func revealsSettingsFields() -> some View {
+        modifier(RevealsSettingsFields())
+    }
+}
+
+/// A small borderless gear that opens Settings at a field, scrolled to and highlighted, for the rows and the problem
+/// lines whose fix lives in a setting. Without a router in the environment, as in the gallery, it still draws.
+public struct SettingsGearButton: View {
+    @Environment(SettingsStore.self) private var settings: SettingsStore?
+    @Environment(WindowRouter.self) private var router: WindowRouter?
+    private let field: SettingsField
+
+    /// - Parameter field: the field to open Settings at
+    public init(field: SettingsField) {
+        self.field = field
+    }
+
+    public var body: some View {
+        Button {
+            settings?.reveal(field)
+            router?.open(.settings(pane: field.pane))
+        } label: {
+            Image(systemName: "gearshape")
+        }
+        .buttonStyle(.borderless)
+        .help("Open Settings at \(field.title)")
+        .accessibilityLabel("Open Settings at \(field.title)")
     }
 }

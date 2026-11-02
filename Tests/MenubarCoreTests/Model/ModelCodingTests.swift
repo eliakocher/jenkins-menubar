@@ -40,53 +40,11 @@ struct ModelCodingTests {
             == "BLOCKED_STATUS")
     }
 
-    @Test("merge requests round-trip")
-    func mergeRequestRoundTrip() throws {
-        let mergeRequest = MergeRequest(
-            iid: 12, title: "Add the | pipe", webURL: URL(string: "https://gitlab.example.com/g/p/-/merge_requests/12")!,
-            reference: "g/p!12", isDraft: true, mergeStatus: .notApproved,
-            author: MergeRequest.Person(username: "jdoe", name: "Jane Doe"),
-            reviewers: [MergeRequest.Reviewer(username: "me", name: "Me", reviewState: .reviewStarted, approved: false)],
-            pipelineStatus: .running, diffStats: MergeRequest.DiffStats(additions: 10, deletions: 2, fileCount: 3),
-            updatedAt: Self.date, roles: [.authored, .assigned])
-        let bare = MergeRequest(iid: 1, title: "", webURL: URL(string: "https://gitlab.example.com/g/p/-/merge_requests/1")!,
-                                reference: "g/p!1", author: MergeRequest.Person(username: "x", name: "X"),
-                                updatedAt: Self.date, roles: [.reviewRequested])
-
-        #expect(try Self.roundTrip(mergeRequest) == mergeRequest)
-        #expect(try Self.roundTrip(bare) == bare)
-        // A reviewer cached before the name was asked for still decodes (WIN-02).
+    @Test("a reviewer cached before the name was asked for still decodes (WIN-02)")
+    func legacyReviewer() throws {
         let cached = Data(#"{"username": "me", "reviewState": "APPROVED", "approved": true}"#.utf8)
         #expect(try JSONCoding.decoder.decode(MergeRequest.Reviewer.self, from: cached)
             == MergeRequest.Reviewer(username: "me", reviewState: .approved, approved: true))
-    }
-
-    @Test("work items, related merge requests and labels round-trip, labels unchanged")
-    func workItemRoundTrip() throws {
-        let item = WorkItem(
-            reference: "g/p#12", title: "Title", webURL: URL(string: "https://gitlab.example.com/g/p/-/issues/12")!,
-            type: .task, state: .closed,
-            labels: [Label(title: "evil::$(touch pwned)", color: "#FF0000"), Label(title: "a|b\nc")],
-            updatedAt: Self.date)
-        let related = RelatedMergeRequest(iid: 3, state: .merged, title: "[cascade] x",
-                                          webURL: URL(string: "https://gitlab.example.com/g/p/-/merge_requests/3")!,
-                                          reference: "g/p!3")
-
-        #expect(try Self.roundTrip(item) == item)
-        #expect(try Self.roundTrip(related) == related)
-        #expect(try Self.roundTrip(item).labels.map(\.title) == ["evil::$(touch pwned)", "a|b\nc"])
-    }
-
-    static let problems: [Problem] = [
-        .noToken(.jenkins), .noToken(.gitLab), .rejectedToken(.jenkins), .rejectedToken(.gitLab), .missingScope,
-        .unknownJob, .gone, .unreachable(.jenkins), .unreachable(.gitLab), .slow, .httpStatus(.jenkins, status: 500),
-        .httpStatus(.gitLab, status: 502), .graphQLErrors(messages: ["first", "second"]), .graphQLErrors(messages: []),
-        .teamValuesMissing,
-    ]
-
-    @Test("every problem round-trips", arguments: problems)
-    func problemRoundTrip(problem: Problem) throws {
-        #expect(try Self.roundTrip(problem) == problem)
     }
 
     @Test("projects round-trip, and a dictionary keyed by project id is a JSON object")

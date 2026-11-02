@@ -4,10 +4,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "menubar-monitor",
+    name: "megamonitor",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "menubar-monitor", targets: ["MenubarMonitor"]),
+        .executable(name: "megamonitor", targets: ["MenubarMonitor"]),
     ],
     dependencies: [
         // The Markdown parser of the descriptions (WIN-02): cmark-gfm's tree, which MenubarUI draws with its own views.

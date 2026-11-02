@@ -27,6 +27,8 @@ public final class AppModel {
     @ObservationIgnored public let userStates: UserStateStore
     /// the cached answers
     @ObservationIgnored public let caches: CacheStore
+    /// the opened details kept on disk (OD-07)
+    @ObservationIgnored public let detailCache: DetailCache
     /// the preferences in UserDefaults
     @ObservationIgnored public let preferencesStore: PreferencesStore
     /// open at login (APP-02)
@@ -64,6 +66,8 @@ public final class AppModel {
     public let failedTests: FailedTestsStore
     /// the "likely flaky" hints of the selected failed builds, loaded on selection (PIPE-10)
     public let flakyHints: FlakyHintStore
+    /// the info and the job's recent builds of the selected builds, loaded on selection (PIPE-11)
+    public let buildInfo: BuildInfoStore
     /// the preferences, the team values, the tokens and open at login, as Settings edits them (Task 6.1)
     public let settings: SettingsStore
     /// the Activity log, its requests and check times, as the Activity section shows them (Task 5.5)
@@ -121,10 +125,14 @@ public final class AppModel {
         problems = ProblemTracker(log: log, current: cachedProblems)
 
         let preferences = preferencesStore.load()
+        // The opened details, on disk so they show at once after a relaunch (OD-07).
+        let details = DetailCache(folder: locations.caches.appending(path: "details", directoryHint: .isDirectory), now: dependencies.now)
+        detailCache = details
         let services = PipelinesServices(
             transport: dependencies.transport, clock: dependencies.clock, timeouts: dependencies.timeouts,
             now: dependencies.now, tokens: tokens, team: team, userStates: userStates, caches: caches, log: log,
-            capture: requestCapture, checkTimes: checkTimes, problems: problems, effects: dependencies.effects)
+            capture: requestCapture, checkTimes: checkTimes, problems: problems, effects: dependencies.effects,
+            details: details)
         let projects = ProjectsPipelines(services: services, preferences: preferences)
         projects.notifications = preferencesStore.notificationPolicy
         self.projects = projects
@@ -132,12 +140,13 @@ public final class AppModel {
         self.pipelines = pipelines
         failedTests = FailedTestsStore(services: services)
         flakyHints = FlakyHintStore(services: services)
+        buildInfo = BuildInfoStore(services: services)
 
         let gitLabServices = GitLabServices(
             transport: dependencies.transport, clock: dependencies.clock, timeouts: dependencies.timeouts,
             now: dependencies.now, tokens: tokens, team: team, caches: caches, log: log, capture: requestCapture,
             checkTimes: checkTimes, problems: problems,
-            gitLabUsername: { @MainActor [weak pipelines] in pipelines?.gitLabUsername })
+            gitLabUsername: { @MainActor [weak pipelines] in pipelines?.gitLabUsername }, details: details)
         let mergeRequests = MergeRequestsStore(services: gitLabServices)
         let workItems = WorkItemsStore(
             services: gitLabServices, preferences: { [weak pipelines] in pipelines?.preferences ?? Preferences() })
@@ -205,13 +214,20 @@ public final class AppModel {
         workItems.onLoaded = { [weak self] in
             self?.checkSlotAlerts()
         }
+        // A new MR of mine looks my Jenkins jobs up at the next check, not at the 30-minute lookup (OD-06).
+        mergeRequests.onLoaded = { [weak mergeRequests, weak pipelines] in
+            guard let list = mergeRequests?.list else { return }
+            pipelines?.noteMyMergeRequests(list.mergeRequests.filter { $0.roles.contains(.authored) }.map(\.iid))
+        }
         // Without the GitLab token, the GitLab stores forget their data and show the setup steps (MR-04).
-        settings.onTokenRemoved = { [weak mergeRequests, weak workItems] account in
+        settings.onTokenRemoved = { [weak mergeRequests, weak workItems, details] account in
             guard account == .gitlab else {
                 return
             }
             mergeRequests?.tokenRemoved()
             workItems?.tokenRemoved()
+            // The opened details came with that token too.
+            details.clear()
         }
     }
 

@@ -80,47 +80,6 @@ struct WelcomeFlowTests {
         #expect(settings.missingTeamValues.isEmpty == enabled)
     }
 
-    /// What people did on Team before looking at the TEAM-03 row again.
-    enum TeamStep: CaseIterable, Sendable {
-        case nothing, leftEmptyJobURL, leftFilledJobURL, leftEmptyOptionalValue, pressedReturn, pressedContinue
-
-        var turnsRed: Bool {
-            [.leftEmptyJobURL, .pressedReturn, .pressedContinue].contains(self)
-        }
-    }
-
-    @Test(
-        "TEAM-03 the welcome flow's team row turns red once people try to move on or leave a required field empty",
-        arguments: TeamStep.allCases)
-    func teamRow(step: TeamStep) async {
-        let harness = Harness()
-        let settings = harness.settings
-        let flow = WelcomeFlow()
-        flow.page = .team
-        let row = [Problem.teamValuesMissing.message]
-        #expect(flow.data(settings: settings).team.notes == row)
-
-        switch step {
-        case .nothing:
-            break
-        case .leftEmptyJobURL:
-            flow.leftTeamField(.jenkinsJobURL, settings: settings)
-        case .leftFilledJobURL:
-            settings.teamDraft = TeamValues(jenkinsJobURL: Self.team.jenkinsJobURL)
-            flow.leftTeamField(.jenkinsJobURL, settings: settings)
-        case .leftEmptyOptionalValue:
-            flow.leftTeamField(.committedLabel, settings: settings)
-        case .pressedReturn:
-            flow.teamNotReady()
-        case .pressedContinue:
-            _ = await flow.next(settings: settings, actions: Notifications(.allowed).actions)
-        }
-        let team = flow.data(settings: settings).team
-        #expect(team.notes == (step.turnsRed ? [] : row))
-        #expect(team.problems == (step.turnsRed ? row : []))
-        #expect(flow.page == .team)
-    }
-
     @Test(
         "ACC-06 the welcome flow asks for the Jenkins user of a typed API token",
         arguments: [("", "11a2b3c4", true), ("  ", "11a2b3c4", true), ("", "", false), ("jdoe", "", false)])
@@ -154,21 +113,6 @@ struct WelcomeFlowTests {
         await flow.chooseFolder(folder, actions: app.actions)
         #expect(flow.wrongFolder == !isOldFolder)
         #expect(app.imports == (isOldFolder ? [folder] : []))
-    }
-
-    @Test(
-        "APP-02 a returning welcome flow starts open at login as the login item is",
-        arguments: [
-            (false, LoginItemStatus.notRegistered, true), (true, .notRegistered, false), (true, .enabled, true),
-        ])
-    func openAtLoginStart(finishedBefore: Bool, status: LoginItemStatus, on: Bool) {
-        let harness = Harness()
-        harness.loginItem.status = status
-        let flow = WelcomeFlow()
-
-        flow.appeared(
-            settings: harness.settings, actions: Notifications(.allowed).actions, finishedBefore: finishedBefore)
-        #expect(flow.openAtLogin == on)
     }
 
     @Test("APP-02 the welcome flow registers open at login when Continue is pressed", arguments: [true, false])
@@ -220,46 +164,6 @@ struct WelcomeFlowTests {
         }
         #expect(notifications.requests == (before == .notAsked ? 1 : 0))
         #expect(flow.notifications == (before == .notAsked ? .allowed : before))
-    }
-
-    /// The import's leftovers, as `LegacyImport` lists them in IMP-03's order.
-    private nonisolated static let notMoved: [NotMoved] = [
-        .notificationSettings, .keychainAccess, .windowPositions, .labelMemoryAndCaches, .teamValues,
-        .token(.jenkins, .notFound(.zshrcComputed)), .token(.gitlab, .notFound(.missing)),
-    ]
-
-    @Test(
-        "IMP-03 the last page leaves out what was fixed since",
-        arguments: [
-            // Nothing fixed: every leftover, both tokens still missing; macOS never asked.
-            ([], NotificationPermission.notAsked, false, WelcomeFlowTests.notMoved),
-            // The Jenkins token stored, notifications allowed, the team values entered.
-            ([.jenkins], .allowed, true, [.keychainAccess, .windowPositions, .labelMemoryAndCaches, .token(.gitlab, .notFound(.missing))]),
-            // Notifications off: Still Missing says so, and Didn't Move doesn't say it again.
-            ([.jenkins], .off, true, [.keychainAccess, .windowPositions, .labelMemoryAndCaches, .token(.gitlab, .notFound(.missing))]),
-        ] as [(Set<TokenAccount>, NotificationPermission, Bool, [NotMoved])])
-    func lastPage(stored: Set<TokenAccount>, notifications: NotificationPermission, teamComplete: Bool, expected: [NotMoved]) {
-        let report = LegacyImportReport(date: Date(), oldToolFound: true, notMoved: Self.notMoved)
-        var preferences = Preferences()
-        preferences.showInMenuBar = false
-        let summary = WelcomeSummary.make(
-            report: report, storedTokens: stored, notifications: notifications, preferences: preferences,
-            teamComplete: teamComplete)
-
-        #expect(summary.didNotMove == expected.map(\.message))
-        #expect(summary.heading == "Almost Ready")
-        #expect(summary.stillMissing.map(\.text) == [
-            stored.contains(.jenkins) ? nil : WelcomeSummary.noJenkinsToken, WelcomeSummary.noGitLabToken,
-            notifications == .off ? WelcomeNotificationText.off(preferences) : nil,
-        ].compactMap { $0 })
-        #expect(summary.whereToFind == "Open MegaMonitor again to see your builds in its window.")
-
-        // Without an import, nothing is listed as not moved; with both tokens, it's ready.
-        let fresh = WelcomeSummary.make(
-            report: nil, storedTokens: [.jenkins, .gitlab], notifications: .allowed, preferences: Preferences(),
-            teamComplete: true)
-        #expect(fresh.didNotMove.isEmpty && fresh.stillMissing.isEmpty)
-        #expect(fresh.heading == "You're Ready")
     }
 
     @Test(

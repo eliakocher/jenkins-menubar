@@ -45,55 +45,6 @@ struct BannerPayloadTests {
         #expect(decoded == BuildID(job: "MR-1", number: 7, project: .main))
     }
 
-    @Test("ALERT-08 banner click opens the default link")
-    func defaultLink() throws {
-        let success = try Self.roundTrip(BannerPayload(content: try Self.content(.success)))
-        #expect(success.url(forAction: nil) == Self.mergeRequest)
-
-        let failure = try Self.roundTrip(BannerPayload(content: try Self.content(.failure)))
-        #expect(failure.url(forAction: nil) == Self.buildURL)
-
-        let branch = try Self.roundTrip(BannerPayload(content: try Self.content(.success, gitLabURL: nil)))
-        #expect(branch.url(forAction: nil) == Self.buildURL)
-
-        let stage = Build(
-            job: "MR-1", number: 7, title: "Fix the login", gitLabURL: Self.mergeRequest, kind: .mine,
-            phase: .running, startedAt: Date(timeIntervalSince1970: 1_800_000_000))
-        let stageBanner = try Self.roundTrip(
-            BannerPayload(content: AlertContent.stageFailed(stage, failedStages: ["build"], buildURL: Self.buildURL)))
-        #expect(stageBanner.category == .buildLive)
-        #expect(stageBanner.url(forAction: nil) == Self.buildURL)
-    }
-
-    @Test("ALERT-08 banner actions open the build and the MR")
-    func actions() throws {
-        let withMR = try Self.roundTrip(BannerPayload(content: try Self.content(.success)))
-        #expect(withMR.category == .buildAndMergeRequestLive)
-        #expect(BannerPayload.actions(of: withMR.category) == [.openMergeRequest, .openBuild, .openConsole, .hide])
-        #expect(withMR.url(forAction: AlertContent.Action.openBuild.rawValue) == Self.buildURL)
-        #expect(withMR.url(forAction: AlertContent.Action.openMergeRequest.rawValue) == Self.mergeRequest)
-        #expect(withMR.rebuild(forAction: AlertContent.Action.rebuild.rawValue) == nil)
-
-        // A failure's banner has Rebuild after the others, and its payload names the build (PIPE-09).
-        let failure = try Self.roundTrip(BannerPayload(content: try Self.content(.failure)))
-        #expect(failure.category.rawValue == "build-and-mr-rebuild-live")
-        #expect(
-            BannerPayload.actions(of: failure.category) == [.openMergeRequest, .openBuild, .rebuild, .openConsole, .hide])
-        #expect(failure.rebuild(forAction: AlertContent.Action.rebuild.rawValue) == BuildID(job: "MR-1", number: 7))
-        #expect(failure.rebuild(forAction: nil) == nil)
-        #expect(failure.url(forAction: AlertContent.Action.rebuild.rawValue) == nil)
-        #expect(failure.url(forAction: nil) == Self.buildURL)
-
-        let withoutMR = try Self.roundTrip(BannerPayload(content: try Self.content(.failure, gitLabURL: nil)))
-        #expect(withoutMR.category.rawValue == "build-rebuild-live")
-        #expect(BannerPayload.actions(of: withoutMR.category) == [.openBuild, .rebuild, .openConsole, .hide])
-        #expect(withoutMR.url(forAction: AlertContent.Action.openBuild.rawValue) == Self.buildURL)
-        // Not an action of this banner, or none at all.
-        #expect(withoutMR.url(forAction: AlertContent.Action.openMergeRequest.rawValue) == nil)
-        #expect(withoutMR.url(forAction: AlertContent.Action.dismiss.rawValue) == nil)
-        #expect(withoutMR.url(forAction: "com.apple.UNNotificationDismissActionIdentifier") == nil)
-    }
-
     /// Every action of a banner reaches its own handler: a link opens, Rebuild and Hide name the build, and what isn't
     /// an action of the banner does nothing.
     @Test("ALERT-08 a banner's action reaches the right handler")

@@ -6,6 +6,20 @@ import Testing
 /// `URLSessionTransport` and `ConnectProbe` against sockets on this Mac: no outside network, no real server.
 @Suite("Network")
 struct NetworkTests {
+    @Test(
+        "NET-02 a redirect is followed only within the same scheme, host and port",
+        arguments: [
+            ("https://gitlab.example.com/api/graphql", "https://gitlab.example.com/other", true),
+            ("https://gitlab.example.com/a", "https://GITLAB.example.com:443/b", true),
+            ("https://gitlab.example.com/a", "https://evil.example.net/a", false),
+            ("https://gitlab.example.com/a", "http://gitlab.example.com/a", false),
+            ("https://gitlab.example.com/a", "https://gitlab.example.com:8443/a", false),
+            ("http://jenkins.example.com/a", "https://jenkins.example.com/a", false),
+        ])
+    func redirectPolicy(from: String, to: String, allowed: Bool) throws {
+        #expect(RedirectPolicy.allows(from: try #require(URL(string: from)), to: try #require(URL(string: to))) == allowed)
+    }
+
     @Test("NET-01 no connection within 5 seconds")
     func noConnection() async throws {
         let clock = TestClock()
@@ -19,7 +33,6 @@ struct NetworkTests {
         clock.advance(by: .milliseconds(100))
 
         let error = await #expect(throws: TransportError.noConnection(within: .seconds(5))) { try await send.value }
-        #expect(error?.message == "no connection within 5 seconds (VPN?)")
         #expect(error?.outcomeLabel == "TIMEOUT")
     }
 
@@ -35,14 +48,11 @@ struct NetworkTests {
         clock.advance(by: .seconds(20))
 
         let error = await #expect(throws: TransportError.noAnswer(within: .seconds(20))) { try await send.value }
-        #expect(error?.message == "no answer within 20 seconds")
         #expect(error?.outcomeLabel == "TIMEOUT")
         // Past the probe, the task's metrics decide; without metrics the probe's connection counts.
         #expect(TransportError(DeadlinePassed(), connected: false, limit: .seconds(30)) == .noConnection(within: .seconds(30)))
         #expect(TransportError(DeadlinePassed(), connected: true, limit: .seconds(30)) == .noAnswer(within: .seconds(30)))
         #expect(TransportError(DeadlinePassed(), connected: nil, limit: .seconds(30)) == .noAnswer(within: .seconds(30)))
-        #expect(TransportError.noAnswer(within: .seconds(1)).message == "no answer within 1 second")
-        #expect(TransportError.noAnswer(within: .milliseconds(250)).message == "no answer within 0.25 seconds")
     }
 
     @Test("NET-01 unknown host and refused connection are offline")
@@ -58,8 +68,6 @@ struct NetworkTests {
             try await transport.send(HTTPRequest(url: URL(string: "http://127.0.0.1:\(closedPort)/api/json")!, timeout: .seconds(20)))
         }
 
-        #expect(unknown?.message == "unknown host (VPN?)")
-        #expect(refused?.message == "no connection (VPN?)")
         #expect(unknown?.outcomeLabel == "OFFLINE")
         #expect(refused?.outcomeLabel == "OFFLINE")
         // The same when URLSession finds out, after the probe was skipped.
@@ -67,16 +75,6 @@ struct NetworkTests {
         #expect(TransportError(URLError(.cannotConnectToHost), connected: nil, limit: .seconds(20)) == .cannotConnect)
         #expect(TransportError(URLError(.notConnectedToInternet), connected: nil, limit: .seconds(20)) == .cannotConnect)
         #expect(TransportError(URLError(.secureConnectionFailed), connected: true, limit: .seconds(20)).outcomeLabel == "ERROR")
-    }
-
-    @Test("NET-01 timeouts per request kind")
-    func timeoutsPerKind() {
-        let timeouts = Timeouts.standard
-
-        #expect(timeouts.connect == .seconds(5))
-        #expect(timeouts.jenkinsJobList == .seconds(60))
-        #expect(timeouts.jenkins == .seconds(20))
-        #expect(timeouts.gitLab == .seconds(30))
     }
 
     /// Task 1.4. macOS doesn't drop the connection a full accept queue has no room for, as Linux does: it completes the

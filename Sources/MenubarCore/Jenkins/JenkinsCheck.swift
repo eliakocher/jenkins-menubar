@@ -7,15 +7,17 @@ import Foundation
 /// compare the builds before and after. The requests follow each other, as in the old plugin, so the check can stop at
 /// the first unreachable answer.
 ///
-/// - My jobs are looked up when 10 minutes have passed since the last lookup, when *me* changes, and when asked.
+/// - My jobs are looked up when 30 minutes have passed since the last lookup, when *me* changes, and when asked:
+///   Check now, and an MR of mine without a job (OD-06).
 ///   Otherwise the last list is used.
 /// - Each followed job is asked for its last build: mine, then the watched jobs that aren't mine.
 /// - Stages are asked for a running build, and for a FAILURE or UNSTABLE build the check before didn't see finished.
 /// - The test counts are asked once, when a build has just finished.
 /// - A job that doesn't answer keeps its last build.
 public struct JenkinsCheck: Sendable {
-    /// how long a lookup of my jobs is used, 10 minutes (PIPE-01)
-    public static let lookupInterval: TimeInterval = 600
+    /// how long a lookup of my jobs is used, 30 minutes (PIPE-01); a new MR of mine asks for one sooner (OD-06, Task
+    /// 7.06: the lookup is the heaviest Jenkins request, ~300 KB and 2 s, and ran every 10 minutes)
+    public static let lookupInterval: TimeInterval = 1800
 
     private let transport: any HTTPTransport
     private let timeouts: Timeouts

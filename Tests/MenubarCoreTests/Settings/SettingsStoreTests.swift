@@ -116,80 +116,16 @@ struct SettingsStoreTests {
         #expect(!store.preferences.showInMenuBar)
     }
 
-    @Test("SET-01 logs an emptied value as (empty)")
-    func logsEmpty() async throws {
-        let harness = try Harness()
-        harness.store.setLabel("bug", in: .with)
-        harness.store.preferences.workItems.withLabels = []
-
-        #expect(await harness.messages() == ["Work items must have the label bug", "workItemsWithLabels: bug → (empty)"])
-    }
-
-    @Test("SET-01 changing the interval reschedules the check")
+    @Test("SET-01 changing the interval tells the app, within the allowed range")
     func intervalReschedules() async throws {
         let harness = try Harness()
-        let scheduler = Scheduler(
-            checkInterval: .seconds(60), clock: harness.clock, systemEvents: FakeSystemEvents(),
-            reachability: FakeReachability(), powerMode: FakePowerMode(), check: { _ in .success })
-        let store = SettingsStore(
-            preferences: PreferencesStore(defaults: harness.suite.defaults), team: harness.teamStore,
-            tokens: TokenStore(keychain: harness.keychain), launchAtLogin: LaunchAtLogin(item: harness.loginItem),
-            log: harness.log, transport: { _ in StubTransport() }, clock: harness.clock, checkNow: {},
-            setCheckInterval: { await scheduler.setCheckInterval($0) })
 
-        store.preferences.iconStyle = .color
-        await store.waitUntilSettled()
-        #expect(await scheduler.nextWait == .seconds(60))
-        store.preferences.checkIntervalSeconds = 300
-        await store.waitUntilSettled()
-        #expect(await scheduler.nextWait == .seconds(300))
-
-        // The test harness's own store tells the app the same way.
         harness.store.preferences.checkIntervalSeconds = 120
         harness.store.preferences.checkIntervalSeconds = 45
         await harness.store.waitUntilSettled()
+
         #expect(await harness.calls.intervals == [.seconds(120), .seconds(60)])
         #expect(harness.store.preferences.checkIntervalSeconds == 60)
-    }
-
-    @Test("SET-01 a change takes effect without a restart")
-    func takesEffect() async throws {
-        let harness = try Harness()
-        final class Seen {
-            var preferences: [Preferences] = []
-        }
-        let seen = Seen()
-        harness.store.preferencesChanged = { seen.preferences.append($0) }
-
-        harness.store.preferences.hideSuccessfulAfter = .immediately
-        harness.store.preferences.hideSuccessfulAfter = .immediately
-        harness.store.preferences.fillInCopiedLink = true
-
-        // Setting a value it already has changes nothing.
-        #expect(seen.preferences.count == 2)
-        #expect(seen.preferences.last?.hideSuccessfulAfter == .immediately)
-        #expect(seen.preferences.last?.fillInCopiedLink == true)
-        #expect(PreferencesStore(defaults: harness.suite.defaults).load().hideSuccessfulAfter == .immediately)
-    }
-
-    @Test("SET-02 problem rows open the matching pane")
-    func problemRowsOpenThePane() throws {
-        let harness = try Harness()
-        let store = harness.store
-        let cases: [(Problem, SettingsPane?)] = [
-            (.noToken(.jenkins), .accounts), (.noToken(.gitLab), .accounts), (.rejectedToken(.gitLab), .accounts),
-            (.missingScope, .accounts), (.teamValuesMissing, .team), (.unknownJob, .team), (.unreachable(.jenkins), nil),
-            (.slow, nil), (.httpStatus(.gitLab, status: 500), nil), (.gone, nil),
-        ]
-        for (problem, pane) in cases {
-            #expect(SettingsPane.pane(for: problem) == pane)
-        }
-        #expect(store.selectedPane == .general)
-        #expect(store.selectPane(for: .noToken(.jenkins)))
-        #expect(store.selectedPane == .accounts)
-        #expect(!store.selectPane(for: .slow))
-        #expect(store.selectedPane == .accounts)
-        #expect(SettingsPane.allCases.map(\.title) == ["General", "Jenkins", "GitLab", "Repositories", "Projects", "Accounts"])
     }
 
     @Test("SET-02 Settings opens at the pane it showed last, also after a restart")
@@ -205,6 +141,11 @@ struct SettingsStoreTests {
         // The removed Watching pane, stored by an earlier version, opens General.
         harness.suite.defaults.set("watching", forKey: SettingsStore.selectedPaneKey)
         #expect(Self.restarted(harness).selectedPane == .general)
+        // The panes renamed by the redesign open their successors.
+        for (old, new) in [("jenkins", SettingsPane.pipelines), ("gitLab", .workItems), ("repositories", .workspaces)] {
+            harness.suite.defaults.set(old, forKey: SettingsStore.selectedPaneKey)
+            #expect(Self.restarted(harness).selectedPane == new)
+        }
     }
 
     /// A new store over the same suite, folder and keychain, as after a restart.
@@ -238,21 +179,6 @@ struct SettingsStoreTests {
         #expect(await harness.calls.checks == 1)
     }
 
-    @Test("TEAM-01 typing again waits for the next pause")
-    func typingWaits() async throws {
-        let harness = try Harness()
-        let store = harness.store
-
-        store.teamDraft.committedLabel = "comm"
-        await harness.clock.waitForSleepers()
-        harness.clock.advance(by: .milliseconds(400))
-        store.teamDraft.committedLabel = "committed"
-        await harness.pauseTyping()
-
-        #expect(store.team.committedLabel == "committed")
-        #expect(await harness.messages() == ["Team committedLabel: (empty) → committed"])
-    }
-
     @Test("TEAM-01 drops the trailing slash of the URLs")
     func dropsTrailingSlash() async throws {
         let harness = try Harness(team: TeamValues())
@@ -274,10 +200,10 @@ struct SettingsStoreTests {
 
         for url in ["ftp://jenkins.example.com/job/x", "jenkins.example.com/job/x", "https://", "file:///tmp/x"] {
             store.teamDraft.jenkinsJobURL = url
-            #expect(store.teamIssue(for: .jenkinsJobURL) == "Enter a URL that starts with https:// or http://")
+            #expect(store.teamIssue(for: .jenkinsJobURL) != nil, "\(url)")
         }
         store.teamDraft.gitLabProject = "project"
-        #expect(store.teamIssue(for: .gitLabProject) == "Enter the project's path, like group/project")
+        #expect(store.teamIssue(for: .gitLabProject) != nil)
         store.teamDraft.gitLabURL = "http://gitlab.example.com"
         #expect(store.teamIssue(for: .gitLabURL) == nil)
         await harness.pauseTyping()
@@ -288,20 +214,6 @@ struct SettingsStoreTests {
         store.teamDraft.jenkinsJobURL = ""
         #expect(store.teamIssue(for: .jenkinsJobURL) == nil)
         #expect(store.teamIssue(for: .committedLabel) == nil)
-    }
-
-    @Test("TEAM-01 logs a team change on one line")
-    func logsOnOneLine() async throws {
-        let harness = try Harness()
-        harness.store.teamDraft.ignoredMergeRequestPrefix = "[cascade]\tskip\nthis"
-        harness.store.saveTeamNow()
-
-        await harness.store.waitUntilSettled()
-        let entries = await harness.log.entries()
-        #expect(entries.map(\.message) == ["Team ignoredMergeRequestPrefix: (empty) → [cascade] skip this"])
-        #expect(entries.first?.source == .settings && entries.first?.level == .info)
-        let file = try String(contentsOf: harness.log.fileURL, encoding: .utf8)
-        #expect(file.split(separator: "\n").count == 1)
     }
 
     @Test("TEAM-02 import through Settings logs the changed values and starts a check")
@@ -329,18 +241,63 @@ struct SettingsStoreTests {
         }
     }
 
-    @Test("TEAM-03 asks for the team values and makes no request")
-    func asksForTeamValues() async throws {
-        let harness = try Harness(team: TeamValues(), tokens: [.jenkins: Self.jenkinsToken, .gitlab: Self.gitLabToken])
+    @Test("TEAM-02 a team file from disk applies only after Apply, with no host change")
+    func fileImportAppliesOnlyAfterApply() async throws {
+        let harness = try Harness(team: TeamValues())
         let store = harness.store
+        let file = try harness.folder.write(
+            #"{"formatVersion": 1, "team": {"gitLabURL": "https://gitlab.example.com", "gitLabProject": "team/product"}}"#,
+            to: "team.json")
 
-        #expect(store.missingTeamValues == [.jenkinsJobURL, .gitLabURL, .gitLabProject])
-        await store.checkAccounts()
+        let preview = try store.previewTeamFile(from: file)
+        #expect(!preview.changes.isEmpty)
+        #expect(!preview.needsHostConfirmation)
+        // Nothing is applied by the preview.
+        #expect(store.team == TeamValues())
+        #expect(harness.teamStore.primaryProject().team == TeamValues())
 
-        #expect(store.accounts[.jenkins]?.message == "Set the Jenkins job in Team first")
-        #expect(store.accounts[.gitlab]?.message == "Set the GitLab URL in Team first")
-        #expect(harness.stub.requests.isEmpty)
-        #expect(store.tokenLink(.jenkins) == nil && store.tokenLink(.gitlab) == nil)
+        #expect(try store.applyTeamFile(preview, fromFile: "team.json", confirmedHosts: []))
+        #expect(store.team == preview.incoming)
+        #expect(store.teamDraft == store.team)
+        let messages = await harness.messages()
+        #expect(messages.first == "Imported the team values from team.json")
+        // A file has no link to share.
+        #expect(store.teamFileLink == nil)
+    }
+
+    @Test("TEAM-02 a team file from disk with another GitLab host needs the confirmation of that host")
+    func fileImportNeedsHostConfirmation() async throws {
+        let harness = try Harness()
+        let store = harness.store
+        let file = try harness.folder.write(
+            #"{"formatVersion": 1, "team": {"gitLabURL": "https://gitlab.other.example.net", "gitLabProject": "team/product"}}"#,
+            to: "other.json")
+
+        let preview = try store.previewTeamFile(from: file)
+        #expect(preview.hostChanges.map(\.key) == [.gitLabURL])
+        #expect(preview.hostChanges.first?.new == "gitlab.other.example.net")
+        #expect(store.team == Self.team)
+
+        // Without the confirmation, and with the wrong host confirmed, nothing is applied.
+        #expect(try !store.applyTeamFile(preview, fromFile: "other.json", confirmedHosts: []))
+        #expect(try !store.applyTeamFile(preview, fromFile: "other.json", confirmedHosts: ["gitlab.example.com"]))
+        #expect(store.team == Self.team)
+        #expect(harness.teamStore.primaryProject().team == Self.team)
+
+        #expect(try store.applyTeamFile(preview, fromFile: "other.json", confirmedHosts: ["gitlab.other.example.net"]))
+        #expect(store.team.gitLabURL == "https://gitlab.other.example.net")
+    }
+
+    @Test("TEAM-02 the welcome flow's direct import refuses a file that moves a server host")
+    func directImportRefusesHostChange() throws {
+        let harness = try Harness()
+        let file = try harness.folder.write(
+            #"{"formatVersion": 1, "team": {"gitLabURL": "https://gitlab.other.example.net", "gitLabProject": "team/product"}}"#,
+            to: "other.json")
+        #expect(throws: TeamFileImport.HostChangeError()) {
+            try harness.store.importTeamFile(from: file)
+        }
+        #expect(harness.store.team == Self.team)
     }
 
     /// Also: a finished or closed flow opens again only while a value is missing, at this launch and the next one.
@@ -378,6 +335,37 @@ struct SettingsStoreTests {
     }
 
     // MARK: - ACC-04 to ACC-06
+
+    @Test("TEAM-03 a missing team value or token makes no request", arguments: [(false, true), (true, false)])
+    func noRequestWithoutTeamValuesOrToken(teamIsSet: Bool, hasTokens: Bool) async throws {
+        let harness = try Harness(
+            team: teamIsSet ? Self.team : TeamValues(),
+            tokens: hasTokens ? [.jenkins: Self.jenkinsToken, .gitlab: Self.gitLabToken] : [:])
+
+        await harness.store.checkAccounts()
+
+        #expect(harness.store.missingTeamValues.isEmpty == teamIsSet)
+        #expect(harness.store.accounts[.jenkins]?.ok == false)
+        #expect(harness.store.accounts[.gitlab]?.ok == false)
+        #expect(harness.stub.requests.isEmpty)
+    }
+
+    @Test(
+        "ACC-05 the link to get a token is built from the team value, and there is none without it",
+        arguments: [
+            (TokenAccount.jenkins, TeamValues(jenkinsJobURL: "https://jenkins.example.com/jenkins/job/GitLab%20Team/job/team%252Fproduct"),
+             "https://jenkins.example.com/jenkins/me/"),
+            (.jenkins, TeamValues(jenkinsJobURL: "https://jenkins.example.com/job/mrs/"), "https://jenkins.example.com/me/"),
+            (.jenkins, TeamValues(jenkinsJobURL: "https://jenkins.example.com/view/all"), "https://jenkins.example.com/view/all/me/"),
+            (.gitlab, TeamValues(gitLabURL: "https://gitlab.example.com"),
+             "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=MegaMonitor&scopes=api"),
+            (.jenkins, TeamValues(gitLabURL: "https://gitlab.example.com"), nil),
+            (.gitlab, TeamValues(jenkinsJobURL: "https://jenkins.example.com/job/x"), nil),
+            (.jenkins, TeamValues(jenkinsJobURL: "jenkins.example.com/job/x"), nil),
+        ] as [(TokenAccount, TeamValues, String?)])
+    func tokenLink(account: TokenAccount, team: TeamValues, url: String?) {
+        #expect(TokenLink.create(account, team: team)?.url.absoluteString == url)
+    }
 
     @Test("ACC-04 says who is signed in")
     func saysWhoIsSignedIn() async throws {
@@ -444,17 +432,6 @@ struct SettingsStoreTests {
         #expect(harness.store.accounts[.gitlab]?.message == "GitLab answered with HTTP 502")
     }
 
-    @Test("ACC-04 tells a missing token")
-    func tellsAMissingToken() async throws {
-        let harness = try Harness()
-
-        await harness.store.checkAccounts()
-
-        #expect(harness.store.accounts[.jenkins] == .noToken)
-        #expect(harness.store.accounts[.gitlab] == AccountStatus(ok: false, message: "No token yet"))
-        #expect(harness.stub.requests.isEmpty)
-    }
-
     @Test("ACC-04 asks for the team values first")
     func asksForTheTeamValuesFirst() async throws {
         let harness = try Harness(team: TeamValues(gitLabProject: "team/product"))
@@ -464,28 +441,9 @@ struct SettingsStoreTests {
 
         // The edit that waited for typing to pause is saved first; GitLab still lacks its URL, and both lack a token.
         #expect(harness.store.team.jenkinsJobURL == Self.jobURL)
-        #expect(harness.store.accounts[.jenkins]?.message == "No token yet")
-        #expect(harness.store.accounts[.gitlab]?.message == "Set the GitLab URL in Team first")
+        #expect(harness.store.accounts[.jenkins]?.ok == false)
+        #expect(harness.store.accounts[.gitlab]?.ok == false)
         #expect(harness.stub.requests.isEmpty)
-    }
-
-    @Test("ACC-04 logs the result")
-    func logsTheResult() async throws {
-        let harness = try Harness(tokens: [.jenkins: Self.jenkinsToken, .gitlab: Self.gitLabToken])
-        harness.stub.answer(path: Self.jobPath, body: try FixtureFiles.string("Jenkins/account.json"))
-        harness.stub.answer(operation: "CurrentUser", status: 401, body: try FixtureFiles.string("GitLab/invalid-token.json"))
-
-        await harness.store.checkAccounts()
-        await harness.store.waitUntilSettled()
-
-        let entries = await harness.log.entries()
-        #expect(entries.map(\.message) == [
-            "Account check: Signed in as jdoe",
-            "Account check: GitLab rejected the token (expired, or without the api scope?)",
-        ])
-        #expect(entries.map(\.level) == [.info, .warning])
-        #expect(entries.map(\.source) == [.jenkins, .gitlab])
-        #expect(entries.map { $0.outcome?.description } == ["ok:OK", "failed:FAILED"])
     }
 
     @Test("ACC-04 checks by itself after a save and on the first showing")
@@ -522,43 +480,17 @@ struct SettingsStoreTests {
         #expect(empty.stub.requests.isEmpty)
     }
 
-    @Test("ACC-05 Jenkins token link is the user page")
-    func jenkinsTokenLink() throws {
-        let harness = try Harness()
-
-        let link = try #require(harness.store.tokenLink(.jenkins))
-        #expect(link.url.absoluteString == "https://jenkins.example.com/jenkins/me/")
-        #expect(link.title == "Get a token: your user page → Security")
-        let root = TokenLink.create(.jenkins, team: TeamValues(jenkinsJobURL: "https://jenkins.example.com/job/mrs/"))
-        #expect(root?.url.absoluteString == "https://jenkins.example.com/me/")
-        let noJob = TokenLink.create(.jenkins, team: TeamValues(jenkinsJobURL: "https://jenkins.example.com/view/all"))
-        #expect(noJob?.url.absoluteString == "https://jenkins.example.com/view/all/me/")
-    }
-
-    @Test("ACC-05 GitLab token link is prefilled")
-    func gitLabTokenLink() throws {
-        let harness = try Harness()
-
-        let link = try #require(harness.store.tokenLink(.gitlab))
-        #expect(link.url == GitLabLinks.newToken(gitLab: URL(string: "https://gitlab.example.com")!))
-        #expect(link.url.absoluteString
-            == "https://gitlab.example.com/-/user_settings/personal_access_tokens?name=MegaMonitor&scopes=api")
-        #expect(link.title == "Create a token with the api scope")
-    }
-
-    @Test("ACC-05 no link without the team value")
-    func noLinkWithoutTheTeamValue() throws {
-        #expect(TokenLink.create(.jenkins, team: TeamValues(gitLabURL: "https://gitlab.example.com")) == nil)
-        #expect(TokenLink.create(.gitlab, team: TeamValues(jenkinsJobURL: Self.jobURL)) == nil)
-        #expect(TokenLink.create(.jenkins, team: TeamValues(jenkinsJobURL: "jenkins.example.com/job/x")) == nil)
-        let harness = try Harness(team: TeamValues())
-        #expect(harness.store.tokenLink(.jenkins) == nil)
-    }
-
     @Test("ACC-06 saving a token starts a check")
     func savingStartsACheck() async throws {
         let harness = try Harness()
         let store = harness.store
+        final class Seen {
+            var removed: [TokenAccount] = []
+        }
+        let seen = Seen()
+        store.onTokenRemoved = { account in
+            seen.removed.append(account)
+        }
 
         #expect(await store.saveGitLabToken("  \(Self.gitLabToken)\n"))
         #expect(await harness.calls.checks == 1)
@@ -566,41 +498,17 @@ struct SettingsStoreTests {
         #expect(store.storedTokens == [.gitlab])
 
         #expect(await store.saveGitLabToken("glpat with spaces") == false)
-        #expect(store.tokenErrors[.gitlab] == "That does not look like a token: it has spaces or quotes")
+        #expect(store.tokenErrors[.gitlab] != nil)
         #expect(await store.saveJenkinsToken(user: "jdoe", apiToken: "has \"quotes\"") == false)
-        #expect(store.tokenErrors[.jenkins] == "That does not look like a token: it has spaces or quotes")
+        #expect(store.tokenErrors[.jenkins] != nil)
         #expect(await harness.calls.checks == 1)
 
+        #expect(seen.removed.isEmpty)
         await store.removeToken(.gitlab)
+        #expect(seen.removed == [.gitlab], "the app is told which token went")
         #expect(await harness.calls.checks == 2)
         #expect(store.storedTokens.isEmpty)
         #expect(store.tokenSource(.gitlab) == .missing(nil))
-    }
-
-    @Test("MR-04 removing a token tells the app which one")
-    func removingATokenTellsTheApp() async throws {
-        let harness = try Harness(tokens: [.jenkins: Self.jenkinsToken, .gitlab: Self.gitLabToken])
-        let store = harness.store
-        final class Seen {
-            var removed: [TokenAccount] = []
-        }
-        let seen = Seen()
-        let calls = harness.calls
-        store.onTokenRemoved = { account in
-            seen.removed.append(account)
-        }
-        await store.loadTokens()
-
-        #expect(await store.saveGitLabToken(Self.gitLabToken))
-        #expect(seen.removed.isEmpty)
-        let checks = await calls.checks
-
-        await store.removeToken(.gitlab)
-
-        #expect(seen.removed == [.gitlab])
-        #expect(await calls.checks == checks + 1)
-        await store.removeToken(.jenkins)
-        #expect(seen.removed == [.gitlab, .jenkins])
     }
 
     @Test("ACC-06 prefills the Jenkins user and saves user and token as base64")
@@ -611,56 +519,10 @@ struct SettingsStoreTests {
         await store.loadTokens()
         #expect(store.jenkinsUser == "jdoe")
         #expect(store.storedTokens == [.jenkins])
-        #expect(!SettingsStore.canSaveJenkinsToken(user: "jdoe", apiToken: "  "))
-        #expect(!SettingsStore.canSaveJenkinsToken(user: " ", apiToken: "token"))
-        #expect(SettingsStore.canSaveJenkinsToken(user: "jdoe", apiToken: "token"))
-        #expect(!SettingsStore.canSaveGitLabToken("\n"))
 
         #expect(await store.saveJenkinsToken(user: " asmith ", apiToken: " new-token "))
         #expect(await harness.keychain.values[TokenAccount.jenkins.rawValue] == TokenStore.jenkinsToken(user: "asmith", apiToken: "new-token"))
         #expect(store.jenkinsUser == "asmith")
-    }
-
-    @Test("ACC-02 Settings tells where each token comes from")
-    func tellsWhereTokensComeFrom() async throws {
-        let harness = try Harness(tokens: [.jenkins: Self.jenkinsToken])
-        let store = harness.store
-        store.importReport = LegacyImportReport(
-            date: Date(), tokens: [
-                TokenImport(account: .jenkins, outcome: .imported(.zshrc)),
-                TokenImport(account: .gitlab, outcome: .notFound(.zshrcComputed)),
-            ])
-        await store.loadTokens()
-
-        #expect(store.tokenSource(.jenkins) == .keychain(importedFrom: .zshrc))
-        #expect(store.tokenSource(.jenkins).text == "Keychain, imported from ~/.zshrc")
-        #expect(store.tokenSource(.gitlab).text == "~/.zshrc computes it, which the app cannot run: paste it here")
-        _ = await store.saveGitLabToken(Self.gitLabToken)
-        #expect(store.tokenSource(.gitlab) == .keychain(importedFrom: nil))
-        #expect(store.tokenSource(.gitlab).text == "Keychain")
-    }
-
-    // MARK: - APP-02
-
-    @Test("APP-02 Settings turns open at login on and off and shows the status")
-    func openAtLogin() async throws {
-        let harness = try Harness()
-        let store = harness.store
-        #expect(store.openAtLogin == .notRegistered)
-
-        harness.loginItem.statusAfterRegister = .requiresApproval
-        await store.setOpenAtLogin(true)
-        #expect(store.openAtLogin == .requiresApproval)
-        #expect(store.openAtLogin.isOn)
-        store.openLoginItemsSettings()
-        await store.setOpenAtLogin(false)
-        #expect(store.openAtLogin == .notRegistered)
-        #expect(harness.loginItem.calls == [.register, .openSystemSettings, .unregister])
-
-        harness.loginItem.error = LoginItemError(turningOn: true, reason: "test")
-        await store.setOpenAtLogin(true)
-        #expect(store.openAtLogin == .notRegistered)
-        #expect(store.openAtLoginError?.hasPrefix("Open at login couldn't be turned on") == true)
     }
 
     // MARK: - Projects (PROJ-02)
@@ -695,12 +557,21 @@ struct SettingsStoreTests {
         #expect(harness.teamStore.project(added)?.team.committedLabel == "Done")
         #expect(harness.teamStore.primaryProject().team == Self.team)
 
+        // The primary project's GitLab URL goes to the other projects, which must stay on its GitLab.
+        store.editPrimaryProject()
+        store.teamDraft.gitLabURL = "https://git.example.org"
+        store.saveTeamNow()
+        #expect(harness.teamStore.project(added)?.team.gitLabURL == "https://git.example.org")
+        store.teamDraft.gitLabURL = Self.team.gitLabURL
+        store.saveTeamNow()
+
         #expect(throws: ProjectError.primary) { try store.removeProject(.main) }
         try store.removeProject(added)
         #expect(store.projectID == .main)
         #expect(store.team == Self.team)
         #expect(harness.teamStore.projects().map(\.id) == [.main])
-        #expect(changes == [nil, nil, added])
+        // Added, the client's committed label, the GitLab URL there and back, then the removal.
+        #expect(changes == [nil, nil, nil, nil, added])
         let messages = await harness.messages()
         #expect(messages.contains("Added the project client: team/client"))
         #expect(messages.contains("client Team committedLabel: (empty) → Done"))

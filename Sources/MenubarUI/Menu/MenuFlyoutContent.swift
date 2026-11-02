@@ -43,7 +43,8 @@ struct MenuFlyoutContent: View {
                 }
             }
             if flyout.isPlaceholder {
-                MenuPlaceholderRows()
+                // Work items have no symbol column, so their placeholders have none either.
+                MenuPlaceholderRows(showsSymbolColumn: flyout.area != .workItems)
             }
             if let note = flyout.note {
                 noteRow(note)
@@ -139,7 +140,8 @@ struct MenuFlyoutContent: View {
 }
 
 /// An entry's row: the colored status symbol, the title cut by width (its tooltip the whole title), the grey line with
-/// a work item's slot pill before it or a failed rebuild after the red marker, and a running build's thin progress bar.
+/// a failed rebuild after the red marker, and a running build's thin progress bar. A work item has no symbol: its age
+/// ends line 1 and line 2 is the window's own (``WorkItemDetailsLine``: "#31", the slot pill, the MR chip, the labels).
 struct MenuEntryRow: View {
     let entry: MenuEntry
     let isHighlighted: Bool
@@ -170,18 +172,11 @@ struct MenuEntryRow: View {
                     switch entry.kind {
                     case .build(let row): WorkspaceTag(subject: .build(row.build))
                     case .mergeRequest(let row): WorkspaceTag(subject: .mergeRequest(row.mergeRequest))
-                    case .workItem: EmptyView()
+                    case .workItem(let row): MenuSecondaryText(row.age).font(.subheadline).lineLimit(1).fixedSize()
                     }
                 }
-                HStack(spacing: 5) {
-                    if let pill = entry.pill {
-                        LabelPill(label: pill, style: .compact)
-                            .fixedSize()
-                    }
-                    MenuSecondaryText(entry.subtitle)
-                        .lineLimit(1)
-                }
-                .font(.subheadline)
+                detailsLine
+                    .font(.subheadline)
                 if let problem = entry.problem {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         ProblemSymbol()
@@ -204,12 +199,36 @@ struct MenuEntryRow: View {
     }
 }
 
+extension MenuEntryRow {
+    /// Line 2: a work item's is the window's (``WorkItemDetailsLine``) in the menu's grey; the others' is their grey text
+    /// after a slot pill, if any.
+    @ViewBuilder fileprivate var detailsLine: some View {
+        if case .workItem(let row) = entry.kind {
+            WorkItemDetailsLine(row: row)
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
+        } else {
+            HStack(spacing: 5) {
+                if let pill = entry.pill {
+                    LabelPill(label: pill, style: .compact)
+                        .fixedSize()
+                }
+                MenuSecondaryText(entry.subtitle)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
 /// Rows of bars standing in for a list that never loaded (OD-01), in the flyout rows' size.
 struct MenuPlaceholderRows: View {
+    /// whether the bars keep a symbol column; the work items' don't
+    var showsSymbolColumn = true
+
     var body: some View {
         VStack(spacing: 0) {
             ForEach(0..<4, id: \.self) { index in
-                SkeletonRow(index: index, leading: .symbol(column: MenuMetrics.symbolColumn), spacing: 7)
+                SkeletonRow(
+                    index: index, leading: showsSymbolColumn ? .symbol(column: MenuMetrics.symbolColumn) : .none, spacing: 7)
                     .padding(.vertical, 2)
                     .menuRow(isHighlighted: false)
             }

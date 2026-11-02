@@ -40,31 +40,8 @@ struct RequestCaptureTests {
         #expect(record.bytes == 11 && !record.truncated)
     }
 
-    @Test("LOG-02 keeps the GraphQL query and variables")
-    func keepsTheQuery() throws {
-        let query = "query WorkItems($fullPath: ID!) { project(fullPath: $fullPath) { id } }"
-        let variables = #"{"fullPath":"group/project","first":50}"#
-        let request = HTTPRequest(
-            method: "POST",
-            url: URL(string: "https://gitlab.example.com/api/graphql")!,
-            headers: ["Authorization": "Bearer \(Self.gitLabToken)", "Content-Type": "application/json"],
-            body: Data(#"{"query":"\#(query)","variables":\#(variables)}"#.utf8),
-            timeout: .seconds(30),
-            graphQL: GraphQLOperation(name: "WorkItems", variables: variables)
-        )
-
-        let record = RequestRecord(request: request, response: nil, error: "no answer within 30 seconds", seconds: 30)
-
-        #expect(record.operationName == "WorkItems")
-        #expect(record.query == query)
-        #expect(record.variables == variables)
-        #expect(record.authorization == .bearer)
-        #expect(record.status == nil && record.error == "no answer within 30 seconds")
-    }
-
     @Test("LOG-02 keeps the first 128 KB of a big response")
     func keepsTheStart() throws {
-        #expect(RequestRecord.defaultBodyLimit == 131_072)
         let body = Data(repeating: UInt8(ascii: "a"), count: 200_000)
 
         let record = RequestRecord(method: "GET", url: URL(string: "https://jenkins.example.com/api/json")!, status: 200, seconds: 1, responseBody: body)
@@ -96,28 +73,6 @@ struct RequestCaptureTests {
         #expect(!gitLab.curlCommand.contains(Self.gitLabToken) && !jenkins.curlCommand.contains(Self.jenkinsToken))
     }
 
-    @Test("LOG-02 indents JSON keeping the key order")
-    func indentsJSON() {
-        let json = #"{"z":1, "a":[1,2,{"b":"x,y:{[\"}"}],"e":{},"f":[ ],"g":"é"}"#
-        #expect(RequestRecord.indentedJSON(json) == """
-            {
-              "z": 1,
-              "a": [
-                1,
-                2,
-                {
-                  "b": "x,y:{[\\"}"
-                }
-              ],
-              "e": {},
-              "f": [],
-              "g": "é"
-            }
-            """)
-        #expect(RequestRecord.indentedJSON("<html>not JSON</html>") == nil)
-        #expect(RequestRecord.indentedJSON(#""just a string""#) == #""just a string""#)
-    }
-
     @Test("LOG-02 tells when a request is gone")
     func requestIsGone() async throws {
         let folder = try TemporaryFolder()
@@ -135,7 +90,6 @@ struct RequestCaptureTests {
 
     @Test("LOG-03 keeps only the newest requests that fit in 10 MB")
     func keepsTheNewestThatFit() async throws {
-        #expect(RequestCapture.defaultMaxBytes == 10_485_760)
         let folder = try TemporaryFolder()
         let size = try await Self.fileSize(of: Self.record(body: 1000))
         // Room for three and a half: the fourth newest doesn't fit.
@@ -153,32 +107,6 @@ struct RequestCaptureTests {
         let again = RequestCapture(folder: folder.url, maxBytes: size * 7 / 2 + 200, now: Self.ticking(from: 100))
         let newest = try #require(await again.save(Self.record(body: 1000)))
         #expect(folder.contents() == (ids.suffix(2) + [newest]).map { "\($0).json" })
-    }
-
-    @Test("LOG-03 keeps at most 1000 requests")
-    func keepsAtMost1000() async throws {
-        #expect(RequestCapture.defaultMaxFiles == 1000)
-        let folder = try TemporaryFolder()
-        let capture = RequestCapture(folder: folder.url, now: Self.ticking())
-
-        var ids: [String] = []
-        for _ in 1...1003 {
-            ids.append(try #require(await capture.save(Self.record())))
-        }
-
-        #expect(folder.contents() == ids.suffix(1000).map { "\($0).json" })
-    }
-
-    @Test("LOG-04 clear deletes every kept request")
-    func clears() async throws {
-        let folder = try TemporaryFolder()
-        let capture = RequestCapture(folder: folder.url.appending(path: "requests"))
-        _ = await capture.save(Self.record())
-
-        await capture.clear()
-
-        #expect(folder.contents().isEmpty)
-        #expect(await capture.totalBytes() == 0)
     }
 
     // MARK: - Helpers

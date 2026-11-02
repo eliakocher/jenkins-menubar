@@ -6,7 +6,8 @@
 #
 #   --debug    a debug build, which has the design gallery (MegaMonitor --gallery)
 #   --install  also copies the app to ~/Applications/MegaMonitor.app and registers it there; an old
-#              ~/Applications/menubar-monitor.app is removed first (scripts/migrate-old-bundle.sh)
+#              ~/Applications/menubar-monitor.app is removed first, and open at login carried over from the former
+#              identity (scripts/migrate-old-bundle.sh)
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")" && pwd)
@@ -46,8 +47,8 @@ fi
 # The repository is public: the company's name stays out of every file it commits.
 scripts/check-names.sh
 
-# The SwiftPM product keeps its name; the executable in the bundle is called MegaMonitor.
-swift build -c "$config" --product menubar-monitor
+# The SwiftPM product is megamonitor; the executable in the bundle is called MegaMonitor.
+swift build -c "$config" --product megamonitor
 bin=$(swift build -c "$config" --show-bin-path)
 
 app=$root/build/MegaMonitor.app
@@ -64,7 +65,7 @@ for stale in "$root/build/menubar-monitor.app" "$root/build/gallery/menubar-moni
 done
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$bin/menubar-monitor" "$app/Contents/MacOS/MegaMonitor"
+cp "$bin/megamonitor" "$app/Contents/MacOS/MegaMonitor"
 cp icons/menubar.png icons/happy.png icons/sad.png icons/gitlab.png "$app/Contents/Resources/"
 # The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
 for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa; do
@@ -99,9 +100,9 @@ cat >"$app/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- The visible name is MegaMonitor; the identity stays menubar-monitor (the bundle id, the URL scheme, the keychain
-	     service and the folders), for the user's settings and tokens. -->
-	<key>CFBundleIdentifier</key><string>local.menubar-monitor</string>
+	<!-- The identity is MegaMonitor since Task 7.12; the app copies the former menubar-monitor preferences, tokens
+	     and folders once at its first launch (IdentityMigration). -->
+	<key>CFBundleIdentifier</key><string>local.megamonitor</string>
 	<key>CFBundleName</key><string>MegaMonitor</string>
 	<key>CFBundleDisplayName</key><string>MegaMonitor</string>
 	<key>CFBundleExecutable</key><string>MegaMonitor</string>
@@ -114,8 +115,9 @@ cat >"$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleURLName</key><string>local.menubar-monitor</string>
-			<key>CFBundleURLSchemes</key><array><string>menubar-monitor</string></array>
+			<!-- megamonitor://, and the former menubar-monitor:// so links written before the rename still work. -->
+			<key>CFBundleURLName</key><string>local.megamonitor</string>
+			<key>CFBundleURLSchemes</key><array><string>megamonitor</string><string>menubar-monitor</string></array>
 		</dict>
 		<!-- http and https, so the app can be the default browser when the user turns on "Open GitLab and Jenkins Links in
 		     MegaMonitor" (APP-09). Nothing changes while that setting is off: macOS lists the app as a candidate
@@ -154,11 +156,11 @@ codesign --force --sign - "$app"
 if $install; then
 	installed=$HOME/Applications/MegaMonitor.app
 	mkdir -p "$HOME/Applications"
-	# The app was called menubar-monitor before: take that bundle away, and open at login with it.
+	# The app was called menubar-monitor before: take that bundle away, and carry open at login over.
 	"$root/scripts/migrate-old-bundle.sh"
 	rm -rf "$installed"
 	ditto "$app" "$installed"
-	# One registered copy, so menubar-monitor:// links always reach the installed app.
+	# One registered copy, so megamonitor:// links always reach the installed app.
 	"$lsregister" -u "$app" 2>/dev/null || true
 	"$lsregister" -f "$installed"
 	echo "installed $installed ($config)"

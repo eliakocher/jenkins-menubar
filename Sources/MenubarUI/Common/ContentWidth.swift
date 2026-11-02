@@ -80,6 +80,52 @@ extension View {
     }
 }
 
+/// Hands its content the space to leave free on each side so the reading content keeps to the chosen ``ContentWidth``:
+/// half of what the measured width has over the limit, none for Full Width and for narrower windows. For the sections
+/// whose content scrolls by itself, a `List` or a `Form`, which can't take ``View/pageContentWidth()``: the content
+/// takes it as a margin, so the scroll bar stays at the window's edge and the backgrounds and dividers fill the rest.
+struct ContentWidthMargins<Content: View>: View {
+    @AppStorage(ContentWidth.choiceKey) private var stored = ContentWidth.Choice.full.rawValue
+    @AppStorage(ContentWidth.customKey) private var custom = ContentWidth.defaultCustom
+    @ViewState private var width: CGFloat = 0
+    private let content: (CGFloat) -> Content
+
+    /// - Parameter content: the content, given the margin for each side in points
+    init(@ViewBuilder content: @escaping (CGFloat) -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        content(ContentWidth.margin(of: width, stored: stored, custom: custom))
+            // The width the container has, not the content's: the margin doesn't change it, so nothing loops.
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+}
+
+extension ContentWidth {
+    /// The space to leave free on each side of content in a container this wide.
+    ///
+    /// - Parameters:
+    ///   - width: the container's width in points
+    ///   - stored: the stored option
+    ///   - custom: the stored custom width
+    /// - Returns: the margin per side, 0 for Full Width and for a container that isn't wider than the limit
+    static func margin(of width: CGFloat, stored: String, custom: Double) -> CGFloat {
+        guard let limit = points(stored: stored, custom: custom) else { return 0 }
+        return max((width - limit) / 2, 0)
+    }
+}
+
+extension View {
+    /// A self-scrolling `Form` or `List` limited to the chosen content width: the rows are centered with the limit as
+    /// their widest, the scroll bar stays at the window's edge. The counterpart of ``pageContentWidth()``.
+    func scrollContentWidth() -> some View {
+        ContentWidthMargins { margin in
+            contentMargins(.horizontal, margin, for: .scrollContent)
+        }
+    }
+}
+
 /// The "Content Width" rows of Settings → General: the options and, for Custom, a slider.
 struct ContentWidthRows: View {
     @AppStorage(ContentWidth.choiceKey) private var stored = ContentWidth.Choice.full.rawValue

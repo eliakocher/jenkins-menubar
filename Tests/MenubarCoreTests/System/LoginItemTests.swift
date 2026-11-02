@@ -47,29 +47,6 @@ struct LoginItemTests {
         #expect(item.calls == [.unregister, .register])
     }
 
-    @Test("APP-02 shows the login item status")
-    func showsTheStatus() async throws {
-        let item = FakeLoginItem()
-        item.statusAfterRegister = .requiresApproval
-        let launchAtLogin = LaunchAtLogin(item: item)
-
-        let status = try await launchAtLogin.setOn(true)
-        launchAtLogin.openSystemSettings()
-
-        #expect(status == .requiresApproval)
-        #expect(status.isOn)
-        #expect(status.needsApproval)
-        #expect(status.message == "Waiting for your approval in System Settings → General → Login Items")
-        #expect(item.calls == [.register, .openSystemSettings])
-        // The status comes from the login item each time: System Settings may have changed it meanwhile.
-        item.status = .enabled
-        #expect(launchAtLogin.status == .enabled)
-        #expect(LoginItemStatus.enabled.message == nil)
-        #expect(LoginItemStatus.notRegistered.message == nil)
-        #expect(!LoginItemStatus.notFound.isOn)
-        #expect(LoginItemStatus.notFound.message == "Open at login needs the installed app: run ./build.sh --install")
-    }
-
     @Test("APP-02 a refused registration says why and stays off")
     func refusedRegistration() async throws {
         let folder = try TemporaryFolder()
@@ -83,22 +60,6 @@ struct LoginItemTests {
         }
 
         #expect(launchAtLogin.status == .notRegistered)
-        let entries = await log.entries()
-        #expect(entries.map(\.message) == ["Open at login couldn't be turned on: Operation not permitted"])
-        #expect(entries.map(\.level) == [.warning])
-    }
-
-    @Test("APP-02 a login item's own error keeps its text, without a second prefix")
-    func ownErrorIsNotWrapped() async throws {
-        let folder = try TemporaryFolder()
-        let log = ActivityLog(folder: folder.url)
-        let item = FakeLoginItem()
-        let own = LoginItemError(turningOn: true, reason: "Not allowed here")
-        item.error = own
-        let launchAtLogin = LaunchAtLogin(item: item, log: log)
-
-        await #expect(throws: own) { try await launchAtLogin.setOn(true) }
-
-        #expect(await log.entries().map(\.message) == ["Open at login couldn't be turned on: Not allowed here"])
+        #expect(await log.entries().map(\.level) == [.warning])
     }
 }

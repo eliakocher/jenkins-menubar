@@ -248,7 +248,8 @@ extension AttributedString {
     /// the text with its inline code on a faint fill; Text draws the code itself in a monospaced font
     fileprivate var styled: AttributedString {
         var text = self
-        for run in text.runs where run.inlinePresentationIntent?.contains(.code) == true {
+        // A search mark (``MarkdownDocument/highlighting(_:)``) on code stays: it is the one that was asked for.
+        for run in text.runs where run.inlinePresentationIntent?.contains(.code) == true && run.swiftUI.backgroundColor == nil {
             text[run.range].swiftUI.backgroundColor = Color.secondary.opacity(0.14)
         }
         return text

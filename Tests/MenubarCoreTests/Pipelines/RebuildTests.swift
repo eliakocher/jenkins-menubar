@@ -190,7 +190,6 @@ struct RebuildTests {
 
         let rebuild = try #require(store.rebuilds["MR-1"])
         #expect(rebuild.phase == .queued(QueueItem(id: 42)))
-        #expect(rebuild.text == "Rebuilding…")
         #expect(rebuild.canCancel)
         let posts = harness.posts
         #expect(posts.count == (sent == .asksForCrumb ? 2 : 1))
@@ -248,7 +247,6 @@ struct RebuildTests {
         switch follow {
         case .startsMyJob:
             #expect(store.rebuilds[job]?.phase == .started(number: 8))
-            #expect(store.rebuilds[job]?.text == "Rebuilding…")
             #expect(harness.checks == 1)
             #expect(messages.contains("Rebuild of !1 #7 started as #8"))
             // The rebuild ends with the check that shows the new build.
@@ -356,7 +354,6 @@ struct RebuildTests {
 
         let rebuild = try #require(store.rebuilds["MR-1"])
         #expect(rebuild.phase == .failed(failure.message))
-        #expect(rebuild.text == failure.message)
         #expect(!rebuild.canCancel)
         #expect(!rebuild.isUnderWay)
         let logged = await harness.entries().first { $0.message == "Rebuild of !1 #7 failed: \(failure.message)" }

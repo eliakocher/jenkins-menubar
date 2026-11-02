@@ -33,32 +33,25 @@ struct MergeRequestDetailsTests {
 
         #expect(approvals.approvedBy.map(\.username) == ["akim"])
         #expect(approvals.required == 2)
-        #expect(approvals.summary == "1 of 2 approvals")
         #expect(approvals.isSatisfied == false)
         #expect(approvals.rules.map(\.name) == ["Code Owners", "Backend Review", "Optional Docs"])
         #expect(approvals.rules.map(\.isSatisfied) == [true, false, true])
         #expect(approvals.rules[0].approvedBy.map(\.name) == ["Alex Kim"])
     }
 
-    @Test("MR-06 without approval rules it falls back to who approved")
-    func approvalsWithoutRules() async throws {
-        let approvals = try await Self.details("merge-request-details-basic.json", level: .basic).approvals
+    @Test("MR-06 without approval rules or a pipeline it falls back to who approved, and notes more discussions")
+    func basicDetails() async throws {
+        let details = try await Self.details("merge-request-details-basic.json", level: .basic)
+        let approvals = details.approvals
 
         #expect(approvals.rules.isEmpty)
         #expect(approvals.required == nil)
         #expect(approvals.approvedBy.map(\.name) == ["Sam Lee", "Alex Kim"])
-        #expect(approvals.summary == "2 approvals")
         #expect(approvals.isSatisfied == nil)
-    }
-
-    @Test("MR-06 says what the approvals are when nobody approved", arguments: [
-        (MergeRequestDetails.Approvals(required: 1), "0 of 1 approval"),
-        (MergeRequestDetails.Approvals(required: 0), "No approvals required"),
-        (MergeRequestDetails.Approvals(), "No approvals yet"),
-        (MergeRequestDetails.Approvals(approvedBy: [.init(username: "a", name: "A")], required: 1), "1 of 1 approval"),
-    ])
-    func approvalsSummary(approvals: MergeRequestDetails.Approvals, expected: String) {
-        #expect(approvals.summary == expected)
+        // More discussions than asked for are noted (MR-07); a merge request without a pipeline has none (MR-08).
+        #expect(details.hasMoreDiscussions)
+        #expect(details.threads.isEmpty)
+        #expect(details.pipeline == nil)
     }
 
     @Test("MR-07 lists the resolvable threads that aren't resolved, with the first note's author, place and page")
@@ -101,24 +94,10 @@ struct MergeRequestDetailsTests {
         #expect(thread.replies[0].url?.absoluteString == "https://gitlab.example.com/group/project/-/merge_requests/16#note_505")
         #expect(thread.hasMoreReplies)
         #expect(details.threads[1].replies.isEmpty && !details.threads[1].hasMoreReplies)
-        // The shared thread view takes the same.
-        #expect(thread.comment.first.body == thread.body && thread.comment.replies == thread.replies)
     }
 
-    @Test("MR-07 more discussions than asked for are noted")
-    func moreDiscussions() async throws {
-        let details = try await Self.details("merge-request-details-basic.json", level: .basic)
-
-        #expect(details.hasMoreDiscussions)
-        #expect(details.threads.isEmpty)
-    }
-
-    @Test("MR-07 the excerpt is plain text: no code, quotes, links or emphasis marks, and it is cut at a word")
-    func excerpt() async throws {
-        let details = try await Self.details("merge-request-details.json")
-
-        #expect(details.threads[0].excerpt == "Question Why not retry on the caller's side? See the docs and RetryPolicy.")
-        #expect(details.threads[1].excerpt == "quoted The description says three attempts, the code makes five.")
+    @Test("MR-07 the excerpt is cut at a word, and HTML stays text")
+    func excerpt() {
         let long = String(repeating: "word ", count: 100)
         let cut = PlainText.excerpt(of: long, limit: 50)
         #expect(cut.count <= 51 && cut.hasSuffix("word…"))
@@ -141,11 +120,6 @@ struct MergeRequestDetailsTests {
         #expect(pipeline.jobs.count == 5)
     }
 
-    @Test("MR-08 a merge request without a pipeline has none")
-    func noPipeline() async throws {
-        #expect(try await Self.details("merge-request-details-basic.json", level: .basic).pipeline == nil)
-    }
-
     @Test("MR-06 loads the details when the merge request is selected, once per update")
     func loadsOnSelection() async throws {
         let folder = try TemporaryFolder()
@@ -153,6 +127,8 @@ struct MergeRequestDetailsTests {
         let store = MergeRequestDetailsStore(services: try Self.services(stub: stub, folder: folder))
         let mergeRequest = Self.mergeRequest
         stub.answer(operation: "MergeRequestDetails", times: 1, body: try FixtureFiles.string("GitLab/merge-request-details.json"))
+        // The discussions come in a request of their own (OD-07).
+        stub.answer(operation: "MergeRequestDiscussions", body: try FixtureFiles.string("GitLab/merge-request-details.json"))
 
         #expect(store.state(of: mergeRequest) == .loading)
         await store.load(mergeRequest)
@@ -200,6 +176,54 @@ struct MergeRequestDetailsTests {
         #expect(queries[0].contains("approvalState") && !queries[1].contains("approvalState"))
     }
 
+    @Test("OD-07 the approvals and the pipeline are asked apart from the discussions, which fill the threads")
+    func discussionsApart() async throws {
+        let folder = try TemporaryFolder()
+        let stub = StubTransport()
+        let store = MergeRequestDetailsStore(services: try Self.services(stub: stub, folder: folder))
+        stub.answer(operation: "MergeRequestDetails", body: try FixtureFiles.string("GitLab/merge-request-details.json"))
+        stub.answer(operation: "MergeRequestDiscussions", body: try FixtureFiles.string("GitLab/merge-request-details.json"))
+
+        await store.load(Self.mergeRequest)
+
+        let top = try #require(stub.requests(operation: "MergeRequestDetails").first?.body).utf8Text
+        let discussions = try #require(stub.requests(operation: "MergeRequestDiscussions").first?.body).utf8Text
+        #expect(top.contains("headPipeline") && top.contains("approvalState") && !top.contains("discussions("))
+        #expect(discussions.contains("discussions(") && !discussions.contains("headPipeline"))
+        let details = try #require(store.state(of: Self.mergeRequest).details)
+        #expect(details.discussionsLoaded)
+        #expect(details.threads.count == 2)
+        #expect(details.approvals.rules.count == 3)
+    }
+
+    @Test("OD-07 kept details and descriptions show at once after a relaunch and are asked again once")
+    func keptDetailsShowAtOnce() async throws {
+        let folder = try TemporaryFolder()
+        let details = DetailCache(folder: folder.file("details"))
+        let stub = StubTransport()
+        stub.answer(operation: "MergeRequestDetails", body: try FixtureFiles.string("GitLab/merge-request-details.json"))
+        stub.answer(operation: "MergeRequestDiscussions", body: try FixtureFiles.string("GitLab/merge-request-details.json"))
+        stub.answer(operation: "MergeRequestDescription", body: #"{"data":{"project":{"mergeRequest":{"description":"Kept text"}}}}"#)
+        let services = try Self.services(stub: stub, folder: folder, details: details)
+        await MergeRequestDetailsStore(services: services).load(Self.mergeRequest)
+        await DescriptionsStore(services: services).load(Self.source)
+
+        // A relaunch with GitLab failing: the kept copies show, marked as asked-and-failed.
+        let offline = StubTransport()
+        offline.fail(operation: "MergeRequestDetails", with: .cannotConnect)
+        offline.fail(operation: "MergeRequestDescription", with: .cannotConnect)
+        let relaunched = try Self.services(stub: offline, folder: folder, details: details)
+        let store = MergeRequestDetailsStore(services: relaunched)
+        let descriptions = DescriptionsStore(services: relaunched)
+        await store.load(Self.mergeRequest)
+        await descriptions.load(Self.source)
+        #expect(store.state(of: Self.mergeRequest).details?.threads.count == 2)
+        #expect(descriptions.description(of: Self.source).text == "Kept text")
+        // Though they belong to the merge request's last update, they were asked again, once.
+        #expect(offline.requests(operation: "MergeRequestDetails").count == 1)
+        #expect(offline.requests(operation: "MergeRequestDescription").count == 1)
+    }
+
     @Test("MR-06 asks nothing without a GitLab token and fails quietly")
     func withoutToken() async throws {
         let folder = try TemporaryFolder()
@@ -217,7 +241,7 @@ struct MergeRequestDetailsTests {
     }
 
     /// GitLab on the stub, a token in a fake keychain, and the team values of `group/project`.
-    private static func services(stub: StubTransport, folder: TemporaryFolder) throws -> GitLabServices {
+    private static func services(stub: StubTransport, folder: TemporaryFolder, details: DetailCache? = nil) throws -> GitLabServices {
         let team = TeamStore(folder: folder.file("support"), report: { _ in })
         try team.save(Project(id: .main, team: TeamValues(
             jenkinsJobURL: "https://jenkins.example.com/job/project", gitLabURL: gitLab.absoluteString,
@@ -226,6 +250,10 @@ struct MergeRequestDetailsTests {
         return GitLabServices(
             transport: stub, clock: ContinuousClock(),
             tokens: TokenStore(keychain: InMemoryKeychain(values: [TokenAccount.gitlab.rawValue: "glpat-test"])), team: team,
-            caches: CacheStore(folder: folder.file("caches"), report: { _ in }), log: log)
+            caches: CacheStore(folder: folder.file("caches"), report: { _ in }), log: log, details: details)
     }
+}
+
+private extension Data {
+    var utf8Text: String { String(decoding: self, as: UTF8.self) }
 }

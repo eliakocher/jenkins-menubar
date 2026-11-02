@@ -17,7 +17,7 @@ struct WorkItemsGalleryView: View {
         ) {
             WorkItemsListContent(model: WorkItemsListModel(data, query: query), selection: .constant(selection), actions: .none)
         } detail: {
-            WorkItemDetailContent(model: WorkItemDetailModel(data, selection: selection), actions: .none)
+            WorkItemDetailContent(model: WorkItemDetailModel(data, selection: selection), actions: .gallery)
         }
     }
 }
@@ -52,7 +52,7 @@ struct WorkItemDetailGalleryView: View {
             workItems: [item], mergeRequests: { related[$0.reference] }, build: { builds[$0.iid] }, team: fixtures.team,
             today: fixtures.now
         ).slots.flatMap(\.items).first
-        WorkItemDetailContent(model: WorkItemDetailModel(data, selection: item.id, reality: reality), actions: .none)
+        WorkItemDetailContent(model: WorkItemDetailModel(data, selection: item.id, reality: reality), actions: .gallery)
             .environment(
                 \.descriptionFixtures,
                 DescriptionFixtures(descriptions: [item.reference: loading ? .loading : .loaded(sparse ? "" : w.description31)])

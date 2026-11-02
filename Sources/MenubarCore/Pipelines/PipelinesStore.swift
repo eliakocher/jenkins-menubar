@@ -86,6 +86,10 @@ public final class PipelinesStore {
     @ObservationIgnored private var gitLabUser: GitLabUser?
     /// whether a check since the launch was answered by Jenkins; the alerts stay quiet until then (ALERT-01)
     @ObservationIgnored private var alertsArmed = false
+    /// whether the next check looks my jobs up, whatever the age of the last lookup: an MR of mine had no job (OD-06)
+    @ObservationIgnored private var jobLookupRequested = false
+    /// the MRs of mine a lookup was asked for already, so an MR whose job Jenkins hasn't made yet asks only once
+    @ObservationIgnored private var jobLookupAskedFor: Set<Int> = []
     /// the log entries in the order the intents made them
     @ObservationIgnored private var logging: Task<Void, Never>?
     /// the tasks that start the rebuilds and follow their queue items, per job (PIPE-09)
@@ -541,9 +545,10 @@ public final class PipelinesStore {
     private func runCheck(reason: CheckReason, gitLabUser shared: GitLabUser?) async throws -> CheckOutcome {
         let input = PipelinesCheck.Input(
             userState: userState, state: state, alertStates: alertStates, merged: merged, gitLabUser: shared ?? gitLabUser,
-            preferences: preferences, lookUpJobs: reason == .checkNow, alertsArmed: alertsArmed, eggs: eggMemory,
+            preferences: preferences, lookUpJobs: reason == .checkNow || jobLookupRequested, alertsArmed: alertsArmed, eggs: eggMemory,
             project: projectID, notifications: notifications)
         let output = try await round.run(input)
+        jobLookupRequested = false
         apply(output)
         await round.announce(output.alerts, preferences: preferences)
         #if DEBUG
@@ -553,6 +558,28 @@ public final class PipelinesStore {
         ready.forEach { $0.continuation.resume() }
         #endif
         return output.result.succeeded ? .success : .failure
+    }
+
+    /// Asks for a lookup of my jobs at the next check when one of my MRs has no job among them, as after I opened a new
+    /// one: the regular lookup runs only every 30 minutes (OD-06). Each MR asks once: Jenkins may make its job only
+    /// minutes later, and the regular lookup finds it then.
+    ///
+    /// - Parameter iids: the iids of the open MRs I authored, from GitLab's list
+    /// - Returns: whether a lookup was asked for
+    @discardableResult
+    public func noteMyMergeRequests(_ iids: [Int]) -> Bool {
+        guard let jobs = state.myJobs else {
+            // Before the first lookup worked, the next check looks up anyway.
+            return false
+        }
+        let known = Set(jobs)
+        let missing = Set(iids.filter { !known.contains("MR-\($0)") }).subtracting(jobLookupAskedFor)
+        guard !missing.isEmpty else {
+            return false
+        }
+        jobLookupAskedFor.formUnion(missing)
+        jobLookupRequested = true
+        return true
     }
 
     /// Waits until the entries the intents logged so far are written.

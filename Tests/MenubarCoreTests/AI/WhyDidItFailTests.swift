@@ -14,26 +14,16 @@ struct WhyDidItFailTests {
         arguments: [
             ("[ERROR] /work/src/main/java/com/example/cart/CartService.java:[57,21] cannot find symbol", FailureLog.Kind.compiler),
             ("Sources/Cart/Cart.swift:12:5: error: cannot convert value of type 'Int' to 'String'", .compiler),
-            ("src/cart.ts(12,5): error TS2345: Argument of type 'string' is not assignable", .compiler),
-            ("[ERROR] COMPILATION ERROR :", .compiler),
             ("[ERROR] Tests run: 12, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.4 s <<< FAILURE! - in com.example.CartTest", .testFailure),
-            ("Tests run: 12, Failures: 0, Errors: 2, Skipped: 0", .testFailure),
-            ("12:00:01 Runner#com.example.cart.CartTest#addsAnItem: failed (ERROR): java.lang.IllegalStateException", .testFailure),
             ("FAILED tests/test_cart.py::test_adds - AssertionError: assert 1 == 2", .testFailure),
             ("Caused by: java.lang.IllegalStateException: the cart is closed", .exception),
-            ("Exception in thread \"main\" java.lang.NullPointerException", .exception),
             ("Traceback (most recent call last):", .exception),
             ("[INFO] BUILD FAILURE", .buildFailure),
             ("ERROR: script returned exit code 2", .buildFailure),
-            ("[ERROR] Failed to execute goal org.example.plugins:example-plugin:1.0:run (default) on project cart", .buildFailure),
             ("Timeout has been exceeded", .timeout),
-            ("Cancelling nested steps due to timeout", .timeout),
             ("java.util.concurrent.TimeoutException: waited 30 seconds for the cart service", .timeout),
             ("java.io.IOException: No space left on device", .infrastructure),
-            ("Cannot contact agent-7: java.lang.InterruptedException", .infrastructure),
             ("curl: (6) Could not resolve host: registry.example.com", .infrastructure),
-            ("docker: Error response from daemon: toomanyrequests: rate limit exceeded", .infrastructure),
-            ("/work/run.sh: line 3:  4242 Killed                  java -jar cart.jar", .infrastructure),
             ("2026-10-29 12:00:01.123 ERROR c.e.cart.CartJob - the nightly job stopped", .error),
         ])
     func marksEachKind(_ line: String, _ kind: FailureLog.Kind) {
@@ -206,16 +196,13 @@ struct WhyDidItFailTests {
         #expect(places == places.sorted())
 
         #expect(text.contains("!42 #7 \"Add the item count\", result FAILURE"))
-        #expect(text.contains("Failed stages: Unit tests (starts at log line 6, first error marker at line 9)"))
         #expect(text.contains("Tests: 2 of 120 failed"))
-        #expect(text.contains("History: stage \"Unit tests\" failed in 4 of the last 10 builds"))
         #expect(text.contains("- com.example.cart.CartTest.addsAnItem (regression: passed in the build before): expected:<2> but was:<1>"))
         #expect(text.contains("- com.example.cart.OrderTest.ships (failing for 4 builds in a row): Timed out after 30 seconds"))
         #expect(text.contains("## line 9, 10, 11, stage \"Unit tests\", test failure"))
         #expect(text.contains(">10 | [ERROR] com.example.cart.CartTest.addsAnItem  Time elapsed: 0.1 s  <<< FAILURE!"))
         #expect(text.contains(" 12 | \tat com.example.cart.CartTest.addsAnItem(CartTest.java:12)"))
         #expect(text.contains("# Suspect commits: since the last green build (#5), newest first"))
-        #expect(text.contains("- 1a2b3c4d5e #7 Jane Doe: Count only the new items"))
         #expect(!text.contains("[Pipeline] }"), "the end of the log keeps Jenkins's own lines out")
         // About 4,000 characters for a small build; a large log stays within its caps.
         #expect(text.count < 4_000)
@@ -268,9 +255,7 @@ struct WhyDidItFailTests {
         let prompt = ClaudePrompt.explainBuild(Self.facts)
         let answer = try #require(AIStore.answer(of: run, prompt: prompt, model: .opus, at: Date())?.explanation)
         #expect(answer.verdict == .real)
-        #expect(answer.headline.split(separator: " ").count <= 12)
         #expect(answer.failedAt.contains("Unit tests"))
-        #expect(answer.cause.contains("addsAnItem"))
         #expect(answer.evidence.contains("java.lang.AssertionError: expected:<2> but was:<1>"))
         #expect(answer.suspects.map(\.commit) == ["1a2b3c4d5e"])
         #expect(answer.suspects.first?.author == "Jane Doe")

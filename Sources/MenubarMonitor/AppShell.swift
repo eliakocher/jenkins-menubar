@@ -9,7 +9,7 @@ import Observation
 /// only then starts the checks, so the first check already has the imported tokens and team values. The model exists
 /// before, so the panel draws the cached builds at once (OD-01).
 ///
-/// Every window opens through the one ``router``: the views call it, and so do the `menubar-monitor://` links and
+/// Every window opens through the one ``router``: the views call it, and so do the `megamonitor://` links and
 /// starting the app again. Its closure opens the windows through the ``presenter``.
 @MainActor
 @Observable
@@ -26,6 +26,10 @@ final class AppShell {
     @ObservationIgnored private var wakeWatcher: Task<Void, Never>?
     /// runs when the app quits, after the checks stopped
     @ObservationIgnored var onStop: (() -> Void)?
+    /// the identity migration whose first part ran before the app started (APP-10); nil when it was skipped
+    @ObservationIgnored private let identityMigration: (migration: IdentityMigration, report: IdentityMigration.FilesReport?)?
+    /// asks for the notification permission when macOS never asked, as after the rename to a new bundle id (APP-10)
+    @ObservationIgnored var askNotificationPermission: (() async -> Void)?
 
     /// Where the import looks for jenkins-menubar's files and tokens.
     struct LegacySources {
@@ -56,7 +60,12 @@ final class AppShell {
     ///   - model: the model, not started yet
     ///   - legacySources: where the import looks
     ///   - defaultBrowser: macOS's default browser; the throwaway and smoke runs pass one that changes nothing
-    init(model: AppModel, legacySources: LegacySources, defaultBrowser: any DefaultBrowserSystem = NativeDefaultBrowser()) {
+    ///   - identityMigration: the identity migration after its first part, and what that did; nil skips the rest
+    init(
+        model: AppModel, legacySources: LegacySources, defaultBrowser: any DefaultBrowserSystem = NativeDefaultBrowser(),
+        identityMigration: (migration: IdentityMigration, report: IdentityMigration.FilesReport?)? = nil
+    ) {
+        self.identityMigration = identityMigration
         let presenter = WindowPresenter()
         self.presenter = presenter
         // The main window's section and selections are kept with the preferences (WIN-05).
@@ -117,7 +126,13 @@ final class AppShell {
         let model = AppModel(dependencies: dependencies)
         // The morning digest, when the user turns it on, comes as a banner (AI-04).
         model.ai.notify = { text in await effects.postDigest(text) }
-        return AppShell(model: model, legacySources: .standard())
+        let shell = AppShell(model: model, legacySources: .standard(), identityMigration: IdentityMigrationLaunch.pending)
+        shell.askNotificationPermission = {
+            if await effects.notificationPermission() == .notAsked {
+                _ = await effects.requestNotificationPermission()
+            }
+        }
+        return shell
     }
 
     /// whether the status item is in the menu bar (APP-01). Removing it by hand turns it off; the checks and alerts go
@@ -141,6 +156,9 @@ final class AppShell {
             return
         }
         launching = Task {
+            // The identity migration's second part first (APP-10): the tokens move before the import and the first
+            // check read them.
+            await finishIdentityMigration()
             await importIfNeeded()
             model.start()
             // Whether claude is installed, which shows or hides the Claude features (AI-01): one login shell, once.
@@ -154,6 +172,36 @@ final class AppShell {
             for await event in events where event == .didWake {
                 await updates.check()
             }
+        }
+    }
+
+    /// Logs what the identity migration's first part did, copies the tokens from the former keychain service, and redoes
+    /// what macOS ties to the bundle id (APP-10): the default browser when the link router was on, and the notification
+    /// permission. The login item comes from the marker scripts/migrate-old-bundle.sh leaves, at ``AppModel/start()``.
+    private func finishIdentityMigration() async {
+        guard let (migration, files) = identityMigration else {
+            return
+        }
+        let log = model.log
+        for line in files?.logLines ?? [] {
+            await log.log(files?.problems.isEmpty == false ? .warning : .info, .app, line)
+        }
+        let former = SecurityCLIKeychain(service: AppIdentity.Former.keychainService)
+        if let tokens = await migration.moveTokens(from: former, to: model.dependencies.keychain) {
+            for line in tokens.logLines {
+                await log.log(tokens.problems.isEmpty ? .info : .warning, .app, line)
+            }
+        }
+        guard let files, files.foundFormer else {
+            return
+        }
+        // Neither waits for the user's answer to macOS's question, so the checks start at once.
+        let linkRouting = linkRouting
+        if files.reclaimDefaultBrowser {
+            Task { await linkRouting.reclaimAfterRename() }
+        }
+        if let askNotificationPermission {
+            Task { await askNotificationPermission() }
         }
     }
 
@@ -321,13 +369,17 @@ final class AppShell {
         }
     }
 
-    /// Follows a `menubar-monitor://` link (APP-03), through the ``router``.
+    /// Follows a `megamonitor://` link (APP-03), through the ``router``.
     func open(_ route: AppRoute) {
         switch route {
         case .settings(let pane):
             router.open(.settings(pane: pane))
         case .open(let section):
             router.open(section)
+        case .importTeamFile:
+            // Settings → Team fetches the file and asks before anything changes (TEAM-02).
+            route.requestTeamFileImport(on: model.settings)
+            router.open(.settings(pane: .team))
         case .mainWindow:
             // The window opens at the section it showed last.
             router.open(.main)
@@ -362,7 +414,7 @@ extension AppShell {
         var environment = ProcessInfo.processInfo.environment
         if environment[FileLocations.dataDirectoryVariable]?.isEmpty ?? true {
             let folder = FileManager.default.temporaryDirectory
-                .appending(path: "menubar-monitor-throwaway-\(UUID().uuidString)", directoryHint: .isDirectory)
+                .appending(path: "megamonitor-throwaway-\(UUID().uuidString)", directoryHint: .isDirectory)
             environment[FileLocations.dataDirectoryVariable] = folder.path(percentEncoded: false)
         }
         // A suite name is never nil unless it is the app's own domain.

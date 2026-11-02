@@ -297,7 +297,7 @@ extension RelatedMergeRequestsCache {
 // MARK: - GitLab's links
 
 /// What GitLab says about the work items of a merge request.
-public struct GitLabWorkItemLinks: Hashable, Sendable {
+public struct GitLabWorkItemLinks: Codable, Hashable, Sendable {
     public var closes: [LinkedWorkItem]
     public var related: [LinkedWorkItem]
 
@@ -443,6 +443,11 @@ public final class LinkedWorkItemsStore {
         let key = reference.lowercased()
         var entry = entries[key] ?? Entry()
         let now = services.now()
+        // The copy on disk shows at once and counts as stale, so it is asked again below (OD-07).
+        if entries[key] == nil, let kept = services.details?.load(.workItemLinks, key: key) {
+            entry.links = kept.value
+            entries[key] = entry
+        }
         if entry.isLoading || entry.failedAt.map({ now.timeIntervalSince($0) < Self.retryAfter }) == true {
             return
         }
@@ -472,9 +477,15 @@ public final class LinkedWorkItemsStore {
             entry.loadedAt = now
             entry.updatedAt = updatedAt ?? now
             entry.failedAt = nil
+            services.details?.save(links, updatedAt: updatedAt, as: .workItemLinks, key: key)
         } else {
             entry.failedAt = now
         }
         entries[key] = entry
     }
+}
+
+extension DetailKind where Value == GitLabWorkItemLinks {
+    /// the work items a merge request closes or mentions (OD-07)
+    public static var workItemLinks: DetailKind { DetailKind("work-item-links") }
 }

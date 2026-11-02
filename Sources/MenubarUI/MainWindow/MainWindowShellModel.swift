@@ -29,9 +29,11 @@ public struct MainWindowShellModel: Hashable, Sendable {
     ///   - workspacesSubtitle: Workspaces' subtitle, "4 checkouts · 2 free" (WS-01); `nil` for none
     ///   - workspacesBusy: whether git reads the checkouts
     ///   - slotsBusy: whether the slot labels or the slot items load
+    ///   - digestSubtitle: Digest's subtitle, "Written Mon 10:42"; `nil` for none
+    ///   - digestBusy: whether Claude writes the digest
     public init(
         _ data: PanelData, section: MainWindowSection, activitySubtitle: String? = nil, workspacesSubtitle: String? = nil,
-        workspacesBusy: Bool = false, slotsBusy: Bool = false
+        workspacesBusy: Bool = false, slotsBusy: Bool = false, digestSubtitle: String? = nil, digestBusy: Bool = false
     ) {
         update = data.update
         workItemFilters = data.workItems.filters
@@ -45,6 +47,7 @@ public struct MainWindowShellModel: Hashable, Sendable {
             || (section == .workItems && workItems.isLoading)
             || (section == .slots && (workItems.isLoading || slotsBusy))
             || (section == .workspaces && workspacesBusy)
+            || (section == .digest && digestBusy)
         // TEAM-03: the team row alone, without counts or times.
         guard jenkins.problem != .teamValuesMissing else {
             badges = [:]
@@ -91,26 +94,38 @@ public struct MainWindowShellModel: Hashable, Sendable {
         case .mergeRequests:
             subtitle = mergeRequestsNeedToken ? nil : mergeRequests.lastLoadAt.map { Formatting.lastChecked($0) }
         case .workItems:
-            // The filters sit in the header with the check time, in one line (the user, 2026-10-30).
-            subtitle = workItemsNeedToken ? nil : Self.workItemsSubtitle(filters: workItems.filters, lastLoadAt: workItems.lastLoadAt)
+            // Short, like the others: the filters moved into the list's own bar (WIN-04), since a long subtitle ran over
+            // the list column's edge (the user, 2026-11-02).
+            subtitle = workItemsNeedToken
+                ? nil
+                : Self.workItemsSubtitle(
+                    count: workItems.lists.map {
+                        WorkItemSections($0, committedLabel: data.team.committedLabel).sections.reduce(0) { $0 + $1.list.items.count }
+                    },
+                    lastLoadAt: workItems.lastLoadAt)
         case .activity:
             subtitle = activitySubtitle
         case .workspaces:
             subtitle = workspacesSubtitle
         case .slots:
             subtitle = workItemsNeedToken ? nil : workItems.lastLoadAt.map { Formatting.lastChecked($0) }
+        case .digest:
+            subtitle = digestSubtitle
         }
     }
 
-    /// Returns the Work Items subtitle: the filters in one line and the check time, "Assigned to me · Open · −wontfix ·
-    /// checked 14:29". The title bar truncates it at the end when the window is narrow.
+    /// Returns the Work Items subtitle: how many items show and the check time, "12 items · checked 14:29". The filters
+    /// are the list's own bar, not the title: a long subtitle ran over the list column's edge (WIN-04).
     ///
     /// - Parameters:
-    ///   - filters: the work item filters
+    ///   - count: how many work items the list shows; `nil` before the first load
     ///   - lastLoadAt: when the last load ended; `nil` before the first
-    /// - Returns: the text
-    static func workItemsSubtitle(filters: WorkItemFilters, lastLoadAt: Date?) -> String {
-        var parts = [filters.summary]
+    /// - Returns: the text, empty before anything is known
+    static func workItemsSubtitle(count: Int?, lastLoadAt: Date?) -> String {
+        var parts: [String] = []
+        if let count {
+            parts.append(count == 1 ? "1 item" : "\(count) items")
+        }
         if let lastLoadAt {
             parts.append(Formatting.lastChecked(lastLoadAt).replacing("Last checked", with: "checked"))
         }
@@ -151,7 +166,7 @@ public enum MainWindowSurfaces {
         case .workspaces: return [.mergeRequests, .workItems]
         // The slots join the work items with their merge requests and builds (SLOT-03).
         case .slots: return [.mergeRequests, .workItems]
-        case .pipelines, .activity: return []
+        case .pipelines, .activity, .digest: return []
         }
     }
 }

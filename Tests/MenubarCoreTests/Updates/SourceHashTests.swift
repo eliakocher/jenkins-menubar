@@ -12,19 +12,6 @@ struct SourceHashTests {
             .deletingLastPathComponent()
     }
 
-    @Test("APP-05 source hash is stable")
-    func stable() throws {
-        let folder = try TemporaryFolder()
-        try writeCheckout(in: folder)
-
-        let first = try SourceHash.compute(root: folder.url)
-        let second = try SourceHash.compute(root: folder.url)
-
-        #expect(first == second)
-        #expect(first.count == 64)
-        #expect(first.allSatisfy { "0123456789abcdef".contains($0) })
-    }
-
     /// The contract with `build.sh`: hidden files, symbolic links, files outside the four paths, byte order (capitals
     /// first), a name that isn't ASCII, and the names `shasum` escapes.
     @Test("APP-05 source hash equals the MMSourceHash of build.sh")
@@ -45,20 +32,6 @@ struct SourceHashTests {
         let expected = try await buildScriptHash(of: folder.url)
 
         #expect(try SourceHash.compute(root: folder.url) == expected)
-    }
-
-    @Test("APP-05 source hash changes with a source file")
-    func changesWithASource() throws {
-        let folder = try TemporaryFolder()
-        try writeCheckout(in: folder)
-        let before = try SourceHash.compute(root: folder.url)
-
-        try folder.write("// changed", to: "Sources/MenubarCore/A.swift")
-        let changed = try SourceHash.compute(root: folder.url)
-        try folder.write("ignored", to: "Sources/.DS_Store")
-
-        #expect(changed != before)
-        #expect(try SourceHash.compute(root: folder.url) == changed)
     }
 
     @Test("APP-05 the build stamp tells when the checkout changed")

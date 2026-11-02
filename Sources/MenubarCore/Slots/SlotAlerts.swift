@@ -44,8 +44,7 @@ public enum SlotAlerts {
     /// - Returns: at most one notice per slot, in the order of the slots
     public static func notices(of plan: SlotPlan, warnDays: Int, announced: Set<String>) -> [SlotNotice] {
         plan.slots.compactMap { slot in
-            let days = slot.daysToCodeFreeze
-            guard slot.state != .overdue, (0...warnDays).contains(days), !announced.contains(slot.name.description) else {
+            guard let days = slot.daysToCodeFreeze, slot.state != .overdue, (0...warnDays).contains(days), !announced.contains(slot.name.description) else {
                 return nil
             }
             let open = slot.openItems.filter { !$0.workItem.isEpic }

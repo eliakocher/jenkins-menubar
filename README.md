@@ -12,8 +12,9 @@ merge requests, work items, checkouts and release slots, and tells you the momen
 It needs macOS 26 and the Xcode Command Line Tools (`xcode-select --install`); nothing else, no Xcode and no Homebrew.
 
 1. Put this folder where it will stay: the app remembers it, to update itself from it.
-2. In Terminal: `./install.sh`. It builds the app into `~/Applications/MegaMonitor.app` and opens it. (The app was called menubar-monitor before; the first install moves
-   it over, keeps your settings and tokens, and keeps open at login on if it was on.)
+2. In Terminal: `./install.sh`. It builds the app into `~/Applications/MegaMonitor.app` and opens it. (The app was called menubar-monitor before; at its first launch
+   it copies your settings, tokens and folders over, and keeps open at login on if it was on. macOS asks for the
+   notification permission once more. The old copies stay until `./install.sh --retire-old`.)
 3. The welcome flow takes it from there: what it imported from the old tool (see below), your team values (the Jenkins
    job, the GitLab URL and project), the two tokens, the notification permission, and whether to start at login.
 
@@ -47,8 +48,8 @@ Nothing is rebuilt without that click.
     description. The details show the approvals and their rules, the unresolved threads, and the GitLab pipeline with
     its jobs. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
   - **Work Items**: committed and not committed, with filters and label filters, and their related merge requests.
-    **New Work Item…** (⌘N), **New Bug from This Build** and **New Follow-Up Item** open GitLab's own new issue page,
-    prefilled, in the browser.
+    **New Work Item…** (⌘N) and **New Follow-Up Item** open GitLab's own new issue page, prefilled, in the
+    browser.
   - **Activity**: a log of every request, build, alert and problem, with search, filters and a chart of the check times.
     No token is ever kept in it.
   - **Workspaces**: your local checkouts, found in the folders of Settings → Repositories, with their branch, state and
@@ -94,9 +95,11 @@ items. It leaves SwiftBar and jq installed and tells you what else is yours to c
 
 ## Development
 
-The visible name is MegaMonitor; the identity stays `menubar-monitor` (bundle id `local.menubar-monitor`, the
-`menubar-monitor://` links, the keychain service, the folders in `~/Library`, the SwiftPM product and the module names),
-so a rename never costs anyone their settings or tokens.
+The identity is MegaMonitor: bundle id `local.megamonitor`, `megamonitor://` links (the former `menubar-monitor://`
+still work), the keychain service `megamonitor`, the folders `~/Library/{Application Support,Caches,Logs}/MegaMonitor`
+and the SwiftPM product `megamonitor`; the module names stay `MenubarCore`, `MenubarUI` and `MenubarMonitor`. It was
+`menubar-monitor` before; the app copies the former preferences, tokens and folders once at its first launch
+(`IdentityMigration`) and leaves the originals for `./install.sh --retire-old`.
 
 ```
 ./build.sh [--debug] [--install]   # builds build/MegaMonitor.app

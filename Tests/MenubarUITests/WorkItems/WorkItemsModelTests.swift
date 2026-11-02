@@ -36,6 +36,52 @@ struct WorkItemsModelTests {
         #expect(detail.relatedFooters == (prefix.isEmpty ? [] : [footer]))
     }
 
+    @Test("WI-05 the row's MR chip shows the first counted MR and +N for the others, with a draft and a merged MR told apart")
+    func rowChip() {
+        let w = Self.fixtures.workItemsScreen
+        let project = "group/subgroup/project"
+        func chip(_ mergeRequests: [RelatedMergeRequest], prefix: String = "[cascade]") -> WorkItemMergeRequestChip? {
+            WorkItemMergeRequestChip.make(mergeRequests, marker: nil, project: project, ignoredPrefix: prefix)
+        }
+        let open = w.related(14, "Rework the color tokens", .opened)
+        let merged = w.related(11, "Move the values", .merged)
+        let cascade = w.related(44, "[cascade] Merge release/2.4 into main", .opened)
+        let closed = w.related(42, "Old try", .closed)
+        let draft = w.related(15, "Draft: Try it", .opened)
+        // open first, then merged; the first and "+N" of the counted ones; cascade and closed MRs don't count
+        let several = chip([merged, cascade, closed, open, draft])
+        #expect(several?.text == "!14 +2")
+        #expect(several?.kind == .open)
+        #expect(several?.help.components(separatedBy: "\n").count == 3)
+        #expect(several?.help.hasPrefix("!14 · open · Rework the color tokens") == true)
+        #expect(chip([merged])?.text == "!11")
+        #expect(chip([merged])?.kind == .merged)
+        #expect(chip([draft])?.kind == .draft)
+        #expect(chip([w.related(8, "Fix it", .opened, project: "group/subgroup/web")])?.text == "web!8")
+        #expect(chip([cascade, closed]) == nil)
+        #expect(chip([]) == nil)
+        // without a prefix in Team the cascade MR counts
+        #expect(chip([cascade], prefix: "")?.text == "!44")
+        // the marker alone, before the MRs are known, gives a chip without text
+        let only = WorkItemMergeRequestChip.make([], marker: .merged, project: project, ignoredPrefix: "")
+        #expect(only?.text == nil)
+        #expect(only?.kind == .merged)
+    }
+
+    @Test("MR-13 a work item has a slot name, so Show in Slots shows, only with a slot label")
+    func slotNameOfDetail() throws {
+        let f = Self.fixtures
+        let w = f.workItemsScreen
+        let slotted = w.item(31, "Rework the color tokens", labels: ["workflow::committed", WorkItemDetailGalleryView.slotLabel(now: f.now)])
+        let lists = WorkItemLists(committed: WorkItemList(count: 1, items: [slotted]), others: WorkItemList(count: 1, items: [w.item40]))
+        let data = w.data(lists).data
+        let withSlot = try #require(WorkItemDetailModel(data, selection: slotted.id))
+        let without = try #require(WorkItemDetailModel(data, selection: w.item40.id))
+        #expect(withSlot.slotName == SlotPlan.slot(of: slotted, team: f.team))
+        #expect(withSlot.slotName != nil)
+        #expect(without.slotName == nil)
+    }
+
     @Test("SLOT-03 the work item detail shows each merge request's build, the item's flags and its slot's next date")
     func detailReality() throws {
         let f = Self.fixtures
@@ -59,8 +105,7 @@ struct WorkItemsModelTests {
         #expect(rows.map(\.build) == [red, nil])
         #expect(detail.flags.map(\.kind) == [.redPipeline])
         #expect(detail.countedMergeRequests.count == 2)
-        // The release is five weeks ahead: the code freeze comes first, and nothing is overdue.
-        #expect(detail.slot?.countdown.hasPrefix("Code freeze") == true)
+        // The release is five weeks ahead: nothing is overdue.
         #expect(detail.slot?.isOverdue == false)
         // Another item's reality is never shown.
         var other = reality
@@ -119,5 +164,57 @@ struct WorkItemsModelTests {
         let shared = WorkItemRowModel.sharedLabels(of: items)
         let shown = items.map { WorkItemRowModel.secondLine(of: $0, team: team, filters: WorkItemFilters(), sharedLabels: shared) }
         #expect(shown == lines.map { $0.isEmpty ? nil : $0.joined(separator: " · ") })
+    }
+
+    @Test(
+        "WI-04 the second line hides labels by prefix and shows scoped labels by their value; the item keeps them all",
+        arguments: [
+            // hidden prefixes, value only, the line
+            ([String](), false, "group:SquadA · triage::Maintainer · affects::1.0 · bug"),
+            (["group:", "affects::"], false, "triage::Maintainer · bug"),
+            ([], true, "group:SquadA · Maintainer · 1.0 · bug"),
+            (["GROUP:"], true, "Maintainer · 1.0 · bug"),
+            // everything hidden leaves no line
+            (["group:", "triage", "affects", "bug"], false, nil),
+        ] as [([String], Bool, String?)])
+    func rowLabelsPreference(hidden: [String], valueOnly: Bool, line: String?) {
+        let item = Self.fixtures.workItemsScreen.item(
+            40, "Labels", labels: ["group:SquadA", "triage::Maintainer", "affects::1.0", "bug"])
+        let rows = WorkItemRowLabels(hidden: hidden, showsScopedValueOnly: valueOnly)
+        #expect(
+            WorkItemRowModel.secondLine(of: item, team: Self.fixtures.team, filters: WorkItemFilters(), rowLabels: rows) == line)
+        // The search and the detail read the item's own labels.
+        #expect(item.labels.count == 4)
+        var data = Self.fixtures.workItemsScreen.data().data
+        data.workItems.rowLabels = rows
+        let row = WorkItemRowModel(item, data: data)
+        #expect(row.secondLine == line)
+        #expect(row.matches("group:squada"))
+    }
+
+    @Test("WI-04 the pill and the Slot card show the scheduled slot, the Slot card names a different due slot")
+    func scheduledSlotLeadsTheDueSlot() throws {
+        let f = Self.fixtures
+        let w = f.workItemsScreen
+        var team = f.team
+        team.slotLabelPrefix = "slot::"
+        team.slotScheduledLabelPrefix = "slot-scheduled::"
+        let item = w.item(31, "Rework", labels: ["workflow::committed", "slot::2026.45", "slot-scheduled::2026.47"])
+        let same = w.item(32, "Same", labels: ["slot::2026.45", "slot-scheduled::2026.45"])
+        let state = w.data(WorkItemLists(committed: WorkItemList(count: 2, items: [item, same]), others: nil), team: team)
+
+        let row = WorkItemRowModel(item, data: state.data)
+        #expect(row.slot == "2026.47")
+        #expect(row.slotLabel?.title == "slot-scheduled::2026.47")
+        // The due slot's label stays on the second line only when it names another slot.
+        #expect(row.secondLine == "slot::2026.45")
+        #expect(WorkItemRowModel(same, data: state.data).secondLine == nil)
+
+        let detail = try #require(WorkItemDetailModel(state.data, selection: item.id))
+        #expect(detail.slotName?.description == "2026.47")
+        #expect(detail.slot?.name.description == "2026.47")
+        #expect(detail.dueSlot?.description == "2026.45")
+        let sameDetail = try #require(WorkItemDetailModel(state.data, selection: same.id))
+        #expect(sameDetail.dueSlot == nil)
     }
 }

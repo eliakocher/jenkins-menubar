@@ -1,7 +1,7 @@
 import Foundation
 
 /// A parameter of a build, from Jenkins's `ParametersAction` (PIPE-09).
-public struct BuildParameter: Hashable, Sendable {
+public struct BuildParameter: Codable, Hashable, Sendable {
     public var name: String
     /// the value as a form sends it: the text, `true` or `false`, or the number
     public var value: String

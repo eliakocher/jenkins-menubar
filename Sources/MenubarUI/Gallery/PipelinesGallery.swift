@@ -12,6 +12,7 @@ struct PipelinesGalleryView: View {
     var size = MainWindowGallerySize.standard
     var failedTests = FailedTestsFixtures.standard
     var flakyHints = FlakyHintFixtures(states: [:])
+    var buildInfo = BuildInfoFixtures.standard(Fixtures())
 
     var body: some View {
         MainWindowGalleryView(
@@ -23,6 +24,7 @@ struct PipelinesGalleryView: View {
             BuildDetailContent(model: selection.flatMap { BuildDetailModel(job: $0, data: data) }, actions: .none)
                 .environment(\.failedTestsFixtures, failedTests)
                 .environment(\.flakyHintFixtures, flakyHints)
+                .environment(\.buildInfoFixtures, buildInfo)
         }
     }
 }

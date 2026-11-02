@@ -70,8 +70,6 @@ struct ProjectsTests {
         #expect(throws: ProjectError.otherJenkins("server")) { try store.add(otherJenkins) }
         #expect(throws: ProjectError.otherGitLab("server")) { try store.add(otherGitLab) }
         #expect(store.projects().count == 1)
-        #expect(ProjectError.otherJenkins("server").message
-            == "Uses another Jenkins than server: the Jenkins token is for one server")
     }
 
     @Test("PROJ-02 removes a project but never the primary one, and forgets only its state")

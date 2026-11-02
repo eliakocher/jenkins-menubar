@@ -1,9 +1,9 @@
 import MenubarCore
 import SwiftUI
 
-/// The failed build detail's Claude section (AI-02, AI-05): one row with "Why Did It Fail?" as its primary action and
-/// "Open in Claude Code" next to it, and Claude's investigation as a card below. Hidden while the Claude features are
-/// off or `claude` isn't installed, and in the gallery.
+/// The failed build detail's Claude section (AI-02, AI-05): "Why Did It Fail?" as its action, and Claude's
+/// investigation as a card below; the chat's own "Continue in Claude Code" takes it on from there. Hidden while the
+/// Claude features are off or `claude` isn't installed, and in the gallery.
 struct ExplainBuildSection: View {
     let build: Build
     /// the build's page, which Claude Code's prompt links
@@ -33,15 +33,18 @@ struct ExplainBuildSection: View {
                         }
                     }
                     if state == .idle {
-                        Text("Claude reads the failed tests, the errors in the log and the commits since the last green build.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("Claude reads the failed tests, the errors in the log and the commits since the last green build.")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            // The Claude features are turned on and off in Settings → Claude.
+                            SettingsGearButton(field: .claude)
+                        }
                     }
                 }
                 .controlSize(.small)
                 .padding(.vertical, 2)
-                ClaudeCodeLaunchLine(context: .build(build, page: page, failedTests: []))
                 AIAnswerRows(
                     state: state, subject: subject, item: .build(build, page: page, failedTests: failedTests ?? []),
                     send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
@@ -77,7 +80,6 @@ struct ExplainBuildSection: View {
         ) { picked in
             Task { await model.ai.explain(build, failedTests: failedTests, flakyHints: hints, model: picked) }
         }
-        OpenInClaudeCodeButton(context: .build(build, page: page, failedTests: failedTests ?? []))
     }
 }
 

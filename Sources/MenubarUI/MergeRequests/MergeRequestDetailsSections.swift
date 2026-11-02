@@ -232,8 +232,8 @@ extension MergeRequest.Person {
 // MARK: - Discussion
 
 /// The open threads: each with its first comment, who wrote it, where on the diff and the text as Markdown, then the
-/// replies behind a thin bar, folded to the last two when long; cut after 5 threads with "Show All (N)" (MR-07). Under them, while the Claude features are on, Summarize Discussion and Open in
-/// Claude Code with Claude's answer (AI-03, AI-05). Nothing when there is neither.
+/// replies behind a thin bar, folded to the last two when long; cut after 5 threads with "Show All (N)" (MR-07). Under them, while the Claude
+/// features are on, Summarize Discussion with Claude's answer (AI-03). Nothing when there is neither.
 struct DiscussionCard: View {
     let details: MergeRequestDetails?
     let mergeRequest: MergeRequest
@@ -256,7 +256,7 @@ struct DiscussionCard: View {
         if !threads.isEmpty || resolved > 0 || offersClaude || isLoading {
             DetailCard("Discussion", symbol: "bubble.left.and.bubble.right", width: .fullWidth) {
                 VStack(alignment: .leading, spacing: 10) {
-                    if isLoading, details == nil {
+                    if isLoading, details?.discussionsLoaded != true {
                         SkeletonLines(count: 4)
                     } else if !threads.isEmpty || !(details?.resolvedThreads.isEmpty ?? true) {
                         threadList(threads)
@@ -266,7 +266,7 @@ struct DiscussionCard: View {
                             text: resolved == 1 ? "The thread is resolved" : "All \(resolved) threads are resolved")
                     }
                     if let model, offersClaude {
-                        if !threads.isEmpty || resolved > 0 || (isLoading && details == nil) {
+                        if !threads.isEmpty || resolved > 0 || (isLoading && details?.discussionsLoaded != true) {
                             Divider()
                         }
                         ClaudeDiscussion(model: model, mergeRequest: mergeRequest)
@@ -279,9 +279,7 @@ struct DiscussionCard: View {
                             text: "\(threads.count)\(details?.hasMoreDiscussions == true ? "+" : "") open",
                             tint: MergeRequestStatus.Color.orange.swiftUI)
                     }
-                    if threads.count + (details?.resolvedThreads.count ?? 0) > 1 {
-                        CommentSortMenu()
-                    }
+                    CommentSortMenu(threadCount: threads.count + (details?.resolvedThreads.count ?? 0))
                 }
             }
         }
@@ -312,8 +310,8 @@ struct DiscussionCard: View {
     }
 }
 
-/// Summarize Discussion and Open in Claude Code, with Claude's summary (AI-03, AI-05): the merge request detail's Claude
-/// rows inside its Discussion card.
+/// Summarize Discussion, with Claude's summary (AI-03, AI-05): the merge request detail's Claude rows inside its Discussion
+/// card. Continuing in Claude Code is the chat's "Continue in Claude Code".
 private struct ClaudeDiscussion: View {
     let model: AppModel
     let mergeRequest: MergeRequest
@@ -330,11 +328,9 @@ private struct ClaudeDiscussion: View {
                 ) { picked in
                     Task { await model.ai.summarize(mergeRequest, model: picked) }
                 }
-                OpenInClaudeCodeButton(context: .mergeRequest(mergeRequest))
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            ClaudeCodeLaunchLine(context: .mergeRequest(mergeRequest))
             AIAnswerRows(
                 state: state, subject: subject, item: .mergeRequest(mergeRequest),
                 send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }

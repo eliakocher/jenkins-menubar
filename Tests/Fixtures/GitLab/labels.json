@@ -4,7 +4,7 @@
       "labels": {
         "nodes": [
           {
-            "title": "uStatus::InVerification",
+            "title": "status::InVerification",
             "color": "#808080"
           }
         ]

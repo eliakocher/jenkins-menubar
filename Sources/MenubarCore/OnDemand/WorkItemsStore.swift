@@ -12,8 +12,9 @@ public final class WorkItemsStore {
     public nonisolated static let problemKey = "gitlab.workItems"
     /// how many related-MR requests run at once (OD-03)
     public nonisolated static let relatedRequestsAtOnce = 6
-    /// how long a related-MR answer is reused while its work item is unchanged: an MR can be merged meanwhile (OD-03)
-    public nonisolated static let relatedReusedFor: TimeInterval = 600
+    /// how long a related-MR answer is reused while its work item is unchanged: an MR can be merged or mention it
+    /// meanwhile without touching the item (OD-03; 30 min since Task 7.06, was 10). The window's Reload asks at once.
+    public nonisolated static let relatedReusedFor: TimeInterval = 1800
     /// how long a related-MR answer is kept at all (OD-03)
     public nonisolated static let relatedKeptFor: TimeInterval = 86400
 
@@ -36,6 +37,8 @@ public final class WorkItemsStore {
     /// called after each load that ended, for what follows the work items, like the slot alert (SLOT-04)
     @ObservationIgnored public var onLoaded: @MainActor () -> Void = {}
 
+    /// whether the next load asks every related MR again, whatever the age of its answer: the window's Reload
+    @ObservationIgnored private var relatedRefreshRequested = false
     @ObservationIgnored private let services: GitLabServices
     @ObservationIgnored private let preferences: @MainActor () -> Preferences
     @ObservationIgnored private let project: ProjectID
@@ -75,7 +78,7 @@ public final class WorkItemsStore {
     ///
     /// - it remembers their labels, asks GitLab about the filter labels none of them has, and logs each newly gone one
     ///   once (WI-06);
-    /// - it refreshes their related MRs, 6 at a time, reusing an answer for 10 min while its work item is unchanged
+    /// - it refreshes their related MRs, 6 at a time, reusing an answer for 30 min while its work item is unchanged
     ///   (OD-03). A failed request keeps the old answer.
     ///
     /// Without a GitLab token, it asks nothing and discards the cached work items (MR-04). A failed load keeps them,
@@ -109,6 +112,33 @@ public final class WorkItemsStore {
         }
         await services.track(Self.problemKey, problem)
         onLoaded()
+    }
+
+    /// Makes the next load ask every work item's related MRs again, whatever the age of their answers, as the window's
+    /// Reload does (OD-06).
+    public func refreshRelatedOnNextLoad() {
+        relatedRefreshRequested = true
+    }
+
+    /// Asks GitLab for the related MRs of one work item that isn't among the loaded ones, like a slot's item of someone
+    /// else, so its detail shows them (SLOT-09). Nothing is asked for an epic, for an answer younger than
+    /// ``relatedReusedFor`` that still fits the item's last update, or without a token; a failed request changes nothing.
+    ///
+    /// - Parameter workItem: the work item
+    public func loadRelatedMergeRequests(of workItem: WorkItem) async {
+        guard let operation = GitLabOperation.relatedMergeRequests(of: workItem) else { return }
+        let now = services.now()
+        if let entry = relatedMergeRequests.entries[workItem.reference], entry.workItemUpdatedAt == workItem.updatedAt,
+            now.timeIntervalSince(entry.fetchedAt) < Self.relatedReusedFor
+        {
+            return
+        }
+        guard case .success(let session) = await services.session(),
+            let mergeRequests = try? await session.client.send(operation)
+        else { return }
+        relatedMergeRequests.entries[workItem.reference] = RelatedMergeRequestsCache.Entry(
+            workItemUpdatedAt: workItem.updatedAt, fetchedAt: services.now(), mergeRequests: mergeRequests)
+        saveRelatedMergeRequests()
     }
 
     /// Searches the labels for the label picker: the remembered ones, the filter labels and GitLab's (WI-06). The
@@ -185,7 +215,7 @@ public final class WorkItemsStore {
         var memory = labels
         memory.remember(workItems, filters: filters, at: services.now())
         let check = try await LabelSearch(client: client, project: path, clock: services.clock)
-            .checkFilterLabels(filters: filters, workItems: workItems, memory: memory)
+            .checkFilterLabels(filters: filters, workItems: workItems, memory: memory, now: services.now())
         labels = check.memory
         saveLabels()
         for label in check.newlyMissing {
@@ -193,18 +223,20 @@ public final class WorkItemsStore {
         }
     }
 
-    /// Asks GitLab for the related MRs of the work items whose answer is missing, older than 10 min, or older than the
+    /// Asks GitLab for the related MRs of the work items whose answer is missing, older than 30 min, or older than the
     /// work item's last update; 6 at a time (OD-03). Answers older than a day are dropped first.
     ///
     /// Each answer shows as soon as it arrives. A failed or cancelled request keeps the work item's old answer.
     private func refreshRelatedMergeRequests(of workItems: [WorkItem], client: GitLabClient) async throws {
         let now = services.now()
+        let forced = relatedRefreshRequested
+        relatedRefreshRequested = false
         relatedMergeRequests.entries = relatedMergeRequests.entries.filter { now.timeIntervalSince($0.value.fetchedAt) < Self.relatedKeptFor }
         let due: [(WorkItem, GitLabOperation<[RelatedMergeRequest]>)] = workItems.compactMap { item in
             guard let operation = GitLabOperation.relatedMergeRequests(of: item) else {
                 return nil
             }
-            if let entry = relatedMergeRequests.entries[item.reference], entry.workItemUpdatedAt == item.updatedAt,
+            if !forced, let entry = relatedMergeRequests.entries[item.reference], entry.workItemUpdatedAt == item.updatedAt,
                 now.timeIntervalSince(entry.fetchedAt) < Self.relatedReusedFor
             {
                 return nil

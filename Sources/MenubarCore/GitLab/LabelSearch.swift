@@ -75,7 +75,7 @@ public struct LabelSearch: Sendable {
         for year in years {
             do {
                 for label in try await client.send(.labels(project: project, searchTerm: "\(prefix)\(year).")) {
-                    if SlotName(label: label.title, prefix: prefix) != nil {
+                    if SlotName(label: label.title, prefix: prefix)?.isoWeek != nil {
                         found[label.title] = label
                     }
                 }
@@ -95,15 +95,26 @@ public struct LabelSearch: Sendable {
     ///   - filters: the current filters
     ///   - workItems: the loaded work items
     ///   - memory: the label memory before the check
+    ///   - now: the time of the check; a label GitLab was asked about less than
+    ///     ``LabelMemory/filterCheckReusedFor`` before keeps its flag without a request
     /// - Returns: the new memory, and the labels flagged that weren't before, to log once
     /// - Throws: `CancellationError` when the task was cancelled
-    public func checkFilterLabels(filters: WorkItemFilters, workItems: [WorkItem], memory: LabelMemory) async throws
+    public func checkFilterLabels(filters: WorkItemFilters, workItems: [WorkItem], memory: LabelMemory, now: Date) async throws
         -> FilterLabelCheck
     {
         var memory = memory
         let had = Set(workItems.flatMap(\.labels).map(\.title))
+        let filterLabels = filters.withLabels + filters.withoutLabels
+        // Only the current filter labels' answers are worth keeping.
+        memory.checkedAt = memory.checkedAt.filter { filterLabels.contains($0.key) }
         var missing: [String] = []
-        for label in filters.withLabels + filters.withoutLabels where !had.contains(label) {
+        for label in filterLabels where !had.contains(label) {
+            if let checked = memory.checkedAt[label], now.timeIntervalSince(checked) < LabelMemory.filterCheckReusedFor,
+                now >= checked
+            {
+                if memory.missing.contains(label) { missing.append(label) }
+                continue
+            }
             guard let client else {
                 if memory.missing.contains(label) { missing.append(label) }
                 continue
@@ -111,6 +122,7 @@ public struct LabelSearch: Sendable {
             do {
                 let found = try await client.send(.labels(project: project, searchTerm: label))
                 memory.remember(colorsOf: found)
+                memory.checkedAt[label] = now
                 if !found.contains(where: { $0.title == label }) {
                     missing.append(label)
                 }
@@ -146,7 +158,7 @@ public struct LabelSearchResult: Hashable, Sendable {
     public static let noAnswerProblem = "GitLab did not answer: only the labels of your work items"
 }
 
-/// The answer of ``LabelSearch/checkFilterLabels(filters:workItems:memory:)``.
+/// The answer of ``LabelSearch/checkFilterLabels(filters:workItems:memory:now:)``.
 public struct FilterLabelCheck: Hashable, Sendable {
     /// the label memory with the gone filter labels and the new colors
     public var memory: LabelMemory

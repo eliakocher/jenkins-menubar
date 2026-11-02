@@ -82,7 +82,12 @@ enum MainWindowLinks {
                 return nil
             }
             return model.workItems.lists?.all.first { $0.id == id }?.webURL
-        case .activity, .slots:
+        case .slots:
+            guard let id = selection.slots else {
+                return nil
+            }
+            return (model.slotItems.items + (model.workItems.lists?.all ?? [])).first { $0.id == id }?.webURL
+        case .activity, .digest:
             return nil
         case .workspaces:
             // The checkout's merge request, else its work item (WS-04).

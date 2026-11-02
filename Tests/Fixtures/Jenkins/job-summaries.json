@@ -1,0 +1,10 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+  "builds": [
+    { "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun", "number": 13, "result": null, "building": true, "duration": 0, "timestamp": 1792800000000 },
+    { "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun", "number": 12, "result": "FAILURE", "building": false, "duration": 1900000, "timestamp": 1792790000000 },
+    { "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun", "number": 11, "result": "SUCCESS", "building": false, "duration": 540000, "timestamp": 1792780000000 },
+    { "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun", "number": 10, "result": "ABORTED", "building": false, "duration": 62000 },
+    { "_class": "org.jenkinsci.plugins.workflow.job.WorkflowRun", "number": 0 }
+  ]
+}

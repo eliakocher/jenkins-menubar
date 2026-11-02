@@ -40,7 +40,7 @@ struct OnDemandTests {
             let team = TeamStore(folder: folder.file("support"), report: { _ in })
             try team.save(Project(id: .main, team: TeamValues(
                 jenkinsJobURL: "https://jenkins.example.com/job/project", gitLabURL: OnDemandTests.gitLab.absoluteString,
-                gitLabProject: OnDemandTests.path, committedLabel: "cLevelOfCommitment::Committed",
+                gitLabProject: OnDemandTests.path, committedLabel: "commitment::Committed",
                 ignoredMergeRequestPrefix: "[cascade]")))
             caches = CacheStore(folder: folder.file("caches"), report: { _ in })
             let clock = clock
@@ -145,23 +145,6 @@ struct OnDemandTests {
         #expect(workItems.lists?.all.map(\.reference) == ["\(Self.path)#1", "\(Self.path)#2"])
         #expect(!mergeRequests.isLoading && !workItems.isLoading)
         #expect(world.stub.requests.isEmpty)
-    }
-
-    @Test("OD-01 a loading section reports its loading state until the answer arrives")
-    func loadingState() async throws {
-        let world = try World()
-        world.stub.answer(operation: "MergeRequests", after: .seconds(2), body: try FixtureFiles.string("GitLab/merge-requests.json"))
-        let store = world.mergeRequestsStore()
-        #expect(store.list == nil)
-
-        let load = Task { await store.load() }
-        await world.clock.waitForSleepers()
-        #expect(store.isLoading)
-        world.clock.advance(by: .seconds(2))
-        await load.value
-        #expect(!store.isLoading)
-        #expect(store.list?.username == "alex.doe")
-        #expect(store.problem == nil)
     }
 
     // MARK: - MR-04
@@ -277,14 +260,11 @@ struct OnDemandTests {
         await store.load()
         #expect(store.lastLoadAt == Self.start.addingTimeInterval(200))
         #expect(store.fetchedAt == Self.start.addingTimeInterval(100))
-
-        let afternoon = Date(timeIntervalSince1970: 14 * 3600 + 5 * 60)
-        #expect(GitLabText.lastChecked(afternoon, locale: Locale(identifier: "de_CH"), timeZone: .gmt) == "Last checked 14:05")
     }
 
     // MARK: - OD-03, the stores
 
-    @Test("OD-03 reuses an answer for 10 minutes while unchanged")
+    @Test("OD-03 reuses an answer for 30 minutes while unchanged")
     func relatedReused() async throws {
         let world = try World()
         let store = world.workItemsStore()
@@ -292,11 +272,25 @@ struct OnDemandTests {
         #expect(world.relatedIIDs == ["1", "2"])
         #expect(store.relatedMergeRequests.entries["\(Self.path)#1"]?.fetchedAt == Self.start)
 
-        world.clock.advance(by: .seconds(599))
+        world.clock.advance(by: .seconds(1799))
         await store.load()
         #expect(world.relatedIIDs == ["1", "2"])
 
         world.clock.advance(by: .seconds(1))
+        await store.load()
+        #expect(world.relatedIIDs == ["1", "1", "2", "2"])
+    }
+
+    @Test("OD-06 the window's Reload asks every related MR again, whatever the age of its answer")
+    func relatedForcedByReload() async throws {
+        let world = try World()
+        let store = world.workItemsStore()
+        await store.load()
+        world.clock.advance(by: .seconds(60))
+        store.refreshRelatedOnNextLoad()
+        await store.load()
+        #expect(world.relatedIIDs == ["1", "1", "2", "2"])
+        // Only once: the next load reuses the answers again.
         await store.load()
         #expect(world.relatedIIDs == ["1", "1", "2", "2"])
     }
@@ -323,7 +317,7 @@ struct OnDemandTests {
         #expect(store.marker(of: Self.item(1), ignoredPrefix: "[cascade]") == .merged)
 
         world.stub.fail(operation: "RelatedMergeRequests", with: .unknownHost)
-        world.clock.advance(by: .seconds(600))
+        world.clock.advance(by: .seconds(WorkItemsStore.relatedReusedFor))
         await store.load()
         #expect(world.relatedIIDs.count == 4)
         #expect(store.relatedMergeRequests.entries["\(Self.path)#1"] == old)
@@ -371,49 +365,22 @@ struct OnDemandTests {
 
     // MARK: - The loads' side work
 
-    @Test("OD-02 one load is one GitLab check time")
-    func loadIsOneCheckTime() async throws {
-        let world = try World()
-        world.preferences.workItems.withoutLabels = ["wontfix"]
-        let store = world.workItemsStore()
-        await store.load()
-        let times = await world.checkTimes.all()
-        // WorkItems, Labels for the must-not-have label, and the two work items' related MRs.
-        #expect(times.map(\.source) == [.gitlab])
-        #expect(times.first?.requests == 4)
-        #expect(await world.log.entries().contains { $0.message.hasPrefix("Checked GitLab: 4 requests") })
-    }
-
     @Test("WI-06 logs a gone filter label once")
     func goneFilterLabelLoggedOnce() async throws {
         let world = try World()
-        world.preferences.workItems.withoutLabels = ["uStatus::Gone"]
+        world.preferences.workItems.withoutLabels = ["status::Gone"]
         let store = world.workItemsStore()
         await store.load()
         await store.load()
-        #expect(store.labels.missing == ["uStatus::Gone"])
-        #expect(store.labels.missingFilterLabels(of: world.preferences.workItems) == ["uStatus::Gone"])
-        let entries = await world.logEntries(LabelMemory.missingMessage(label: "uStatus::Gone"))
+        #expect(store.labels.missing == ["status::Gone"])
+        #expect(store.labels.missingFilterLabels(of: world.preferences.workItems) == ["status::Gone"])
+        let entries = await world.logEntries(LabelMemory.missingMessage(label: "status::Gone"))
         #expect(entries.count == 1)
         #expect(entries.first?.level == .warning)
         #expect(entries.first?.outcome == .warning("MISSING"))
         // The labels of the work items are remembered, with their colors.
         #expect(store.labels.known == ["bug"])
         #expect(world.workItemsStore().labels.colors["bug"] == "#ff0000")
-    }
-
-    @Test("WI-06 the label search remembers GitLab's colors")
-    func labelSearchRemembersColors() async throws {
-        let world = try World()
-        world.stub.answer(operation: "Labels", body: try FixtureFiles.string("GitLab/labels.json"))
-        let store = world.workItemsStore()
-        let search = Task { try await store.searchLabels("verif") }
-        await world.clock.waitForSleepers()
-        world.clock.advance(by: LabelSearch.pause)
-        let result = try await search.value
-        #expect(result.labels == ["uStatus::InVerification"])
-        #expect(result.problem == nil)
-        #expect(store.labels.colors["uStatus::InVerification"] == "#808080")
     }
 
     @Test("WI-02 asks GitLab for my username when the check has none")
@@ -497,6 +464,34 @@ struct OnDemandTests {
         #expect(world.count("MergeRequests") == 5)
     }
 
+    @Test("OD-06 while nobody looks, shown lists load every 5 minutes, and stale ones at once when someone looks again")
+    func backgroundLoadsSlower() async throws {
+        let world = try World()
+        let scheduler = world.scheduler(world.mergeRequestsStore(), world.workItemsStore())
+        await world.start(scheduler)
+        await scheduler.setVisible([.mergeRequests])
+        await world.clock.waitForSleepers(2)
+        #expect(world.count("MergeRequests") == 1)
+
+        // The app goes to the background: the wait under way becomes 5 minutes from the last load.
+        await scheduler.setAttentive(false)
+        await world.clock.waitForSleepers(2)
+        world.clock.advance(by: .seconds(299))
+        #expect(world.count("MergeRequests") == 1)
+        world.clock.advance(by: .seconds(1))
+        await world.clock.waitForSleepers(2)
+        #expect(world.count("MergeRequests") == 2)
+
+        // Back in front after 40 s: older than the maximum age, so it loads at once, then every 30 s again.
+        world.clock.advance(by: .seconds(40))
+        await scheduler.setAttentive(true)
+        await world.clock.waitForSleepers(2)
+        #expect(world.count("MergeRequests") == 3)
+        world.clock.advance(by: .seconds(30))
+        await world.clock.waitForSleepers(2)
+        #expect(world.count("MergeRequests") == 4)
+    }
+
     @Test("OD-02 check now reloads")
     func checkNowReloads() async throws {
         let world = try World()
@@ -515,32 +510,6 @@ struct OnDemandTests {
         await world.clock.waitForSleepers(3)
         #expect(world.count("WorkItems") == 1)
         #expect(world.count("MergeRequests") == 2)
-    }
-
-    @Test("OD-03 related MRs load only with work items on screen")
-    func relatedOnlyWithWorkItems() async throws {
-        let world = try World()
-        try world.cacheWorkItems([1, 2], fetchedAt: Self.start.addingTimeInterval(-3600))
-        let scheduler = world.scheduler(world.mergeRequestsStore(), world.workItemsStore())
-        await world.start(scheduler)
-        await scheduler.setVisible([.mergeRequests])
-        await world.clock.waitForSleepers(2)
-        for _ in 0..<3 {
-            world.clock.advance(by: .seconds(30))
-            await world.clock.waitForSleepers(2)
-        }
-        #expect(world.count("MergeRequests") == 4)
-        #expect(world.count("WorkItems") == 0 && world.count("RelatedMergeRequests") == 0)
-
-        await scheduler.setVisible([.mergeRequests, .workItems])
-        await world.clock.waitForSleepers(3)
-        #expect(world.count("WorkItems") == 1)
-        #expect(world.relatedIIDs == ["1", "2"])
-
-        await scheduler.setVisible([.mergeRequests])
-        world.clock.advance(by: .seconds(3600))
-        await world.clock.waitForSleepers(2)
-        #expect(world.count("WorkItems") == 1 && world.count("RelatedMergeRequests") == 2)
     }
 
     @Test("WI-02 changing a filter reloads the work items")

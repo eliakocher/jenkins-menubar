@@ -34,36 +34,36 @@ struct GitLabSettingsForm<Picker: View>: View {
 
     var body: some View {
         Form {
+            SettingsPaneHeader(pane: .workItems)
             Section {
-                SwiftUI.Picker("How old GitLab data may be when it is shown", selection: $preferences.gitLabMaxAgeSeconds) {
-                    ForEach(Preferences.gitLabMaxAgeOptions, id: \.self) { seconds in
-                        Text(SettingsOptionTitles.seconds(seconds)).tag(seconds)
-                    }
-                }
-                .pickerStyle(.menu)
-            } footer: {
-                SettingsFooter(
-                    "Merge requests and work items load when the panel or the window shows them and their data is older "
-                        + "than this. Check Now loads them at once.")
-            }
-            Section {
-                menu("Show", selection: $preferences.workItems.scope, title: SettingsOptionTitles.scope)
-                menu("Type", selection: $preferences.workItems.type, title: SettingsOptionTitles.type)
-                menu("State", selection: $preferences.workItems.state, title: SettingsOptionTitles.state)
-                menu("Sort by", selection: $preferences.workItems.sort, title: SettingsOptionTitles.sort)
-                SwiftUI.Picker("Show at most", selection: $preferences.workItems.limit) {
+                menu(
+                    "Show", "Whether work items are assigned to you or created by you",
+                    selection: $preferences.workItems.scope, title: SettingsOptionTitles.scope)
+                .settingsAnchor(.workItemFilters)
+                menu(
+                    "Type", "Which kinds of work item show", selection: $preferences.workItems.type,
+                    title: SettingsOptionTitles.type)
+                menu(
+                    "State", "Whether open, closed or both show", selection: $preferences.workItems.state,
+                    title: SettingsOptionTitles.state)
+                menu(
+                    "Sort by", "How the work items are ordered",
+                    selection: $preferences.workItems.sort, title: SettingsOptionTitles.sort)
+                SwiftUI.Picker(selection: $preferences.workItems.limit) {
                     ForEach(WorkItemFilters.limitOptions, id: \.self) { limit in
                         Text(verbatim: String(limit)).tag(limit)
                     }
+                } label: {
+                    SettingsRowLabel(
+                        "Show at most", "Committed work items always show, up to 50; the sort and the limit apply to the others")
                 }
                 .pickerStyle(.menu)
             } header: {
-                Text("Work Items")
-            } footer: {
-                SettingsFooter("Committed work items always show, up to 50; the sort and the limit apply to the others.")
+                SettingsSectionHeader("Filters")
             }
             Section {
                 labelList(.with)
+                    .settingsAnchor(.workItemLabels)
                 labelList(.without)
                 ForEach(missingLabels, id: \.self) { label in
                     StatusLine(.problem, "\(label) is not in GitLab any more (renamed or removed?)") {
@@ -72,7 +72,7 @@ struct GitLabSettingsForm<Picker: View>: View {
                 }
             } header: {
                 HStack {
-                    Text("Work Item Labels")
+                    SettingsSectionHeader("Labels")
                     Spacer()
                     if !filters.withLabels.isEmpty || !filters.withoutLabels.isEmpty {
                         Button("Clear All", action: actions.clearLabels)
@@ -80,27 +80,45 @@ struct GitLabSettingsForm<Picker: View>: View {
                     }
                 }
             } footer: {
-                SettingsFooter(
-                    "Only the work items are filtered. With All of These, a work item needs every label, and only one "
-                        + "per scope (the part before ::), so a new label replaces the one of its scope. With Any of "
-                        + "These, one is enough. Work items with a label from Must Have None of These never show.")
+                SettingsFooter("Labels filter only the work items.")
+            }
+            Section {
+                RowLabelFields(rows: $preferences.workItemRows)
+            } header: {
+                SettingsSectionHeader("Labels on Rows")
+            } footer: {
+                SettingsFooter("Only the rows' second line changes; the filters, the search and the details keep every label.")
             }
         }
         .formStyle(.grouped)
+        .revealsSettingsFields()
     }
 
     private func menu<Value: Hashable & CaseIterable>(
-        _ label: String, selection: Binding<Value>, title: @escaping (Value) -> String
+        _ label: String, _ caption: String, selection: Binding<Value>, title: @escaping (Value) -> String
     ) -> some View where Value.AllCases: RandomAccessCollection {
-        SwiftUI.Picker(label, selection: selection) {
+        SwiftUI.Picker(selection: selection) {
             ForEach(Value.allCases, id: \.self) { value in
                 Text(title(value)).tag(value)
             }
+        } label: {
+            SettingsRowLabel(label, caption)
         }
         .pickerStyle(.menu)
     }
 
-    /// One list: its label, the pills, and "Add Label…" with the picker.
+    /// what a list does to the work items, in one line under its name
+    private func labelCaption(_ list: WorkItemFilters.LabelList) -> String {
+        switch (list, filters.labelsMatch) {
+        case (.with, .all):
+            "A work item needs every one, and only one per scope (the part before ::), so a new label replaces the "
+                + "one of its scope"
+        case (.with, .any): "A work item needs at least one"
+        case (.without, _): "Work items with any of these never show"
+        }
+    }
+
+    /// One list: its label with its line, the pills, and "Add Label…" with the picker.
     private func labelList(_ list: WorkItemFilters.LabelList) -> some View {
         let labels = list == .with ? filters.withLabels : filters.withoutLabels
         return VStack(alignment: .leading, spacing: 6) {
@@ -122,6 +140,10 @@ struct GitLabSettingsForm<Picker: View>: View {
             } else {
                 Text("Must have none of these")
             }
+            Text(verbatim: labelCaption(list))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: 8) {
                 SettingsFlowLayout {
                     ForEach(labels, id: \.self) { label in
@@ -160,6 +182,51 @@ struct GitLabSettingsForm<Picker: View>: View {
                     pickerList = nil
                 }
             })
+    }
+}
+
+/// The two row settings of WI-04: the labels and scope prefixes the rows leave out, typed with commas between them,
+/// and showing a scoped label by its value. The text is kept while it is typed and saved once the field is left or
+/// Return is pressed, so one edit is one logged change.
+private struct RowLabelFields: View {
+    @Binding var rows: WorkItemRowLabels
+    @ViewState private var text: String
+    @FocusState private var isEditing: Bool
+
+    init(rows: Binding<WorkItemRowLabels>) {
+        _rows = rows
+        _text = ViewState(initialValue: rows.wrappedValue.hidden.joined(separator: ", "))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsRowLabel(
+                "Hide on Rows", "Labels or scope prefixes to leave out, separated by commas, like group:, affects::")
+            TextField("Hide on Rows", text: $text, prompt: Text(verbatim: "group:, affects::"))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .focused($isEditing)
+                .onSubmit(commit)
+                .onChange(of: isEditing) { _, editing in
+                    if !editing { commit() }
+                }
+                .onChange(of: rows.hidden) { _, hidden in
+                    // A change from outside, like a restored backup, while the field isn't being typed in.
+                    if !isEditing { text = hidden.joined(separator: ", ") }
+                }
+        }
+        .onDisappear(perform: commit)
+        Toggle(isOn: $rows.showsScopedValueOnly) {
+            SettingsRowLabel("Show scoped labels by their value only", "priority::high shows as high")
+        }
+    }
+
+    private func commit() {
+        let entries = WorkItemRowLabels.entries(from: text)
+        text = entries.joined(separator: ", ")
+        if rows.hidden != entries {
+            rows.hidden = entries
+        }
     }
 }
 

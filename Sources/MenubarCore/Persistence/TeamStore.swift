@@ -133,6 +133,15 @@ public struct TeamStore: Sendable {
         } catch {
             throw TeamFileError.unreadable(error.localizedDescription)
         }
+        return try readTeamFile(data: data)
+    }
+
+    /// Reads a team file's content, as it came from a file or from a URL (``TeamFileImport``).
+    ///
+    /// - Parameter data: the file's bytes
+    /// - Returns: its team values, normalized as TEAM-01 saves them
+    /// - Throws: a ``TeamFileError`` that says why the content was refused
+    public static func readTeamFile(data: Data) throws -> TeamValues {
         // The version is read first, so a newer file is refused for its version and not for its shape.
         guard let header = try? JSONCoding.decoder.decode(TeamFileHeader.self, from: data) else {
             throw TeamFileError.notATeamFile

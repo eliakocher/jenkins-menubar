@@ -149,7 +149,7 @@ extension WorkItemFilters {
         case without
     }
 
-    /// Returns a label's scope: all before its last `::`, like `uStatus::Sub` for `uStatus::Sub::Deep`.
+    /// Returns a label's scope: all before its last `::`, like `status::Sub` for `status::Sub::Deep`.
     ///
     /// - Parameter label: the label's title
     /// - Returns: the scope, or `nil` for a label without `::`

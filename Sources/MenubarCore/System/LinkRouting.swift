@@ -116,6 +116,27 @@ public final class LinkRouting {
         }
     }
 
+    /// Makes the app the default browser again after its bundle id changed (the rename to MegaMonitor, APP-10), when
+    /// the router was on under the former id: macOS still names that id, which no app answers to now, so ``refresh()``
+    /// read the switch as off. macOS asks the user to confirm; a refusal leaves the switch off with a note. The
+    /// remembered browser stays as it was.
+    public func reclaimAfterRename() async {
+        guard !isOn, !isChanging, let this = system.thisApp else {
+            return
+        }
+        isChanging = true
+        defer { isChanging = false }
+        do {
+            try await system.setDefaultBrowser(this)
+            isOn = true
+            defaults.set(true, forKey: Self.enabledKey)
+            log("link router on again after the rename, other links go to \(browserName)")
+        } catch {
+            note = "macOS didn't make MegaMonitor the default browser again after its update, so links open in \(browserName)"
+            log("link router: macOS refused the default browser after the rename")
+        }
+    }
+
     /// Returns what a link that was opened should do.
     ///
     /// - Parameters:

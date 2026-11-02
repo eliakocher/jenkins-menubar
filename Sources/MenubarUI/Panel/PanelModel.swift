@@ -243,7 +243,7 @@ extension PanelModel {
         }
         return Summary(
             section: .workItems, title: "Work Items", text: text, isCommitted: isCommitted,
-            tint: isCommitted ? committedColor(state, committedLabel: team.committedLabel, slotPrefix: team.slotLabelPrefix) : nil,
+            tint: isCommitted ? committedColor(state, committedLabel: team.committedLabel, slotPrefix: team.slotPrefix) : nil,
             isLoading: state.isLoading && !offline, problem: marker)
     }
 

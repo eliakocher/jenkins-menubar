@@ -101,6 +101,9 @@ struct AIAnswerRows<Answer: View, Actions: View>: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Written by \(result.modelName)")
+                    // The model comes from Settings → Claude.
+                    SettingsGearButton(field: .claudeModel)
+                        .controlSize(.small)
                     Spacer(minLength: 8)
                     // The Markdown answers take the description's reading size, ⌘+ and ⌘− too.
                     if result.text != nil || subject.map({ !(model?.ai.turns(of: $0).isEmpty ?? true) }) == true {

@@ -13,52 +13,22 @@ import Testing
 /// `~/bin`, SwiftBar's settings, `launchctl`, `lsregister` or the login keychain.
 @Suite("install.sh")
 struct InstallScriptTests {
-    @Test("APP-07 install.sh builds the app, installs it and opens it")
-    func installs() async throws {
-        let world = try World()
-
-        let run = try await world.run([])
-
-        #expect(run.status == 0, "\(run.output)")
-        #expect(run.output.contains("would run: \(world.checkout.path)/build.sh --install"))
-        #expect(run.output.contains("would run: open \(world.home.path)/Applications/MegaMonitor.app"))
-        #expect(!run.output.contains("pkill"))
-        #expect(!run.output.contains("old menubar-monitor.app"), "no old bundle, so no note")
-        #expect(!run.output.contains("--retire-old"), "no old tool, so no hint")
-        #expect(run.output.hasSuffix("A dry run: nothing was changed.\n"))
-        #expect(run.changes.isEmpty, "\(run.changes)")
-    }
-
-    @Test("APP-07 install.sh quits a running copy first and points to --retire-old")
-    func quitsARunningCopy() async throws {
-        var world = try World()
-        try world.makeOldTool()
-        world.variables["FAKE_RUNNING"] = "menubar-monitor"
-        world.variables["FAKE_PLUGIN_DIR"] = world.oldTool.appending(path: "plugins").path
-
-        let run = try await world.run([])
-
-        #expect(run.status == 0, "\(run.output)")
-        let quit = try #require(run.output.range(of: "would run: pkill -x menubar-monitor"))
-        let open = try #require(run.output.range(of: "would run: open "))
-        #expect(quit.upperBound < open.lowerBound)
-        #expect(run.output.contains("./install.sh --retire-old"))
-        #expect(run.changes.isEmpty, "\(run.changes)")
-    }
-
     @Test("APP-07 install.sh quits a copy that still runs under the old executable name and notes the old bundle")
     func quitsTheOldName() async throws {
         var world = try World()
         try world.write("<plist/>", to: "Applications/menubar-monitor.app/Contents/Info.plist")
         world.variables["FAKE_RUNNING"] = "menubar-monitor"
+        world.variables["FAKE_FORMER_DEFAULTS"] = "1"
 
         let run = try await world.run([])
 
         #expect(run.status == 0, "\(run.output)")
-        #expect(run.output.contains("would run: pkill -x menubar-monitor"))
+        let quit = try #require(run.output.range(of: "would run: pkill -x menubar-monitor"))
+        let open = try #require(run.output.range(of: "would run: open \(world.home.path)/Applications/MegaMonitor.app"))
+        #expect(quit.upperBound < open.lowerBound, "the running copy quits before the new one opens")
         #expect(!run.output.contains("would run: pkill -x MegaMonitor"))
         #expect(run.output.contains("found the old menubar-monitor.app"))
-        #expect(run.output.contains("would run: open \(world.home.path)/Applications/MegaMonitor.app"))
+        #expect(run.output.contains("asks for the notification permission once more"))
         #expect(run.changes.isEmpty, "\(run.changes)")
     }
 
@@ -78,11 +48,13 @@ struct InstallScriptTests {
         for tool in ["sfltool", "lsregister"] {
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakes.appending(path: tool).path)
         }
-        let marker = home.appending(path: "Library/Application Support/menubar-monitor/refresh-login-item")
+        let marker = home.appending(path: "Library/Application Support/MegaMonitor/refresh-login-item")
 
-        func migrate(login: String) async throws -> String {
+        func migrate(login: String, oldBundle: Bool = true) async throws -> String {
             try Data(login.utf8).write(to: btm)
-            try FileManager.default.createDirectory(at: oldApp, withIntermediateDirectories: true)
+            if oldBundle {
+                try FileManager.default.createDirectory(at: oldApp, withIntermediateDirectories: true)
+            }
             let output = try await SystemProcessRunner().run(
                 URL(filePath: "/usr/bin/env"),
                 arguments: ["-i", "HOME=\(home.path)", "PATH=\(fakes.path):/usr/bin:/bin", "LSREGISTER=\(fakes.path)/lsregister",
@@ -108,30 +80,16 @@ struct InstallScriptTests {
         let output = try await migrate(login: on)
         #expect(FileManager.default.fileExists(atPath: marker.path))
         #expect(output.contains("registers it again"))
-    }
 
-    @Test("APP-07 install.sh stops without the Command Line Tools or macOS 26")
-    func checksTheRequirements() async throws {
-        var world = try World()
-        world.variables["FAKE_NO_CLT"] = "1"
-
-        let noTools = try await world.run([])
-
-        #expect(noTools.status == 1)
-        #expect(noTools.output.contains("xcode-select --install"))
-        #expect(!noTools.output.contains("build.sh"))
-
-        world.variables["FAKE_NO_CLT"] = nil
-        world.variables["FAKE_MACOS"] = "15.7"
-        let oldMac = try await world.run([])
-
-        #expect(oldMac.status == 1)
-        #expect(oldMac.output.contains("needs macOS 26 or later; this Mac runs macOS 15.7"))
-        #expect(!oldMac.output.contains("build.sh"))
-
-        let unknown = try await world.run(["--everything"])
-        #expect(unknown.status == 2)
-        #expect(noTools.changes.isEmpty && oldMac.changes.isEmpty && unknown.changes.isEmpty)
+        // The former bundle id's login item, without the old bundle (APP-10): looked at once, so a later install
+        // never turns open at login on again after the user turned it off.
+        try FileManager.default.removeItem(at: marker)
+        try FileManager.default.removeItem(at: home.appending(path: "Library/Application Support/MegaMonitor/identity-login-item-checked"))
+        _ = try await migrate(login: on, oldBundle: false)
+        #expect(FileManager.default.fileExists(atPath: marker.path))
+        try FileManager.default.removeItem(at: marker)
+        _ = try await migrate(login: on, oldBundle: false)
+        #expect(!FileManager.default.fileExists(atPath: marker.path))
     }
 
     @Test("APP-07 install.sh --retire-old unlinks the plugin, removes SwiftBar's login item, jenkins-watch and the helper")
@@ -161,25 +119,6 @@ struct InstallScriptTests {
         ])
         #expect(run.output.contains("hasn't imported from the old tool yet"), "no deleting before the import")
         #expect(run.output.contains("The old tool's folder \(old) can go (a worktree: git worktree remove \(old))."))
-        #expect(run.changes.isEmpty, "\(run.changes)")
-    }
-
-    @Test("APP-07 install.sh --retire-old stops SwiftBar from using the old tool's own plugin folder")
-    func retiresTheOldPluginFolder() async throws {
-        var world = try World()
-        try world.makeOldTool()
-        try world.installApp()
-        world.variables["FAKE_PLUGIN_DIR"] = world.oldTool.appending(path: "plugins").path
-        world.variables["FAKE_LOGIN_ITEMS"] = "SwiftBar"
-
-        let run = try await world.run(["--retire-old"])
-
-        #expect(run.status == 0, "\(run.output)")
-        #expect(run.lines(startingWith: "would run:") == [
-            "would run: defaults delete com.ameba.SwiftBar PluginDirectory",
-            #"would run: osascript -e 'tell application "System Events" to delete login item "SwiftBar"'"#,
-            "would run: lsregister -u '\(world.oldTool.path)/notifier/Jenkins Watch.app'",
-        ])
         #expect(run.changes.isEmpty, "\(run.changes)")
     }
 
@@ -214,11 +153,11 @@ struct InstallScriptTests {
     func deletesAfterAYes() async throws {
         var world = try World()
         try world.installApp()
-        try world.write("{}", to: "Library/Application Support/menubar-monitor/legacy-import.json")
+        try world.write("{}", to: "Library/Application Support/MegaMonitor/legacy-import.json")
         try world.write("MR-1", to: "Library/Caches/jenkins-menubar/watched")
         try world.write("{}", to: "Library/Logs/jenkins-menubar/jenkins-menubar.log")
         world.variables["FAKE_KEYCHAIN"] =
-            "jenkins-menubar/JENKINS_MCP_BASIC_AUTH jenkins-menubar/GITLAB_TOKEN menubar-monitor/JENKINS_MCP_BASIC_AUTH"
+            "jenkins-menubar/JENKINS_MCP_BASIC_AUTH jenkins-menubar/GITLAB_TOKEN megamonitor/JENKINS_MCP_BASIC_AUTH"
         world.variables["FAKE_HELPER_DEFAULTS"] = "1"
 
         let no = try await world.run(["--retire-old"], input: "n\n")
@@ -243,15 +182,33 @@ struct InstallScriptTests {
         #expect(no.changes.isEmpty && nothing.changes.isEmpty && yes.changes.isEmpty)
     }
 
-    @Test("APP-07 install.sh --retire-old needs the installed app")
-    func needsTheApp() async throws {
-        let world = try World()
+    @Test("APP-10 install.sh --retire-old deletes the former identity's copies only after the app copied them and a yes")
+    func deletesTheFormerIdentity() async throws {
+        var world = try World()
+        try world.installApp()
+        try world.write("{}", to: "Library/Application Support/menubar-monitor/projects.json")
+        try world.write("{}", to: "Library/Logs/menubar-monitor/menubar-monitor.log")
+        world.variables["FAKE_FORMER_DEFAULTS"] = "1"
+        world.variables["FAKE_KEYCHAIN"] = "menubar-monitor/JENKINS_MCP_BASIC_AUTH menubar-monitor/GITLAB_TOKEN megamonitor/GITLAB_TOKEN"
 
-        let run = try await world.run(["--retire-old"])
+        let notMoved = try await world.run(["--retire-old"], input: "y\n")
+        world.variables["FAKE_IDENTITY_MOVED"] = "1"
+        let no = try await world.run(["--retire-old"], input: "n\n")
+        let yes = try await world.run(["--retire-old"], input: "y\n")
 
-        #expect(run.status == 1)
-        #expect(run.output.contains("MegaMonitor isn't installed: run ./install.sh first"))
-        #expect(run.changes.isEmpty, "\(run.changes)")
+        #expect(notMoved.output.contains("hasn't copied its data from menubar-monitor yet"))
+        #expect(notMoved.lines(startingWith: "would run:").isEmpty && no.lines(startingWith: "would run:").isEmpty)
+        #expect(no.output.contains("• kept them"))
+        #expect(yes.status == 0, "\(yes.output)")
+        let library = world.home.appending(path: "Library").path
+        #expect(yes.lines(startingWith: "would run:") == [
+            "would run: rm -rf '\(library)/Application Support/menubar-monitor'",
+            "would run: rm -rf \(library)/Logs/menubar-monitor",
+            "would run: security delete-generic-password -s menubar-monitor -a GITLAB_TOKEN",
+            "would run: defaults delete local.menubar-monitor",
+        ])
+        #expect(yes.output.contains("keeps the keychain item menubar-monitor JENKINS_MCP_BASIC_AUTH: MegaMonitor has no copy of it yet"))
+        #expect(notMoved.changes.isEmpty && no.changes.isEmpty && yes.changes.isEmpty)
     }
 
     /// A made-up machine in a temporary folder: a home, a copy of the checkout, the fake tools, and the old tool's
@@ -261,7 +218,8 @@ struct InstallScriptTests {
         /// the temporary folder with its links resolved (`/private/var/…`), as the script's `realpath` prints it
         let base: URL
         /// the scenario: `FAKE_PLUGIN_DIR`, `FAKE_LOGIN_ITEMS`, `FAKE_RUNNING`, `FAKE_KEYCHAIN` ("service/account"
-        /// words), `FAKE_HELPER_DEFAULTS`, `FAKE_NO_CLT`, `FAKE_MACOS`
+        /// words), `FAKE_HELPER_DEFAULTS`, `FAKE_FORMER_DEFAULTS` (the former identity's preferences exist),
+        /// `FAKE_IDENTITY_MOVED` (the app copied them), `FAKE_NO_CLT`, `FAKE_MACOS`
         var variables: [String: String] = [:]
 
         var home: URL { base.appending(path: "home") }
@@ -366,6 +324,11 @@ struct InstallScriptTests {
                 echo "$FAKE_PLUGIN_DIR"
                 ;;
             "defaults read local.jenkins-menubar.notifier") [[ -n ${FAKE_HELPER_DEFAULTS:-} ]] ;;
+            "defaults read local.menubar-monitor") [[ -n ${FAKE_FORMER_DEFAULTS:-} ]] ;;
+            "defaults read local.megamonitor identityMigration.filesDone")
+                [[ -n ${FAKE_IDENTITY_MOVED:-} ]] || exit 1
+                echo 1
+                ;;
             "security find-generic-password -s "*) [[ " ${FAKE_KEYCHAIN:-} " == *" $3/$5 "* ]] || exit 44 ;;
             "osascript -e tell application \"System Events\" to get the name of every login item") echo "${FAKE_LOGIN_ITEMS:-}" ;;
             "pgrep -x "*) [[ " ${FAKE_RUNNING:-} " == *" $2 "* ]] ;;

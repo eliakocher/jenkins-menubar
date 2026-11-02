@@ -30,10 +30,16 @@ struct SlotsListModel: Hashable, Sendable {
     var labelsNote: String?
     /// the status label prefix, whose value the rows show
     var statusPrefix: String
+    /// the type label prefix, whose value gives a row its type symbol
+    var typePrefix: String
+    /// why the commitments didn't load, a quiet note in the footnote (SLOT-14)
+    var commitmentsNote: String?
     /// how many issues of the slot group loaded; 0 without a slot group
     var groupItems: Int
     /// whether the slot group's issues are loading
     var isLoadingGroup: Bool
+    /// whether the window's search has a text: the slot cards all open then, so the matches show
+    var isSearching: Bool
 
     /// - Parameters:
     ///   - plan: the slots
@@ -44,20 +50,24 @@ struct SlotsListModel: Hashable, Sendable {
     ///   - labelsProblem: why GitLab's slot labels or the group's issues didn't load; `nil` when they did
     ///   - groupItems: how many issues of the slot group loaded
     ///   - isLoadingGroup: whether they are loading
+    ///   - commitmentsProblem: why the commitments didn't load
     init(
         plan: SlotPlan, team: TeamValues, hasLoaded: Bool, needsToken: Bool, query: String, labelsProblem: String? = nil,
-        groupItems: Int = 0, isLoadingGroup: Bool = false
+        groupItems: Int = 0, isLoadingGroup: Bool = false, commitmentsProblem: String? = nil
     ) {
         labelsNote = labelsProblem
+        commitmentsNote = commitmentsProblem
         statusPrefix = team.statusLabelPrefix
+        typePrefix = team.typeLabelPrefix
         self.groupItems = groupItems
         self.isLoadingGroup = isLoadingGroup
         planningURL = team.slotPlanning
         project = team.gitLabProject
         withoutSlot = plan.withoutSlot
         let text = query.trimmingCharacters(in: .whitespaces)
+        isSearching = !text.isEmpty
         slots = text.isEmpty ? plan.slots : plan.slots.compactMap { Self.filtered($0, by: text) }
-        if team.slotLabelPrefix.isEmpty {
+        if team.slotPrefix.isEmpty {
             empty = .noPrefix
         } else if needsToken {
             empty = .noToken
@@ -68,6 +78,12 @@ struct SlotsListModel: Hashable, Sendable {
         } else if slots.isEmpty {
             empty = .findsNothing(text)
         }
+    }
+
+    /// Returns the item of the shown slots with the id, committed or planned; `nil` when no shown slot has it.
+    func item(_ id: WorkItem.ID?) -> SlotItem? {
+        guard let id else { return nil }
+        return slots.lazy.flatMap { $0.items + $0.planned }.first { $0.id == id }
     }
 
     /// Returns the slot with the items that match the text in their title or reference, or the whole slot when its
@@ -84,6 +100,16 @@ struct SlotsListModel: Hashable, Sendable {
         }
         matching.items = slot.items.filter(matches)
         matching.planned = slot.planned.filter(matches)
+        let kept = Set((matching.items + matching.planned).map(\.id))
+        matching.commitments = slot.commitments.compactMap { commitment in
+            var commitment = commitment
+            commitment.groups = commitment.groups.compactMap { group in
+                var group = group
+                group.items = group.items.filter { kept.contains($0.id) }
+                return group.items.isEmpty ? nil : group
+            }
+            return commitment.groups.isEmpty ? nil : commitment
+        }
         return matching.items.isEmpty && matching.planned.isEmpty ? nil : matching
     }
 }

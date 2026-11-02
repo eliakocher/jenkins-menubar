@@ -2,7 +2,7 @@ import Foundation
 
 /// Reads and writes the ``Preferences`` in a UserDefaults suite, one key per value (SET-01).
 ///
-/// The app passes its own defaults (`local.menubar-monitor`); tests pass a suite of their own. A stored value of the
+/// The app passes its own defaults (``AppIdentity/bundleID``); tests pass a suite of their own. A stored value of the
 /// wrong type, or outside the value's options, reads as the default.
 public struct PreferencesStore: @unchecked Sendable {
     // UserDefaults is documented as thread-safe, but the SDK doesn't mark it Sendable.
@@ -73,6 +73,8 @@ public struct PreferencesStore: @unchecked Sendable {
         case workItemsWithLabels
         case workItemsWithoutLabels
         case workItemsLabelsMatch
+        case workItemsHideOnRows
+        case workItemsScopedValueOnly
         case showInMenuBar
         case fillInCopiedLink
         case globalShortcut
@@ -128,6 +130,8 @@ public struct PreferencesStore: @unchecked Sendable {
         read(.workItemsWithLabels, into: \.workItems.withLabels)
         read(.workItemsWithoutLabels, into: \.workItems.withoutLabels)
         readRaw(.workItemsLabelsMatch, into: \.workItems.labelsMatch)
+        read(.workItemsHideOnRows, into: \.workItemRows.hidden)
+        read(.workItemsScopedValueOnly, into: \.workItemRows.showsScopedValueOnly)
         read(.showInMenuBar, into: \.showInMenuBar)
         read(.fillInCopiedLink, into: \.fillInCopiedLink)
         read(.easterEggs, into: \.easterEggs)
@@ -224,6 +228,8 @@ public struct PreferencesStore: @unchecked Sendable {
         case .workItemsWithLabels: .strings(workItems.withLabels)
         case .workItemsWithoutLabels: .strings(workItems.withoutLabels)
         case .workItemsLabelsMatch: .string(workItems.labelsMatch.rawValue)
+        case .workItemsHideOnRows: .strings(preferences.workItemRows.hidden)
+        case .workItemsScopedValueOnly: .bool(preferences.workItemRows.showsScopedValueOnly)
         case .showInMenuBar: .bool(preferences.showInMenuBar)
         case .fillInCopiedLink: .bool(preferences.fillInCopiedLink)
         case .globalShortcut: .shortcut(preferences.globalShortcut?.rawValue ?? "")

@@ -34,18 +34,26 @@ struct RepositoriesSettingsForm: View {
 
     var body: some View {
         Form {
+            SettingsPaneHeader(pane: .workspaces)
             foldersSection
             ideSection
             terminalSection
             checkoutsSection
         }
         .formStyle(.grouped)
+        .revealsSettingsFields()
     }
 
     // MARK: - Folders
 
     private var foldersSection: some View {
         Section {
+            SettingsRowLabel(
+                "Checkout folders",
+                "A folder with .git in it, or a pattern whose * stands for one folder level: "
+                    + "~/\u{2060}workspaces/\u{2060}*/\u{2060}project finds the project in every folder of "
+                    + "~/\u{2060}workspaces")
+                .settingsAnchor(.repositoryFolders)
             if settings.folders.isEmpty {
                 Text("No folders yet")
                     .foregroundStyle(.secondary)
@@ -61,12 +69,10 @@ struct RepositoriesSettingsForm: View {
                 Spacer()
             }
         } header: {
-            Text("Folders")
+            SettingsSectionHeader("Folders")
         } footer: {
             SettingsFooter(
-                "A checkout's folder, or a pattern whose * stands for one folder level: ~/workspaces/*/project finds "
-                    + "the project in every folder of ~/workspaces. A checkout is a folder with .git in it. The base "
-                    + "branch is what tasks start from; the app compares with origin/<base> and never fetches.")
+                "The base branch is what tasks start from; the app compares with origin/<base> and never fetches.")
         }
     }
 
@@ -80,11 +86,15 @@ struct RepositoriesSettingsForm: View {
                     .frame(width: 18)
                 TextField("Folder", text: folder.path, prompt: Text(verbatim: "~/workspaces/*/project"))
                     .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.leading)
                     .font(.body.monospaced())
                     .onSubmit(onSubmit)
                     .help(folder.wrappedValue.path)
                 TextField("Base branch", text: folder.baseBranch, prompt: Text(verbatim: RepositoryFolder.defaultBaseBranch))
                     .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.leading)
                     .font(.body.monospaced())
                     .frame(width: 96)
                     .onSubmit(onSubmit)
@@ -123,13 +133,20 @@ struct RepositoriesSettingsForm: View {
 
     private var ideSection: some View {
         Section {
-            LabeledContent("Command") {
+            VStack(alignment: .leading, spacing: 6) {
+                SettingsRowLabel(
+                    "Command",
+                    "Runs without a shell, one argument per word, like code {path} or open {name}; {path} is the "
+                        + "checkout's folder, {name} its name, and quotes keep spaces in a word")
                 TextField("Command", text: $settings.ideCommand, prompt: Text(verbatim: "code {path}"))
                     .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.leading)
                     .font(.body.monospaced())
-                    .multilineTextAlignment(.trailing)
                     .onSubmit(onSubmit)
+                    .help(settings.ideCommand)
             }
+            .settingsAnchor(.ideCommand)
             programLine
             if let preview {
                 VStack(alignment: .leading, spacing: 4) {
@@ -145,12 +162,9 @@ struct RepositoriesSettingsForm: View {
                 }
             }
         } header: {
-            Text("Open in IDE")
+            SettingsSectionHeader("Open in IDE")
         } footer: {
-            SettingsFooter(
-                "Runs without a shell: the program, then each word as one argument, like code {path}, idea {path} or "
-                    + "your team's tool with open {name}. {path} is the checkout's folder, {name} its name; quotes keep "
-                    + "spaces in a word. Kept in your own settings, never in the team file.")
+            SettingsFooter("Kept in your own settings, never in the team file.")
         }
     }
 
@@ -158,7 +172,7 @@ struct RepositoriesSettingsForm: View {
 
     private var terminalSection: some View {
         Section {
-            Picker("Terminal", selection: terminal) {
+            Picker(selection: terminal) {
                 Text(verbatim: defaultTerminal.map { "Default (\($0.name))" } ?? "Default (Terminal)")
                     .tag(String?.none)
                 ForEach(terminals) { app in
@@ -170,17 +184,22 @@ struct RepositoriesSettingsForm: View {
                     Text(verbatim: "\(chosen) (not installed)")
                         .tag(Optional(chosen))
                 }
+            } label: {
+                SettingsRowLabel(
+                    "Terminal",
+                    "Where Open in Terminal and Open in Claude Code open; Default is the app macOS opens .command "
+                        + "files with")
             }
+            .settingsAnchor(.terminal)
             if let note = terminalNote {
                 StatusLine(.note, note)
             }
         } header: {
-            Text("Terminal")
+            SettingsSectionHeader("Terminal")
         } footer: {
             SettingsFooter(
-                "Open in Terminal and Open in Claude Code open in this app. Default is the app macOS opens .command "
-                    + "files with. A terminal that can't run a script or open a folder is skipped for that action: "
-                    + "Terminal opens it, and the result says so. Kept in your own settings.")
+                "A terminal that can't run a script or open a folder is skipped for that action: Terminal opens it, "
+                    + "and the result says so. Kept in your own settings.")
         }
     }
 
@@ -254,7 +273,7 @@ struct RepositoriesSettingsForm: View {
                 }
             }
         } header: {
-            Text("Checkouts Found")
+            SettingsSectionHeader("Checkouts Found")
         } footer: {
             SettingsFooter("The main window's Workspaces section (⌘5) shows them with their tasks.")
         }

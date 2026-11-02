@@ -37,7 +37,8 @@ struct ActivityGalleryView: View {
             ) {
                 ActivityDetailPane(
                     detail: detail, details: details(of: detail), tab: .constant(tab),
-                    isListEmpty: !log.data.isLoaded || log.data.emptyState != nil, now: fixtures.now, copyCurl: { _ in })
+                    isListEmpty: !log.data.isLoaded || log.data.emptyState != nil, now: fixtures.now, close: {},
+                    copyCurl: { _ in })
             }
         } detail: {
             EmptyView()

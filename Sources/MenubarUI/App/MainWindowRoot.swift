@@ -48,6 +48,13 @@ public struct MainWindowRoot: View {
             searchText = ""
             reportSurfaces()
         }
+        .onChange(of: router.opened) {
+            // Showing an opened item is like changing the section: the old query belongs to the list it filtered. Typing
+            // over an item returns to the list (opened turns nil) and keeps the query.
+            if router.opened != nil {
+                searchText = ""
+            }
+        }
         .onChange(of: router.revealRequest) {
             // A row from the menu bar pane: a leftover filter would hide it.
             searchText = ""
@@ -84,14 +91,17 @@ public struct MainWindowRoot: View {
             PanelView.data(self.model, now: self.model.pipelines.now), section: router.section,
             activitySubtitle: activitySubtitle, workspacesSubtitle: workspacesSubtitle,
             workspacesBusy: self.model.workspaces.isRefreshing,
-            slotsBusy: self.model.slotLabels.isLoading || self.model.slotItems.isLoading)
+            slotsBusy: self.model.slotLabels.isLoading || self.model.slotItems.isLoading,
+            digestSubtitle: DigestPage.subtitle(state: digestState), digestBusy: digestState.isBusy)
         let actions: PanelActions = PanelActions.mainWindow(self.model, router: router, openURL: openURL)
+        let ai = self.model.ai
         return MainWindowShell(
             model: model, section: $router.section, searchText: $searchText, columnVisibility: columnVisibility,
             actions: actions, reload: { [model = self.model, router] in
-                MainWindowReload.run(router.section, selection: router.selection, model: model)
+                MainWindowReload.run(router.section, selection: router.selection, opened: router.opened, model: model)
             }, searchFocusRequest: router.searchFocusRequest, searchNote: eggNote, opened: openedSidebar,
-            navigation: navigation
+            navigation: navigation, detailLink: DetailLink.current(self.model, router: router),
+            sections: MainWindowSection.sidebarSections(claudeIsOffered: ai.isOffered, shown: router.section)
         ) {
             content(selection: $router.selection)
                 .id(revealedList)
@@ -101,9 +111,14 @@ public struct MainWindowRoot: View {
             detail
         } sectionToolbar: {
             MainWindowSectionToolbar(
-                section: router.section, activityInspectorShown: $activityInspectorShown,
+                section: router.section, watchBuild: actions.watchBuild, activityInspectorShown: $activityInspectorShown,
                 isConfirmingClearActivity: $isConfirmingClearActivity)
         }
+    }
+
+    /// where the digest stands
+    private var digestState: AIAnswerState {
+        model.ai.state(of: .digest)
     }
 
     private var searchIsSpellcheck: Bool {
@@ -153,7 +168,9 @@ public struct MainWindowRoot: View {
         case .workspaces:
             WorkspacesListView(selection: selection.workspaces, searchText: searchText)
         case .slots:
-            SlotsView(searchText: searchText)
+            SlotsView(selection: selection.slots, searchText: searchText)
+        case .digest:
+            DigestView(searchText: searchText)
         }
     }
 
@@ -181,7 +198,7 @@ public struct MainWindowRoot: View {
             EmptyView()
         case .workspaces:
             WorkspaceDetailView(selection: selection.workspaces)
-        case .slots:
+        case .slots, .digest:
             EmptyView()
         }
     }
@@ -279,22 +296,26 @@ public struct MainWindowRoot: View {
     }
 }
 
-/// Group 1 of the toolbar: the section's own items, from the section's lane; Pipelines and Merge Requests have none.
+/// The section's own items, from the section's lane; the others have none. The shell places them (and the spacer
+/// after them) before the update item and the Open in and Reload group.
 struct MainWindowSectionToolbar: ToolbarContent {
     let section: MainWindowSection
+    /// Pipelines' Watch a Build…
+    let watchBuild: @MainActor () -> Void
     /// Activity's inspector, which its toolbar toggles
     @Binding var activityInspectorShown: Bool
     /// Activity's Clear confirmation, which its toolbar asks for
     @Binding var isConfirmingClearActivity: Bool
 
     var body: some ToolbarContent {
+        if section == .pipelines {
+            PipelinesToolbarItems(watchBuild: watchBuild)
+        }
         if section == .workItems {
             WorkItemsToolbar()
         }
         if section == .activity {
             ActivityToolbar(isInspectorShown: $activityInspectorShown, isConfirmingClear: $isConfirmingClearActivity)
         }
-        // The daily digest, written by Claude, in every section while the Claude features are on (AI-04).
-        DigestToolbarItem()
     }
 }

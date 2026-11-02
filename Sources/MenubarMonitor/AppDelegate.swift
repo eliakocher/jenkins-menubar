@@ -4,7 +4,7 @@ import MenubarUI
 import UserNotifications
 
 /// The AppKit side of the app (Task 4.1): the activation policy at launch, the notification delegate, the
-/// `menubar-monitor://` links, starting the app again, and quitting.
+/// `megamonitor://` links, starting the app again, and quitting.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let effects = NativeEffects()

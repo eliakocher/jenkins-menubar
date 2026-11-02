@@ -9,7 +9,7 @@ public actor RequestCapture {
     public static let defaultMaxBytes = 10_485_760
     public static let defaultMaxFiles = 1000
 
-    /// the folder of the requests, such as `~/Library/Logs/menubar-monitor/requests`
+    /// the folder of the requests, such as `~/Library/Logs/MegaMonitor/requests`
     public nonisolated let folder: URL
     public nonisolated let maxBytes: Int
     public nonisolated let maxFiles: Int

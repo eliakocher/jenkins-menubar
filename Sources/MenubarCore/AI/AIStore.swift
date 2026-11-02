@@ -167,7 +167,7 @@ public final class AIStore {
     public init(
         defaults: UserDefaults, runner: any ProcessRunner, launcher: any ProgramLauncher = SystemProgramLauncher(),
         terminals: any TerminalDirectory = SystemTerminalDirectory(),
-        launchFolder: URL = FileManager.default.temporaryDirectory.appending(path: "menubar-monitor-claude", directoryHint: .isDirectory),
+        launchFolder: URL = FileManager.default.temporaryDirectory.appending(path: "megamonitor-claude", directoryHint: .isDirectory),
         log: ActivityLog? = nil, clock: any Clock<Duration> = ContinuousClock(), now: @escaping @Sendable () -> Date = { Date() },
         jenkins: PipelinesServices? = nil, gitLab: GitLabServices? = nil, resolver: ProgramResolver? = nil
     ) {

@@ -101,9 +101,10 @@ public struct PanelActions {
     }
 }
 
-/// What a build's row shows: the state's symbol, the title, the facts in three parts, then the progress bar or the
-/// failures (PIPE-02, PIPE-03), or the rebuild (PIPE-09). The panel's rows and the main window's Pipelines list share
-/// it (`pipelines.md`).
+/// What a build's row shows in the Pipelines list, in the shape the three lists share (``ListRow``): the state's symbol,
+/// the title in up to two lines, the notifications mark, the checkout's tag and the time at the right end (PIPE-03: "30m
+/// ago" once finished, the elapsed time while running); the facts on line 2; then the progress bar or the failures
+/// (PIPE-02, PIPE-03), or the rebuild (PIPE-09). The tooltip of the time has the whole timing (`pipelines.md`).
 struct BuildRowContent: View {
     let model: BuildRowModel
     /// removes the queued rebuild, the row's Cancel (PIPE-09)
@@ -112,36 +113,30 @@ struct BuildRowContent: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        PanelRowLayout {
+        ListRow(title: model.title) {
             Image(systemName: model.state.symbol)
                 .tint(model.state.color)
-        } lines: {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(verbatim: model.title)
-                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-                    .help(model.title)
-                Spacer(minLength: 0)
-                if model.notifications.isMuted {
-                    MutedMark()
-                }
-                // The checkout the build lives in (WS-07).
-                WorkspaceTag(subject: .build(model.build))
+        } trailing: {
+            if model.notifications.isMuted {
+                MutedMark()
             }
+            // The checkout the build lives in (WS-07).
+            WorkspaceTag(subject: .build(model.build))
+            ListRowTime(text: model.trailingTime, help: model.timing)
+        } details: {
             facts
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
             thirdLine
         }
     }
 
-    /// The author, the build, the status and the timing. What matters most stays whole: the build ("!14 #3") and a
-    /// finished build's result and times never truncate. Short of room, line 2 gives up its parts whole, in this order:
-    /// the running stages truncate and then go, then the author and its " · ", then a finished build's "finished …".
-    /// Only when even that doesn't fit, the timing truncates, and then a branch name, cut in the middle so its number
-    /// stays (reviews PANEL-02, PIPELINES-01). At accessibility sizes the line wraps instead.
+    /// The author, the build, the status and the timing beside the time. What matters most stays whole: the build
+    /// ("!14 #3") and a finished build's result and duration never truncate. Short of room, line 2 gives up its parts
+    /// whole, in this order: the running stages truncate and then go, then the author and its " · ", then a finished
+    /// build's duration. Only when even that doesn't fit, the status truncates, and then a branch name, cut in the middle
+    /// so its number stays (reviews PANEL-02, PIPELINES-01). At accessibility sizes the line wraps instead.
     @ViewBuilder private var facts: some View {
         if typeSize.isAccessibilitySize {
-            Text(verbatim: model.facts)
+            Text(verbatim: ([model.reference, model.status, model.timingBesideTime].compactMap { $0 }).joined(separator: " · "))
         } else if model.build.isRunning, model.status != nil {
             ViewThatFits(in: .horizontal) {
                 factsLine(stages: .whole)
@@ -154,8 +149,8 @@ struct BuildRowContent: View {
             ViewThatFits(in: .horizontal) {
                 factsLine()
                 factsLine(byline: false)
-                factsLine(byline: false, age: false)
-                factsLine(byline: false, age: false, fits: false)
+                factsLine(byline: false, timing: false)
+                factsLine(byline: false, timing: false, fits: false)
             }
         }
     }
@@ -177,10 +172,10 @@ struct BuildRowContent: View {
     /// - Parameters:
     ///   - showsByline: whether the author shows
     ///   - stages: how much of the running stages shows; a finished build's result always shows
-    ///   - age: whether a finished build's "finished …" shows
-    ///   - fits: `false` for the last resort, whose timing and branch name truncate instead of keeping their width
+    ///   - timing: whether the timing beside the time shows: a finished build's duration, "~0h20m left" while running
+    ///   - fits: `false` for the last resort, whose status and branch name truncate instead of keeping their width
     /// - Returns: the line
-    private func factsLine(byline showsByline: Bool = true, stages: Stages = .none, age: Bool = true, fits: Bool = true)
+    private func factsLine(byline showsByline: Bool = true, stages: Stages = .none, timing: Bool = true, fits: Bool = true)
         -> some View
     {
         HStack(spacing: 0) {
@@ -198,7 +193,7 @@ struct BuildRowContent: View {
                 if !model.build.isRunning {
                     separator
                     Text(verbatim: status)
-                        .fixedSize()
+                        .fixedSize(horizontal: fits, vertical: false)
                 } else if stages != .none {
                     // Its ideal width is at most the least room, so `ViewThatFits` picks this line only while the
                     // stages get that much.
@@ -208,9 +203,11 @@ struct BuildRowContent: View {
                         .fixedSize(horizontal: stages == .whole, vertical: false)
                 }
             }
-            separator
-            Text(verbatim: age ? model.timing : model.timingWithoutAge)
-                .fixedSize(horizontal: fits, vertical: false)
+            if timing, let beside = model.timingBesideTime {
+                separator
+                Text(verbatim: beside)
+                    .fixedSize()
+            }
         }
         .lineLimit(1)
     }
@@ -247,8 +244,6 @@ struct BuildRowContent: View {
         case nil:
             if let failures = model.failures {
                 Text(verbatim: failures)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
             }
         }
@@ -325,10 +320,6 @@ struct BuildRowMenu: View {
             if let url = model.rebuildWithChanges {
                 Button("Rebuild with Changes…") { actions.open(url) }
             }
-        }
-        if let newWorkItem = actions.newWorkItem, model.build.result == .failure || model.build.result == .unstable {
-            Divider()
-            Button("New Bug from This Build") { newWorkItem(.bugFromBuild(model.build, model.buildPage?.url)) }
         }
         Divider()
         JobNotificationsMenu(notifications: model.notifications) {

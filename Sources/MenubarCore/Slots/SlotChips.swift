@@ -1,17 +1,19 @@
 import Foundation
 
-/// A quick filter of the Slots section, built in for now (SLOT-07): my items, everyone's, one squad's, or the three
-/// the team's slot planning web tool has.
+/// A quick filter of the Slots section, built in for now (SLOT-07): my items, everyone's, one team's (by its members, else
+/// one squad's by the squad label), or the three the team's slot planning web tool has.
 public enum SlotChip: Hashable, Sendable, Identifiable {
     /// the items assigned to me
     case me
     /// every item of the slot group
     case all
-    /// the items with the squad's label, by its value after the squad prefix
+    /// the items with the squad's label, by its value after the squad prefix: the chips when Team names no teams
     case squad(String)
+    /// the items assigned to one of the team's members (SLOT-13)
+    case team(String)
     /// the items whose status is Triage or MaintainerTriage
     case triage
-    /// the open committed items that aren't Verified
+    /// the items whose status is Todo or InProgress
     case remainingWork
     /// the open items of type Bug
     case openBugs
@@ -21,9 +23,31 @@ public enum SlotChip: Hashable, Sendable, Identifiable {
         case .me: "me"
         case .all: "all"
         case .squad(let name): "squad:\(name)"
+        case .team(let name): "team:\(name)"
         case .triage: "triage"
         case .remainingWork: "remaining"
         case .openBugs: "bugs"
+        }
+    }
+
+    /// What a chip filters, as in the team's tool: chips of one field are alternatives, different fields narrow each
+    /// other down (SLOT-07).
+    public enum Field: Hashable, Sendable {
+        /// Triage, Remaining Work
+        case status
+        /// Open Bugs
+        case type
+        /// Me, teams, squads: whose items
+        case members
+    }
+
+    /// the field the chip filters; `nil` for Everyone, which filters nothing
+    public var field: Field? {
+        switch self {
+        case .all: nil
+        case .triage, .remainingWork: .status
+        case .openBugs: .type
+        case .me, .team, .squad: .members
         }
     }
 
@@ -31,19 +55,80 @@ public enum SlotChip: Hashable, Sendable, Identifiable {
         switch self {
         case .me: "Me"
         case .all: "Everyone"
-        case .squad(let name): name
+        case .squad(let name), .team(let name): name
         case .triage: "Triage"
         case .remainingWork: "Remaining Work"
         case .openBugs: "Open Bugs"
         }
     }
 
-    /// Returns the chips in their order: Me, Everyone, one per squad by name, then Triage, Remaining Work and Open Bugs.
+    /// Reads a chip from its stable id, as ``id`` writes it; `nil` for an id that names no chip.
     ///
-    /// - Parameter squads: the squad names, as ``squads(of:prefix:)`` finds them
+    /// - Parameter id: `me`, `all`, `triage`, `remaining`, `bugs`, `team:<name>` or `squad:<name>`
+    public init?(id: String) {
+        switch id {
+        case "me": self = .me
+        case "all": self = .all
+        case "triage": self = .triage
+        case "remaining": self = .remainingWork
+        case "bugs": self = .openBugs
+        default:
+            if id.hasPrefix("team:"), id.count > 5 {
+                self = .team(String(id.dropFirst(5)))
+            } else if id.hasPrefix("squad:"), id.count > 6 {
+                self = .squad(String(id.dropFirst(6)))
+            } else {
+                return nil
+            }
+        }
+    }
+
+    /// Returns the chip a remembered id stands for among the chips there are now (SLOT-07): the chip itself when it
+    /// exists. A squad that has become a team of the same name (Team names teams now) is that team; a team whose
+    /// squad label is all there is again is that squad. Anything else, an id that is unknown or whose chip is gone,
+    /// is Me.
+    ///
+    /// - Parameters:
+    ///   - id: the remembered id
+    ///   - chips: the chips there are
+    /// - Returns: the chip to select
+    public static func restored(id: String, among chips: [SlotChip]) -> SlotChip {
+        resolve(id: id, among: chips) ?? .me
+    }
+
+    /// Returns the chip a remembered id stands for as ``restored(id:among:)`` does, but `nil` where that gives Me
+    /// because the chip is gone.
+    static func resolve(id: String, among chips: [SlotChip]) -> SlotChip? {
+        guard let chip = SlotChip(id: id) else { return nil }
+        if chips.contains(chip) { return chip }
+        let name: String
+        switch chip {
+        case .squad(let squad): name = squad
+        case .team(let team): name = team
+        default: return nil
+        }
+        let sameName = { (other: SlotChip) -> Bool in
+            switch other {
+            case .team(let candidate), .squad(let candidate): candidate.caseInsensitiveCompare(name) == .orderedSame
+            default: false
+            }
+        }
+        // A team is preferred over a squad of the same name: it is the tool's rule.
+        return chips.first { if case .team = $0 { sameName($0) } else { false } }
+            ?? chips.first { if case .squad = $0 { sameName($0) } else { false } }
+    }
+
+    /// Returns the chips in the tool's order, with Everyone, the reset, in front: Everyone, Triage, Remaining Work, Open
+    /// Bugs, Me, then one per team (else one per squad) by name.
+    ///
+    /// - Parameters:
+    ///   - squads: the squad names, as ``squads(of:prefix:)`` finds them
+    ///   - teams: the team chips' names; `nil` when Team names no teams, and then the squads show. With teams named,
+    ///     they replace the squads, also when none has work (empty)
     /// - Returns: the chips
-    public static func chips(squads: [String]) -> [SlotChip] {
-        [.me, .all] + squads.map(SlotChip.squad) + [.triage, .remainingWork, .openBugs]
+    public static func chips(squads: [String], teams: [String]? = nil) -> [SlotChip] {
+        let groups = teams.map { $0.map(SlotChip.team) } ?? squads.map(SlotChip.squad)
+        return [.all, .triage, .remainingWork, .openBugs, .me] + groups
     }
 
     /// Returns the squads of the items: every label value after the squad prefix, sorted, each once.
@@ -62,51 +147,114 @@ public enum SlotChip: Hashable, Sendable, Identifiable {
         return Set(names).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    /// Returns the teams that get a chip, as the team's tool does (SLOT-13): a team shows only when one of its members
+    /// is an assignee of some item, sorted by name.
+    ///
+    /// - Parameters:
+    ///   - teams: the teams and their members from Team
+    ///   - items: the loaded work items
+    /// - Returns: the team names
+    public static func teamsWithWork(_ teams: SlotTeams, items: [WorkItem]) -> [String] {
+        let assigned = Set(items.flatMap { ($0.assignees ?? []).map { $0.username.lowercased() } })
+        let names = teams.teams.filter { team in team.members.contains { assigned.contains($0.lowercased()) } }.map(\.name)
+        return Set(names).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Returns the team value that the squad labels suggest, ready to paste into Team: per squad, the assignees of the
+    /// items carrying its label. A person is in one team, as in the tool, so each goes to the squad whose items they
+    /// have most of (the first by name when equal). Squads whose items have no assignee are left out.
+    ///
+    /// - Parameters:
+    ///   - items: the loaded work items
+    ///   - prefix: the squad label prefix from Team; empty gives nothing
+    /// - Returns: `Alpha: user1, user2; Bravo: user3`; empty when there is nothing to suggest
+    public static func suggestedTeams(of items: [WorkItem], prefix: String) -> String {
+        guard !prefix.isEmpty else { return "" }
+        var counts: [String: [String: Int]] = [:]  // username → squad → items
+        for item in items {
+            let squads = Set(item.labels.compactMap { label -> String? in
+                guard label.title.hasPrefix(prefix), label.title.count > prefix.count else { return nil }
+                return String(label.title.dropFirst(prefix.count))
+            })
+            for person in item.assignees ?? [] {
+                for squad in squads { counts[person.username, default: [:]][squad, default: 0] += 1 }
+            }
+        }
+        var members: [String: [String]] = [:]
+        for (username, bySquad) in counts {
+            let best = bySquad.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key.localizedStandardCompare($1.key) == .orderedAscending }
+            if let squad = best.first?.key { members[squad, default: []].append(username) }
+        }
+        return members.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }.map { squad in
+            let names = members[squad]!.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+            return "\(squad): \(names.joined(separator: ", "))"
+        }.joined(separator: "; ")
+    }
+
     /// Returns whether a work item shows under the chip.
     ///
     /// - Parameters:
     ///   - item: the work item
-    ///   - team: the team values: the committed label and the squad, status and type prefixes
+    ///   - team: the team values: the teams and the squad, status and type prefixes
     ///   - me: my GitLab username; `nil` when unknown, and then Me matches nothing
     /// - Returns: whether it matches
     public func matches(_ item: WorkItem, team: TeamValues, me: String?) -> Bool {
         let titles = Set(item.labels.map(\.title))
+        let assignees = (item.assignees ?? []).map(\.username)
         let isOpen = item.state != .closed
         let status = team.statusLabelPrefix
         switch self {
         case .me:
             guard let me else { return false }
-            return item.assignees?.contains { $0.username == me } ?? false
+            return assignees.contains(me)
         case .all:
             return true
         case .squad(let name):
             return !team.squadLabelPrefix.isEmpty && titles.contains(team.squadLabelPrefix + name)
+        case .team(let name):
+            let members = SlotTeams(team.slotTeams)?.members(of: name) ?? []
+            return assignees.contains { SlotTeams.contains(members, $0) }
         case .triage:
             return !status.isEmpty && (titles.contains(status + "Triage") || titles.contains(status + "MaintainerTriage"))
         case .remainingWork:
-            let isCommitted = team.committedLabel.isEmpty || titles.contains(team.committedLabel)
-            return isOpen && isCommitted && !(status.isEmpty ? false : titles.contains(status + "Verified"))
+            // The tool's rule: the status alone, whatever the commitment; without a status prefix the open items.
+            guard !status.isEmpty else { return isOpen }
+            return titles.contains(status + "Todo") || titles.contains(status + "InProgress")
         case .openBugs:
             return isOpen && !team.typeLabelPrefix.isEmpty && titles.contains(team.typeLabelPrefix + "Bug")
         }
     }
 
-    /// Returns the points a slot can take under the chip: a squad's capacity, the sum over the squads for Everyone, and
-    /// none for the other chips.
+    /// Returns what a slot can take under the chip (SLOT-08, SLOT-13). With teams in Team: a team's members, everyone of
+    /// every team, or me when I am a member; their work days give the person-days of each slot. Without teams: a squad's
+    /// points from the squad capacity, the sum over the squads for Everyone. Triage, Remaining Work and Open Bugs have
+    /// none.
     ///
     /// - Parameters:
-    ///   - capacity: the squads' capacity from Team; `nil` when it has none
-    ///   - squads: the squads there are
-    /// - Returns: the points; `nil` when there is no load to show
-    public func capacity(_ capacity: SquadCapacity?, squads: [String]) -> Int? {
-        guard let capacity else { return nil }
+    ///   - team: the team values: the teams, the work days and the squad capacity
+    ///   - squads: the squads there are, for Everyone without teams
+    ///   - me: my GitLab username; `nil` when unknown
+    /// - Returns: the capacity; `nil` when there is no load to show
+    public func capacity(team: TeamValues, squads: [String], me: String?) -> SlotCapacity? {
+        if let teams = SlotTeams(team.slotTeams) {
+            let workDays = SlotWorkDays(team.slotMemberWorkDays) ?? SlotWorkDays()
+            let members: [String]
+            switch self {
+            case .team(let name): members = teams.members(of: name)
+            case .all: members = teams.everyone
+            case .me: members = me.map { SlotTeams.contains(teams.everyone, $0) ? [$0] : [] } ?? []
+            case .squad, .triage, .remainingWork, .openBugs: members = []
+            }
+            return members.isEmpty ? nil : .people(members, workDays: workDays)
+        }
+        guard let capacity = SquadCapacity(team.squadCapacity) else { return nil }
         switch self {
         case .squad(let name):
-            return capacity.points(of: name)
+            return capacity.points(of: name).map(SlotCapacity.points)
         case .all:
             let points = squads.compactMap { capacity.points(of: $0) }
-            return points.isEmpty ? nil : points.reduce(0, +)
-        case .me, .triage, .remainingWork, .openBugs:
+            return points.isEmpty ? nil : .points(points.reduce(0, +))
+        case .me, .team, .triage, .remainingWork, .openBugs:
             return nil
         }
     }

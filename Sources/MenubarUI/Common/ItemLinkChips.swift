@@ -42,12 +42,21 @@ struct ItemLinkChip: View {
     let actions: ItemLinkActions
 
     var body: some View {
-        DetailChip(symbol: symbol, tint: tint, text: text, help: help, action: url.map { url in { actions.follow(url) } })
+        chip
             .contextMenu {
                 if let url {
                     ItemLinkMenuItems(showTitle: showTitle, openTitle: openTitle, url: url, actions: actions)
                 }
             }
+    }
+
+    @ViewBuilder
+    private var chip: some View {
+        if let url {
+            DetailChip(symbol: symbol, tint: tint, text: text, help: help) { actions.follow(url) }
+        } else {
+            DetailChip(symbol: symbol, tint: tint, text: text, help: help)
+        }
     }
 }
 
@@ -102,7 +111,7 @@ struct WorkItemLinkChips: View {
             } else {
                 DetailChip(
                     symbol: "checklist", text: "\(first.shortReference(project: project)) + \(items.count - 1)",
-                    help: "Show the work items", action: { isListing = true }
+                    help: "List the \(items.count) work items to pick one", action: { isListing = true }
                 )
                 .popover(isPresented: $isListing, arrowEdge: .bottom) {
                     VStack(alignment: .leading, spacing: 2) {

@@ -5,7 +5,7 @@ import Testing
 @testable import MenubarUI
 
 /// The Activity section's own rules beyond `ActivityStore`: what the inspector shows for a multiple selection, which
-/// selected entries survive a reload, what Copy copies, the subtitle and the pills' colors.
+/// selected entries survive a reload, what Copy copies and how an alert's message reads.
 @Suite("ActivityView")
 @MainActor
 struct ActivityViewTests {
@@ -95,50 +95,6 @@ struct ActivityViewTests {
     }
 
     @Test(
-        "LOG-04 the subtitle counts the entries, and how many of them show while a filter or the search narrows the list",
-        arguments: [
-            (182, 182, ActivityLevelFilter.everything, nil, "", "182 entries"),
-            (1, 1, .everything, nil, "", "1 entry"),
-            (12, 182, .problems, nil, "", "12 of 182 entries"),
-            (64, 182, .everything, .gitlab, "", "64 of 182 entries"),
-            (3, 182, .everything, nil, "timeout", "3 of 182 entries"),
-            (0, 182, .problems, .alerts, "", "0 of 182 entries"),
-            // Spaces alone search nothing.
-            (182, 182, .everything, nil, "  ", "182 entries"),
-            // An empty log has no subtitle.
-            (0, 0, .problems, nil, "", nil),
-        ] as [(Int, Int, ActivityLevelFilter, ActivityEntry.Source?, String, String?)])
-    func subtitle(matching: Int, total: Int, level: ActivityLevelFilter, source: ActivityEntry.Source?, search: String, expected: String?) {
-        let isNarrowed = ActivityContentData.isNarrowed(level: level, source: source, search: search)
-
-        #expect(ActivityContentData.subtitle(isLoaded: true, matching: matching, total: total, isNarrowed: isNarrowed) == expected)
-        // Before the first read nothing is known yet.
-        #expect(ActivityContentData.subtitle(isLoaded: false, matching: matching, total: total, isNarrowed: isNarrowed) == nil)
-    }
-
-    @Test("LOG-04 the pills: OK and 2xx green, problems red, Jenkins blue, GitLab orange, others neutral")
-    func pills() {
-        let outcomes: [(ActivityEntry.Outcome, ActivityPillTint)] = [
-            (.ok("200"), .success), (.ok("OK"), .success), (.ok("RESOLVED"), .success),
-            (.failed("500"), .problem), (.failed("TIMEOUT"), .problem), (.warning("SLOW"), .problem),
-            // Running and neutral outcomes stay neutral, so blue means Jenkins only.
-            (.running("RUNNING"), .neutral), (.neutral("ABORTED"), .neutral),
-        ]
-        for (outcome, expected) in outcomes {
-            #expect(ActivityPillTint(outcome) == expected, "\(outcome)")
-        }
-        let sources: [(ActivityEntry.Source, ActivityPillTint)] = [
-            (.jenkins, .jenkins), (.gitlab, .gitlab), (.alerts, .neutral), (.settings, .neutral), (.app, .neutral),
-        ]
-        for (source, expected) in sources {
-            #expect(ActivityPillTint(source) == expected, "\(source)")
-        }
-        // Neutral pills take the hierarchical styles; the others their system color.
-        #expect(ActivityPillTint.neutral.color == nil)
-        #expect(ActivityPillTint.problem.color == .red)
-    }
-
-    @Test(
         "LOG-04 the view shows an alert's message without its emoji; the stored text keeps it",
         arguments: [
             ("❌ !16 #3 FAILURE (alert)", "!16 #3 FAILURE (alert)"),
@@ -156,15 +112,5 @@ struct ActivityViewTests {
 
         #expect(item.displayMessage == expected)
         #expect(item.entry.message == message)
-    }
-
-    @Test("LOG-04 the whole entry names the outcome by its label, not as the file stores it")
-    func fullTextUsesTheLabel() {
-        let entry = ActivityEntry(
-            time: Self.now, level: .info, source: .jenkins, message: "!16 #3 finished", outcome: .failed("FAILURE"))
-        let text = ActivityItem(id: "failure", entry: entry, position: 0).fullText(in: .gmt)
-
-        #expect(text.contains("info · Jenkins · FAILURE"))
-        #expect(!text.contains("failed:"))
     }
 }

@@ -21,16 +21,28 @@ private struct GeneralGalleryView: View {
     var preferences = Preferences()
     var login = LoginItemStatus.notRegistered
     var loginError: String?
-    var permission = NotificationPermission.allowed
-    var canPreview = true
     var hotkey = HotkeyStatus.off
     var isRecordingShortcut = false
 
     var body: some View {
         GeneralSettingsForm(
             preferences: .constant(preferences), openAtLogin: .constant(login.isOn), loginStatus: login,
-            loginError: loginError, notification: NotificationNotice.of(permission, preferences: preferences),
-            canPreview: canPreview, hotkey: hotkey, isRecordingShortcut: isRecordingShortcut, actions: .none)
+            loginError: loginError, hotkey: hotkey, isRecordingShortcut: isRecordingShortcut, actions: .none,
+            linkRouting: LinkRoutingSwitch(isOn: .constant(false), browserName: "Safari", note: nil, isChanging: false))
+    }
+}
+
+/// Settings → Notifications with fixed values.
+private struct NotificationsGalleryView: View {
+    var preferences = Preferences()
+    var permission = NotificationPermission.allowed
+    var canPreview = true
+    var policy = NotificationPolicy()
+
+    var body: some View {
+        NotificationsSettingsForm(
+            preferences: .constant(preferences), notification: NotificationNotice.of(permission, preferences: preferences),
+            canPreview: canPreview, actions: .none, policy: policy)
     }
 }
 
@@ -66,35 +78,87 @@ private struct LabelPickerGalleryView: View {
     }
 }
 
-/// Settings → Projects with fixed values, issues and results; one project unless the entry gives more.
+/// Settings → Team with fixed values, issues and results.
 private struct TeamGalleryView: View {
     let values: TeamValues
     var issues: [TeamValues.Key: String] = [:]
     var problems: [String] = []
     var fileResult: TeamFileResult?
+
+    var body: some View {
+        TeamSettingsForm(
+            values: .constant(values), issues: issues, problems: problems, fileResult: fileResult,
+            canExport: values != TeamValues())
+    }
+}
+
+/// Settings → Projects with fixed values; one project unless the entry gives more.
+private struct ProjectsGalleryView: View {
+    let values: TeamValues
+    var issues: [TeamValues.Key: String] = [:]
+    var problems: [String] = []
     var projects: [ProjectRow]?
     var selected: ProjectID = .main
 
     var body: some View {
-        let path = values.gitLabProject
-        let single = ProjectRow(id: .main, name: Project(id: .main, team: values).shortName, path: path)
-        TeamSettingsForm(
-            values: .constant(values), issues: issues, problems: problems, fileResult: fileResult,
-            canExport: values != TeamValues(), projects: projects ?? [single], selected: selected)
+        let single = ProjectRow(id: .main, name: Project(id: .main, team: values).shortName, path: values.gitLabProject)
+        ProjectsSettingsForm(
+            values: .constant(values), issues: issues, problems: problems, projects: projects ?? [single],
+            selected: selected)
     }
 }
 
 /// Settings → Accounts with fixed values; the token fields show what is typed in them.
 private struct AccountsGalleryView: View {
     let model: AccountsFormModel
+    var gitLabURL = "https://gitlab.example.com"
+    var server: String? = "jenkins.example.com"
     var user = "jdoe"
     var jenkinsToken = ""
     var gitLabToken = ""
 
     var body: some View {
-        AccountsSettingsForm(
-            model: model, jenkinsUser: .constant(user), jenkinsToken: .constant(jenkinsToken),
-            gitLabToken: .constant(gitLabToken), actions: .none)
+        var model = model
+        model.jenkinsServer = server
+        return AccountsSettingsForm(
+            model: model, gitLabURL: .constant(gitLabURL), jenkinsUser: .constant(user),
+            jenkinsToken: .constant(jenkinsToken), gitLabToken: .constant(gitLabToken), actions: .none)
+    }
+}
+
+/// The whole Settings window at one pane, with fixed values, as the window opens.
+private struct SettingsWindowGalleryView: View {
+    let fixtures: Fixtures
+    @ViewState var pane: SettingsPane
+    @ViewState var query: String
+
+    init(fixtures: Fixtures, pane: SettingsPane, query: String = "") {
+        self.fixtures = fixtures
+        _pane = ViewState(initialValue: pane)
+        _query = ViewState(initialValue: query)
+    }
+
+    var body: some View {
+        SettingsShell(selection: $pane, query: $query) { pane in
+            switch pane {
+            case .general: GeneralGalleryView()
+            case .notifications: NotificationsGalleryView()
+            case .appearance: AppearanceSettingsForm()
+            case .accounts:
+                AccountsGalleryView(model: {
+                    var model = fixtures.settingsAccounts
+                    model.results = fixtures.settingsSignedIn
+                    return model
+                }())
+            case .projects: ProjectsGalleryView(values: fixtures.team)
+            case .team: TeamGalleryView(values: fixtures.team)
+            case .pipelines: JenkinsSettingsForm(preferences: .constant(Preferences()))
+            case .workItems: GitLabGalleryView(preferences: Preferences(), colors: fixtures.settingsLabelColors)
+            case .workspaces: Text("Workspaces: see settings-repositories")
+            case .claude: ClaudePane()
+            case .advanced: AdvancedSettingsForm(preferences: .constant(Preferences()), canShowWelcome: true)
+            }
+        }
     }
 }
 
@@ -102,8 +166,25 @@ extension GalleryCatalog {
     /// One entry per state of the five Settings pane specs, `docs/design/settings-<pane>.md`; the heights are the
     /// specs' estimates, and the windows then fit the forms' measured heights.
     static var settingsEntries: [GalleryEntry] {
-        settingsGeneralEntries + settingsJenkinsEntries + settingsGitLabEntries
-            + settingsTeamEntries + settingsAccountsEntries
+        settingsWindowEntries + settingsGeneralEntries + settingsJenkinsEntries + settingsGitLabEntries
+            + settingsTeamEntries + settingsTeamLinkEntries + settingsProjectsEntries + settingsAccountsEntries + settingsAdvancedEntries
+    }
+
+    // MARK: - Window
+
+    private static var settingsWindowEntries: [GalleryEntry] {
+        SettingsPane.allCases.map { pane in
+            GalleryEntry(screen: "settings-window", state: pane.rawValue, size: SettingsMetrics.window) { f in
+                SettingsWindowGalleryView(fixtures: f, pane: pane)
+            }
+        } + [
+            GalleryEntry(screen: "settings-window", state: "search", size: SettingsMetrics.window) { f in
+                SettingsWindowGalleryView(fixtures: f, pane: .team, query: "freeze")
+            },
+            GalleryEntry(screen: "settings-window", state: "search-field", size: SettingsMetrics.window) { f in
+                SettingsWindowGalleryView(fixtures: f, pane: .accounts, query: "token")
+            },
+        ]
     }
 
     private static func paneSize(_ height: CGFloat) -> CGSize {
@@ -158,14 +239,23 @@ extension GalleryCatalog {
                             + "management policy of this Mac").message)
                 }
             },
-            GalleryEntry(screen: "settings-general", state: "notifications-off", size: paneSize(440)) { _ in
-                SettingsPaneGalleryView(height: 440) { GeneralGalleryView(preferences: banner, permission: .off) }
+            GalleryEntry(screen: "settings-notifications", state: "typical", size: paneSize(360)) { _ in
+                SettingsPaneGalleryView(height: 360) { NotificationsGalleryView() }
             },
-            GalleryEntry(screen: "settings-general", state: "notifications-not-set-up", size: paneSize(430)) { _ in
-                SettingsPaneGalleryView(height: 430) { GeneralGalleryView(permission: .notAsked) }
+            GalleryEntry(screen: "settings-notifications", state: "muted-jobs", size: paneSize(560)) { _ in
+                SettingsPaneGalleryView(height: 560) {
+                    NotificationsGalleryView(policy: NotificationPolicy(
+                        mine: true, watching: false, jobs: ["MR-1412": .never, "develop": .always, "release%2F2026.51": .never]))
+                }
             },
-            GalleryEntry(screen: "settings-general", state: "no-team-values", size: paneSize(390)) { _ in
-                SettingsPaneGalleryView(height: 390) { GeneralGalleryView(canPreview: false) }
+            GalleryEntry(screen: "settings-notifications", state: "off", size: paneSize(400)) { _ in
+                SettingsPaneGalleryView(height: 400) { NotificationsGalleryView(preferences: banner, permission: .off) }
+            },
+            GalleryEntry(screen: "settings-notifications", state: "not-set-up", size: paneSize(400)) { _ in
+                SettingsPaneGalleryView(height: 400) { NotificationsGalleryView(permission: .notAsked) }
+            },
+            GalleryEntry(screen: "settings-notifications", state: "no-team-values", size: paneSize(360)) { _ in
+                SettingsPaneGalleryView(height: 360) { NotificationsGalleryView(canPreview: false) }
             },
         ]
     }
@@ -184,6 +274,35 @@ extension GalleryCatalog {
             },
             GalleryEntry(screen: "settings-jenkins", state: "changed", size: paneSize(300)) { _ in
                 SettingsPaneGalleryView(height: 300) { JenkinsSettingsForm(preferences: .constant(changed)) }
+            },
+        ]
+    }
+
+    // MARK: - Advanced
+
+    private static var settingsAdvancedEntries: [GalleryEntry] {
+        [
+            GalleryEntry(screen: "settings-advanced", state: "typical", size: paneSize(440)) { _ in
+                SettingsPaneGalleryView(height: 440) {
+                    AdvancedSettingsForm(preferences: .constant(Preferences()), canShowWelcome: true)
+                }
+            },
+            GalleryEntry(screen: "settings-advanced", state: "imported", size: paneSize(440)) { _ in
+                SettingsPaneGalleryView(height: 440) {
+                    AdvancedSettingsForm(
+                        preferences: .constant(Preferences()),
+                        backupResult: TeamFileResult(kind: .ok, text: "Imported 31 values from megamonitor-settings.json"),
+                        canShowWelcome: true)
+                }
+            },
+            GalleryEntry(screen: "settings-advanced", state: "refused", size: paneSize(440)) { _ in
+                SettingsPaneGalleryView(height: 440) {
+                    AdvancedSettingsForm(
+                        preferences: .constant(Preferences()),
+                        backupResult: TeamFileResult(
+                            kind: .problem, text: PersonalSettingsBackupError.newerFormat(2).message),
+                        canShowWelcome: false)
+                }
             },
         ]
     }
@@ -282,51 +401,117 @@ extension GalleryCatalog {
 
     private static var settingsTeamEntries: [GalleryEntry] {
         [
-            GalleryEntry(screen: "settings-team", state: "typical", size: paneSize(520)) { f in
-                SettingsPaneGalleryView(height: 520) { TeamGalleryView(values: f.team) }
+            GalleryEntry(screen: "settings-team", state: "typical", size: paneSize(900)) { f in
+                SettingsPaneGalleryView(height: 900) { TeamGalleryView(values: f.team) }
             },
-            GalleryEntry(screen: "settings-team", state: "empty", size: paneSize(570)) { _ in
-                SettingsPaneGalleryView(height: 570) {
-                    TeamGalleryView(values: TeamValues(), problems: [Problem.teamValuesMissing.message])
+            GalleryEntry(screen: "settings-team", state: "empty", size: paneSize(900)) { _ in
+                SettingsPaneGalleryView(height: 900) { TeamGalleryView(values: TeamValues()) }
+            },
+            GalleryEntry(screen: "settings-team", state: "invalid", size: paneSize(940)) { f in
+                var draft = f.team
+                draft.slotPlanningURL = "planning.example.com"
+                draft.squadCapacity = "Alpha sixty"
+                draft.slotWarnDays = "soon"
+                return SettingsPaneGalleryView(height: 940) {
+                    TeamGalleryView(values: draft, issues: [
+                        .slotPlanningURL: "Enter a URL that starts with https:// or http://",
+                        .squadCapacity: "Enter points like Alpha: 60, Delta: 120, or one number for every squad",
+                        .slotWarnDays: "Enter a number of days from 0 to 365",
+                    ])
                 }
             },
-            GalleryEntry(screen: "settings-team", state: "invalid", size: paneSize(580)) { f in
+            GalleryEntry(screen: "settings-team", state: "imported", size: paneSize(900)) { f in
+                SettingsPaneGalleryView(height: 900) {
+                    TeamGalleryView(
+                        values: f.team, fileResult: TeamFileResult(kind: .ok, text: "Imported the team values from team.json"))
+                }
+            },
+            GalleryEntry(screen: "settings-team", state: "import-error", size: paneSize(900)) { f in
+                SettingsPaneGalleryView(height: 900) {
+                    TeamGalleryView(
+                        values: f.team, fileResult: TeamFileResult(kind: .problem, text: TeamFileError.newerFormat(2).message))
+                }
+            },
+            GalleryEntry(screen: "settings-team", state: "save-error", size: paneSize(940)) { f in
+                SettingsPaneGalleryView(height: 940) {
+                    TeamGalleryView(values: f.team, problems: [
+                        "The team values could not be saved: You don’t have permission to save the file “team.json” in "
+                            + "the folder “\(AppIdentity.name)”.",
+                    ])
+                }
+            },
+        ]
+    }
+
+    // MARK: - Team file from a link
+
+    /// Import from a Link…'s sheet in its stages, from fixed values.
+    private static var settingsTeamLinkEntries: [GalleryEntry] {
+        let link = "https://gitlab.example.com/group/project/-/raw/main/team.json"
+        let current = TeamValues(
+            jenkinsJobURL: "https://jenkins.example.com/job/project", gitLabURL: "https://gitlab.example.com",
+            gitLabProject: "group/project", committedLabel: "committed", slotLabelPrefix: "slot::")
+        var changed = current
+        changed.committedLabel = "planning::committed"
+        changed.slotLabelPrefix = ""
+        changed.slotGroup = "group"
+        changed.squadCapacity = "Alpha: 60, Bravo: 120, Charlie: 90, Delta: 75, Echo: 100, Foxtrot: 110, Golf: 80"
+        changed.slotPlanningURL = "https://planning.example.com/a/very/long/path/to/the/team/planning/page"
+        var moved = changed
+        moved.gitLabURL = "https://gitlab.example.org"
+        moved.jenkinsJobURL = "https://ci.example.org/job/project"
+        let plain = TeamFileImport.Preview(current: current, incoming: changed)
+        let hosts = TeamFileImport.Preview(current: current, incoming: moved)
+        let same = TeamFileImport.Preview(current: current, incoming: current)
+        func entry(
+            _ state: String, isFetching: Bool = false, error: String? = nil, preview: TeamFileImport.Preview? = nil
+        ) -> GalleryEntry {
+            let height = TeamFileLinkContent.height(preview: preview)
+            return GalleryEntry(screen: "settings-team-link", state: state, size: CGSize(width: 560, height: height)) { _ in
+                TeamFileLinkContent(
+                    link: .constant(link), isFetching: isFetching, error: error, preview: preview,
+                    source: preview == nil ? nil : "gitlab.example.com", confirmed: .constant([]))
+            }
+        }
+        return [
+            entry("link"),
+            entry("fetching", isFetching: true),
+            entry("error", error: TeamFileImport.FetchError.status(404).message),
+            entry("preview", preview: plain),
+            entry("host-change", preview: hosts),
+            entry("nothing-changes", preview: same),
+        ]
+    }
+
+    // MARK: - Projects
+
+    private static var settingsProjectsEntries: [GalleryEntry] {
+        [
+            GalleryEntry(screen: "settings-projects", state: "typical", size: paneSize(360)) { f in
+                SettingsPaneGalleryView(height: 360) { ProjectsGalleryView(values: f.team) }
+            },
+            GalleryEntry(screen: "settings-projects", state: "empty", size: paneSize(400)) { _ in
+                SettingsPaneGalleryView(height: 400) {
+                    ProjectsGalleryView(values: TeamValues(), problems: [Problem.teamValuesMissing.message])
+                }
+            },
+            GalleryEntry(screen: "settings-projects", state: "invalid", size: paneSize(420)) { f in
                 var draft = f.team
                 draft.jenkinsJobURL = "jenkins.example.com/job/project"
                 draft.gitLabProject = "project"
-                return SettingsPaneGalleryView(height: 580) {
-                    TeamGalleryView(values: draft, issues: [
+                return SettingsPaneGalleryView(height: 420) {
+                    ProjectsGalleryView(values: draft, issues: [
                         .jenkinsJobURL: "Enter a URL that starts with https:// or http://",
                         .gitLabProject: "Enter the project's path, like group/project",
                     ])
                 }
             },
-            GalleryEntry(screen: "settings-team", state: "unknown-job", size: paneSize(560)) { f in
-                SettingsPaneGalleryView(height: 560) {
-                    TeamGalleryView(values: f.team, problems: [Problem.unknownJob.message])
+            GalleryEntry(screen: "settings-projects", state: "unknown-job", size: paneSize(400)) { f in
+                SettingsPaneGalleryView(height: 400) {
+                    ProjectsGalleryView(values: f.team, problems: [Problem.unknownJob.message])
                 }
             },
-            GalleryEntry(screen: "settings-team", state: "imported", size: paneSize(550)) { f in
-                SettingsPaneGalleryView(height: 550) {
-                    TeamGalleryView(
-                        values: f.team, fileResult: TeamFileResult(kind: .ok, text: "Imported the team values from team.json"))
-                }
-            },
-            GalleryEntry(screen: "settings-team", state: "import-error", size: paneSize(550)) { f in
-                SettingsPaneGalleryView(height: 550) {
-                    TeamGalleryView(
-                        values: f.team, fileResult: TeamFileResult(kind: .problem, text: TeamFileError.newerFormat(2).message))
-                }
-            },
-            GalleryEntry(screen: "settings-team", state: "save-error", size: paneSize(570)) { f in
-                SettingsPaneGalleryView(height: 570) {
-                    TeamGalleryView(values: f.team, problems: [
-                        "The team values could not be saved: You don’t have permission to save the file “team.json” in "
-                            + "the folder “menubar-monitor”.",
-                    ])
-                }
-            },
-            GalleryEntry(screen: "settings-team", state: "projects", size: paneSize(680)) { f in
+            GalleryEntry(screen: "settings-projects", state: "several", size: paneSize(460)) { f in
                 // Three projects, the second one edited (plan Phase 13).
                 var values = f.team
                 values.gitLabProject = "group/subgroup/client"
@@ -337,23 +522,23 @@ extension GalleryCatalog {
                     ProjectRow(id: client, name: "client", path: values.gitLabProject),
                     ProjectRow(id: ProjectID(rawValue: "p-docs")!, name: "docs", path: "group/docs"),
                 ]
-                return SettingsPaneGalleryView(height: 680) {
-                    TeamGalleryView(values: values, projects: rows, selected: client)
+                return SettingsPaneGalleryView(height: 460) {
+                    ProjectsGalleryView(values: values, projects: rows, selected: client)
                 }
             },
-            GalleryEntry(screen: "settings-team", state: "add-project", size: CGSize(width: 520, height: 560)) { _ in
+            GalleryEntry(screen: "settings-projects", state: "add-project", size: CGSize(width: 560, height: 300)) { _ in
                 AddProjectSheet(
                     values: .constant(TeamValues(
                         jenkinsJobURL: "https://ci.example.org/job/client", gitLabURL: "https://gitlab.example.com",
                         gitLabProject: "group/client")),
                     error: ProjectError.otherJenkins("project").message)
             },
-            GalleryEntry(screen: "settings-team", state: "long-values", size: paneSize(520)) { f in
+            GalleryEntry(screen: "settings-projects", state: "long-values", size: paneSize(380)) { f in
                 var values = f.team
                 values.jenkinsJobURL = "https://jenkins.example.com/job/a-very-long-folder-name/job/another-folder/job/"
                     + "the-multibranch-project-for-the-search-index"
                 values.gitLabProject = "group/subgroup/a-very-long-project-name-for-the-search-index-rework"
-                return SettingsPaneGalleryView(height: 520) { TeamGalleryView(values: values) }
+                return SettingsPaneGalleryView(height: 380) { ProjectsGalleryView(values: values) }
             },
         ]
     }
@@ -390,7 +575,7 @@ extension GalleryCatalog {
                 model.jenkinsLink = nil
                 model.gitLabLink = nil
                 model.results = [.jenkins: .noJenkinsJob, .gitlab: .noGitLabURL]
-                return SettingsPaneGalleryView(height: 520) { AccountsGalleryView(model: model) }
+                return SettingsPaneGalleryView(height: 520) { AccountsGalleryView(model: model, gitLabURL: "", server: nil) }
             },
             GalleryEntry(screen: "settings-accounts", state: "checking", size: paneSize(500)) { f in
                 var model = f.settingsAccounts

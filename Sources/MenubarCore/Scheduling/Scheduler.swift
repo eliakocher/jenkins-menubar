@@ -38,12 +38,17 @@ public enum CheckOutcome: String, Hashable, Sendable, CaseIterable {
 /// - ``checkNow()`` and ``reload(_:)`` load the shown surfaces at once, and the others as soon as they are shown.
 /// - Sleep, offline and ``stop()`` hold the loads as they hold the checks; a surface loads once more, when due, on wake
 ///   and when the network is back.
+/// - While nobody looks (``setAttentive(_:)``: the app isn't frontmost and the menu bar pane is closed), the shown
+///   surfaces load every ``backgroundMaxAge`` instead; once someone looks again, stale data loads at once (OD-06).
 public actor Scheduler {
     /// One check. It runs outside the actor; a check that throws counts as a failure, one that is cancelled as nothing.
     public typealias Check = @Sendable (CheckReason) async throws -> CheckOutcome
 
     /// the waits after 1, 2, and 3 or more failed checks in a row
     public static let backoff: [Duration] = [.seconds(60), .seconds(120), .seconds(300)]
+    /// how old GitLab data may get while it is shown but nobody looks, like the window behind another app; the maximum
+    /// age applies when it is longer (OD-06, Task 7.06: the lists loaded every 30 s, 1 s of GitLab's time each)
+    public static let backgroundMaxAge: Duration = .seconds(300)
 
     /// What the scheduler knows about the Mac and the last checks.
     public struct Status: Hashable, Sendable {
@@ -75,6 +80,8 @@ public actor Scheduler {
     private var gitLabMaxAge: Duration
     /// the surfaces the panel and the window show now
     public private(set) var visibleSurfaces: Set<Surface> = []
+    /// whether someone looks at the shown surfaces: the app is frontmost or the menu bar pane is open (OD-06)
+    public private(set) var isAttentive = true
     /// the surfaces to load at once, whatever the age of their data, as soon as they can: Check now and a filter change
     private var reloadDue: Set<Surface> = []
     /// the wait of each shown surface until its next load
@@ -341,6 +348,26 @@ public actor Scheduler {
         refresh(surface)
     }
 
+    /// Tells whether someone looks at the shown surfaces: the app is frontmost or the menu bar pane is open (OD-06).
+    ///
+    /// While nobody looks, the shown surfaces load every ``backgroundMaxAge`` (or the maximum age, when longer); when
+    /// someone looks again, a surface whose data is older than the maximum age loads at once. The waits under way start
+    /// again with the new age.
+    ///
+    /// - Parameter isAttentive: whether someone looks
+    public func setAttentive(_ isAttentive: Bool) {
+        guard isAttentive != self.isAttentive else {
+            return
+        }
+        self.isAttentive = isAttentive
+        refreshVisibleSurfaces()
+    }
+
+    /// how old shown data may get now: the maximum age while someone looks, otherwise at least ``backgroundMaxAge``
+    public var effectiveMaxAge: Duration {
+        isAttentive ? gitLabMaxAge : max(gitLabMaxAge, Self.backgroundMaxAge)
+    }
+
     /// Changes how old GitLab data may be when it is shown (OD-02). The waits under way start again with it.
     ///
     /// - Parameter maxAge: the maximum age, one of `Preferences.gitLabMaxAgeOptions`
@@ -389,7 +416,7 @@ public actor Scheduler {
         surfaceWaits[surface] = Task {
             var remaining = wait ?? .zero
             if wait == nil, let age = await load.dataAge() {
-                remaining = gitLabMaxAge - age
+                remaining = effectiveMaxAge - age
             }
             if remaining > .zero {
                 do {
@@ -427,7 +454,7 @@ public actor Scheduler {
         if cancelled || reloadDue.contains(surface) {
             refresh(surface)
         } else {
-            scheduleLoad(surface, after: gitLabMaxAge)
+            scheduleLoad(surface, after: effectiveMaxAge)
         }
     }
 

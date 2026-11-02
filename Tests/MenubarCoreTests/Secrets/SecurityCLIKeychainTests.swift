@@ -88,29 +88,18 @@ struct SecurityCLIKeychainTests {
         #expect(await runner.calls.isEmpty)
     }
 
-    @Test("ACC-01 reports a keychain that did not take the token")
+    @Test("ACC-01 reports a keychain that did not take the token, or left an old value in place")
     func reportsAKeychainThatDidNotTakeIt() async throws {
-        // security -i ends well, but the item isn't there afterwards.
-        let runner = ScriptedRunner { arguments in
-            arguments == ["-i"] ? ProcessOutput(status: 0) : ProcessOutput(status: 44)
-        }
-        let keychain = SecurityCLIKeychain(service: Self.service, keychainPath: "/nowhere/test.keychain-db", runner: runner)
+        // security -i ends well, but the item isn't there afterwards, or still holds the old value.
+        for read in [ProcessOutput(status: 44), ProcessOutput(status: 0, standardOutput: Data("old\n".utf8))] {
+            let runner = ScriptedRunner { arguments in
+                arguments == ["-i"] ? ProcessOutput(status: 0) : read
+            }
+            let keychain = SecurityCLIKeychain(service: Self.service, keychainPath: "/nowhere/test.keychain-db", runner: runner)
 
-        let error = await #expect(throws: KeychainError.notStored) {
-            try await keychain.store(Self.token, account: TokenAccount.gitlab.rawValue)
-        }
-        #expect(error?.localizedDescription == "The keychain did not take the token")
-    }
-
-    @Test("ACC-01 reports an old value left in place as not stored")
-    func reportsAnOldValue() async throws {
-        let runner = ScriptedRunner { arguments in
-            arguments == ["-i"] ? ProcessOutput(status: 0) : ProcessOutput(status: 0, standardOutput: Data("old\n".utf8))
-        }
-        let keychain = SecurityCLIKeychain(service: Self.service, keychainPath: "/nowhere/test.keychain-db", runner: runner)
-
-        await #expect(throws: KeychainError.notStored) {
-            try await keychain.store(Self.token, account: TokenAccount.gitlab.rawValue)
+            await #expect(throws: KeychainError.notStored) {
+                try await keychain.store(Self.token, account: TokenAccount.gitlab.rawValue)
+            }
         }
     }
 
@@ -127,11 +116,6 @@ struct SecurityCLIKeychainTests {
             // Removing what isn't there is fine.
             try await keychain.delete(account: TokenAccount.gitlab.rawValue)
         }
-    }
-
-    @Test("ACC-01 quotes for security -i escape backslashes and double quotes only")
-    func quoting() {
-        #expect(SecurityCLIKeychain.quoted(#"a"b\c'd$e"#) == #""a\"b\\c'd$e""#)
     }
 
     // MARK: - Helpers

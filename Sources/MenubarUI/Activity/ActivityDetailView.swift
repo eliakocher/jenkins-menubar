@@ -13,17 +13,21 @@ public struct ActivityDetailView: View {
     @AppStorage("activity.detailTab") private var tab = RequestDetailTab.response
     @ViewState private var details: ActivityDetails?
     private let selection: Set<ActivityItem.ID>
+    private let close: () -> Void
 
-    /// - Parameter selection: the selected log entries
-    public init(selection: Set<ActivityItem.ID>) {
+    /// - Parameters:
+    ///   - selection: the selected log entries
+    ///   - close: closes the inspector, for the strip's ✕ and Esc
+    public init(selection: Set<ActivityItem.ID>, close: @escaping () -> Void) {
         self.selection = selection
+        self.close = close
     }
 
     public var body: some View {
         let detail = ActivitySelection.detail(of: selection, in: store.items)
         ActivityDetailPane(
             detail: detail, details: details, tab: $tab, isListEmpty: !store.isLoaded || store.emptyState != nil,
-            copyCurl: { ActivityPasteboard.put($0.curlCommand) }
+            close: close, copyCurl: { ActivityPasteboard.put($0.curlCommand) }
         )
         .task(id: entry(of: detail)?.id) {
             guard let item = entry(of: detail), item.hasRequest else {

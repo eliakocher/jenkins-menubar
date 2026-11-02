@@ -28,11 +28,13 @@ struct OpenedItemActions {
         close: { _ in }, closeAll: {}, setPinned: { _, _ in }, openInGitLab: { _ in }, copyLink: { _ in })
 }
 
-/// The main window's sidebar: the four sections in one group, in the order of ⌘1 to ⌘4, each with its count and, while
+/// The main window's sidebar: the sections in one group, in the order of ⌘1 and on, each with its count and, while
 /// it has a problem of its own, the red marker (`docs/design/main-window.md`, "Sidebar"; WIN-01). Under them the "Opened"
 /// group, while it has items (WIN-06).
 struct MainWindowSidebar: View {
     @Binding var section: MainWindowSection
+    /// the sections it lists, in order; Digest only while the Claude features are on
+    var sections = MainWindowSection.allCases
     /// each section's count; a section without one shows no badge
     var badges: [MainWindowSection: Int] = [:]
     /// the marker's tooltip of each section with a problem of its own
@@ -47,7 +49,7 @@ struct MainWindowSidebar: View {
 
     var body: some View {
         List(selection: selection) {
-            ForEach(MainWindowSection.allCases, id: \.self) { section in
+            ForEach(sections, id: \.self) { section in
                 Label {
                     HStack(spacing: 4) {
                         Text(section.title)
@@ -158,7 +160,7 @@ private struct OpenedItemRow: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
-                .help("Close (⌘W)")
+                .help("Close (⌘W or middle-click)")
             } else if item.isPinned {
                 Image(systemName: "pin.fill")
                     .imageScale(.small)
@@ -166,6 +168,8 @@ private struct OpenedItemRow: View {
             }
         }
         .onHover { isHovered = $0 }
+        // The same close as the ✕ and the context menu's, whatever the row's pin.
+        .onMiddleClick { actions.close(item.id) }
         .help(item.title.map { "\($0)\n\(item.reference)" } ?? item.reference)
         .contextMenu {
             Button("Close") { actions.close(item.id) }

@@ -164,20 +164,15 @@ struct PipelinesListContent: View {
         case .build(let row):
             BuildRowContent(model: row) { actions.cancelRebuild(row.build.jobKey) }
         case .waiting(let watched):
-            PanelRowLayout {
+            ListRow(title: watched.label) {
                 Image(systemName: "clock")
                     .foregroundStyle(.secondary)
-            } lines: {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(verbatim: watched.label)
-                    Spacer(minLength: 0)
-                    if waitingNotifications(watched).isMuted {
-                        MutedMark()
-                    }
+            } trailing: {
+                if waitingNotifications(watched).isMuted {
+                    MutedMark()
                 }
+            } details: {
                 Text(verbatim: "WAITING")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
             }
             .help(BuildDetailModel.StageNote.waiting)
         }

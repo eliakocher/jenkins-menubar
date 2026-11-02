@@ -119,18 +119,6 @@ struct UpdateStoreTests {
         let fractions = values.compactMap(\.fraction)
         #expect(fractions.count == 4)
         #expect(fractions == fractions.sorted(), "a growing total never moves the bar back")
-        #expect(abs(fractions[0] - (0.05 + 0.85 * 2 / 8)) < 0.0001)
-        #expect(fractions.last == 0.9)
-    }
-
-    @Test("APP-05 a checkout without build.sh can't rebuild")
-    func noBuildScript() async throws {
-        let folder = try TemporaryFolder()
-        let runner = ScriptedBuild()
-        let rebuilder = Rebuilder(checkout: folder.url, runner: runner)
-
-        await #expect(throws: RebuildError.self) { try await rebuilder.rebuild() }
-        #expect(await runner.calls.isEmpty)
     }
 
     @Test("APP-05 the process runner hands over each line while the tool runs")

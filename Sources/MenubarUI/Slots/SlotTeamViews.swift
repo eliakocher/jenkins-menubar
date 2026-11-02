@@ -1,30 +1,28 @@
+import AppKit
 import MenubarCore
 import SwiftUI
 
-/// The chips above the slots (SLOT-07): one selected, the slot group's issues loading beside them.
+/// The chips above the slots (SLOT-07), combinable as in the team's tool: a click turns a chip on or off; chips of one
+/// kind (status, type, members) are alternatives, different kinds narrow each other down. Everyone, the reset, shows as
+/// on while nothing else is. The slot group's issues load beside them.
 struct SlotChipBar: View {
     let chips: [SlotChip]
-    @Binding var chip: SlotChip
+    @Binding var selection: SlotChipSelection
     var isLoading = false
 
     var body: some View {
         HStack(spacing: 8) {
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
-                    ForEach(chips) { candidate in
-                        Button {
-                            chip = candidate
-                        } label: {
-                            Text(verbatim: candidate.title)
-                                .font(.callout.weight(candidate == chip ? .semibold : .regular))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .foregroundStyle(candidate == chip ? Color.white : .primary)
-                                .background(
-                                    Capsule().fill(candidate == chip ? Color.accentColor : Color.secondary.opacity(0.12)))
+                    ForEach(Array(chips.enumerated()), id: \.element.id) { index, candidate in
+                        if index > 0, Self.group(candidate) != Self.group(chips[index - 1]) {
+                            Rectangle()
+                                .fill(Color.primary.opacity(0.15))
+                                .frame(width: 1, height: 14)
+                                .padding(.horizontal, 2)
+                                .accessibilityHidden(true)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityAddTraits(candidate == chip ? .isSelected : [])
+                        chip(candidate)
                     }
                 }
             }
@@ -36,180 +34,104 @@ struct SlotChipBar: View {
             }
         }
     }
+
+    /// Everyone, the filters (status and type), and the members, each a block of its own
+    private static func group(_ chip: SlotChip) -> Int {
+        switch chip.field {
+        case nil: 0
+        case .status, .type: 1
+        case .members: 2
+        }
+    }
+
+    private func chip(_ candidate: SlotChip) -> some View {
+        let isOn = selection.isActive(candidate)
+        return Button {
+            selection = selection.toggled(candidate)
+        } label: {
+            Text(verbatim: candidate.title)
+                .font(.callout.weight(isOn ? .semibold : .regular))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .foregroundStyle(isOn ? Color.white : .primary)
+                .background(Capsule().fill(isOn ? Color.accentColor : Color.primary.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+        .help(candidate == .all ? "Show everything: turns the other chips off" : "Turn on or off; chips of one kind show either, kinds narrow down")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
 }
 
-/// A slot's people, committed points and load against the chip's capacity (SLOT-08).
-struct SlotLoadLine: View {
+/// The quiet line under the chips while the team chips come from squad labels (SLOT-07): the planning tool filters by
+/// the team's members, so with Team's teams the chips match it; the gear opens that field, "Suggest Members" lists who
+/// carries each squad label, to paste there. Read only.
+struct SlotSquadHint: View {
+    let suggestion: String
+    @ViewState private var isShowingSuggestion = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("From squad labels. The web tool filters by team members: set them in Settings → Team.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            SettingsGearButton(field: .squads)
+                .controlSize(.small)
+            if !suggestion.isEmpty {
+                Button("Suggest Members") { isShowingSuggestion = true }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .popover(isPresented: $isShowingSuggestion, arrowEdge: .bottom) {
+                        SlotMemberSuggestion(suggestion: suggestion)
+                    }
+            }
+        }
+    }
+}
+
+/// The popover of "Suggest Members": the team value in Team's format, with Copy. Shown in the gallery too.
+struct SlotMemberSuggestion: View {
+    let suggestion: String
+    @ViewState private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Suggested Members")
+                .font(.headline)
+            Text("The assignees of the loaded items under each squad label, each person in the squad with most of their items. Paste it into Settings → Team → Teams and their members, and check it.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: suggestion)
+                .font(.callout.monospaced())
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            HStack {
+                Spacer()
+                Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(suggestion, forType: .string)
+                    copied = true
+                }
+            }
+        }
+        .padding(14)
+        .frame(width: 360)
+    }
+}
+
+/// A slot's people, the ones with items in it, most items first (SLOT-08). The points and the load are in the header.
+struct SlotPeopleLine: View {
     let slot: SlotSummary
 
     var body: some View {
-        if !slot.items.isEmpty || !slot.planned.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 12) {
-                    if !slot.members.isEmpty {
-                        PeopleLine(people: slot.members, size: 20, maxAvatars: 8)
-                            .font(.callout)
-                    }
-                    Spacer(minLength: 8)
-                    Text(verbatim: pointsText)
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .help(pointsHelp)
-                }
-                if let load = slot.load {
-                    loadBar(load)
-                }
-            }
+        if !slot.members.isEmpty {
+            PeopleLine(people: slot.members, size: 20, maxAvatars: 8)
+                .font(.callout)
+                .lineLimit(1)
         }
-    }
-
-    private var pointsText: String {
-        var text = "\(slot.committedPoints) points committed"
-        if let capacity = slot.capacity, let load = slot.load {
-            text += " · \(Int((load * 100).rounded())) % of \(capacity)"
-        }
-        return text
-    }
-
-    private var pointsHelp: String {
-        var parts = ["The weight of the \(slot.items.count) committed items, done ones too."]
-        if slot.unweightedCount > 0 {
-            parts.append("\(slot.unweightedCount) have no weight and don't count.")
-        }
-        if !slot.planned.isEmpty {
-            parts.append("\(slot.planned.count) planned items aren't counted.")
-        }
-        return parts.joined(separator: " ")
-    }
-
-    private func loadBar(_ load: Double) -> some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.secondary.opacity(0.15))
-                Capsule()
-                    .fill(load > 1 ? Color.orange : Color.accentColor)
-                    .frame(width: geometry.size.width * min(load, 1))
-            }
-        }
-        .frame(height: 6)
-        .accessibilityElement()
-        .accessibilityLabel("Load")
-        .accessibilityValue("\(Int((load * 100).rounded())) percent")
-    }
-}
-
-/// An epic with its items in the slot, or the items without one (SLOT-08).
-struct SlotEpicSection: View {
-    let group: SlotEpicGroup
-    let project: String
-    var statusPrefix = ""
-    let actions: GitLabSectionActions
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header
-            ForEach(group.items) { item in
-                SlotItemRow(item: item, project: project, statusPrefix: statusPrefix, actions: actions)
-                    .padding(.leading, 12)
-            }
-        }
-        .padding(.top, 4)
-    }
-
-    @ViewBuilder
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: group.epic == nil ? "tray" : "flag.fill")
-                .foregroundStyle(group.epic == nil ? Color.secondary : .purple)
-                .frame(width: 18)
-            if let epic = group.epic {
-                Button {
-                    actions.open(epic.webURL)
-                } label: {
-                    Text(verbatim: epic.title)
-                        .font(.callout.weight(.semibold))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .buttonStyle(.plain)
-                .help(epic.reference)
-                .contextMenu {
-                    Button("Open in GitLab") { actions.open(epic.webURL) }
-                    Button("Copy Link") { actions.copy(epic.webURL) }
-                }
-            } else {
-                Text("No epic")
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            Text(verbatim: "\(group.items.count { $0.isDone }) of \(group.items.count) done")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            ProgressView(value: group.progress)
-                .progressViewStyle(.linear)
-                .frame(width: 60)
-                .help("\(Int((group.progress * 100).rounded())) % by weight; an item without a weight counts 1")
-        }
-    }
-}
-
-/// An item's facts at the row's end: Planned, blocked, status, weight and the assignees.
-struct SlotItemFacts: View {
-    let item: SlotItem
-    var statusPrefix = ""
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if !item.isCommitted {
-                Text("Planned")
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.5)))
-                    .foregroundStyle(.secondary)
-                    .help("Scheduled for this slot, not committed")
-            }
-            if item.workItem.isBlocked == true {
-                Image(systemName: "hand.raised.fill")
-                    .foregroundStyle(.red)
-                    .help("Blocked by an open item")
-            }
-            if let status {
-                Text(verbatim: status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Text(verbatim: item.workItem.weight.map(String.init) ?? "–")
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .frame(minWidth: 18)
-                .padding(.horizontal, 3)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-                .help(item.workItem.weight.map { "Weight \($0)" } ?? "No weight")
-            HStack(spacing: -4) {
-                ForEach((item.workItem.assignees ?? []).prefix(3), id: \.username) { person in
-                    InitialsAvatar(name: person.name, username: person.username, size: 18)
-                        .background(Circle().fill(.background).padding(-1))
-                }
-            }
-            .help((item.workItem.assignees ?? []).map(\.displayName).formatted(.list(type: .and)))
-        }
-    }
-
-    /// the status label's value, like "InProgress", spaced as "In Progress"
-    private var status: String? {
-        guard !statusPrefix.isEmpty,
-            let label = item.workItem.labels.first(where: { $0.title.hasPrefix(statusPrefix) })
-        else { return nil }
-        let value = String(label.title.dropFirst(statusPrefix.count))
-        var spaced = ""
-        for character in value {
-            if character.isUppercase, let last = spaced.last, last.isLowercase {
-                spaced.append(" ")
-            }
-            spaced.append(character)
-        }
-        return spaced.isEmpty ? nil : spaced
     }
 }

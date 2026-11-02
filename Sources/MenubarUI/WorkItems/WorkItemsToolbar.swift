@@ -33,6 +33,7 @@ private struct WorkItemsFilterMenuFromSettings: View {
 
     var body: some View {
         WorkItemsFilterMenu(filters: WorkItemFilterItems.binding(settings)) {
+            settings.reveal(.workItemFilters)
             router.open(.settings(pane: .gitLab))
         }
     }
@@ -50,7 +51,7 @@ struct WorkItemsFilterMenu: View {
         } label: {
             Label("Filter", systemImage: "line.3.horizontal.decrease")
         }
-        .help("Filter the work items")
+        .help("Filter Work Items")
     }
 }
 

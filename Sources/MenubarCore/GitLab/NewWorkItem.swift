@@ -71,10 +71,6 @@ public enum NewWorkItem {
     public static let linkLimit = 6000
     /// the longest title kept, in characters
     public static let titleLimit = 200
-    /// the most failed tests listed in a description
-    public static let testsListed = 10
-    /// the longest error line kept for a failed test
-    static let messageLimit = 160
     /// the line that ends a description cut to fit the link
     static let cutNote = "_(cut to fit a link)_"
 
@@ -136,53 +132,6 @@ public enum NewWorkItem {
             text = link(body: lines.prefix(low).joined(separator: "\n") + "\n\n" + cutNote)
         }
         return URL(string: text)
-    }
-
-    /// Returns the draft of "New Bug from This Build": the title from the job's label and the failed stages, the
-    /// description with the build's link, its facts and the failed tests when they are known.
-    ///
-    /// - Parameters:
-    ///   - build: the failed or unstable build
-    ///   - buildURL: the build's page in Jenkins; `nil` without the job URL in the team values
-    ///   - failedTests: the failed tests of the report; `nil` when they aren't known
-    /// - Returns: the draft, of type Bug
-    public static func bugFromBuild(_ build: Build, buildURL: URL?, failedTests: [FailedTest]?) -> NewWorkItemDraft {
-        let label = build.label
-        let stages = build.failedStages ?? []
-        let title = "Build failure in \(label)" + (stages.isEmpty ? "" : ": " + stages.joined(separator: ", "))
-        var facts: [String] = []
-        if let buildURL {
-            facts.append("- Build: \(buildURL.absoluteString)")
-        }
-        facts.append("- Job: \(label) #\(String(build.number))" + (build.title.map { " (\(oneLine($0)))" } ?? ""))
-        if let result = build.result {
-            facts.append("- Result: \(result.rawValue)")
-        }
-        if !stages.isEmpty {
-            facts.append("- Failed stages: \(oneLine(stages.joined(separator: ", ")))")
-        }
-        if let url = build.gitLabURL {
-            facts.append("- \(build.mergeRequestIID == nil ? "Branch" : "Merge request"): \(url.absoluteString)")
-        }
-        if let counts = build.testCounts, counts.failed > 0 {
-            facts.append("- Failed tests: \(String(counts.failed)) of \(String(counts.total))")
-        }
-        var sections = ["### Build\n\n" + facts.joined(separator: "\n")]
-        if let tests = failedTests, !tests.isEmpty {
-            var lines = tests.prefix(testsListed).map { test in
-                let name = (test.shortClassName.isEmpty ? "" : test.shortClassName + ".") + test.name
-                var line = "- `\(name.replacingOccurrences(of: "`", with: "'"))`"
-                if let message = test.message.flatMap({ $0.components(separatedBy: .newlines).first }) {
-                    line += ": " + String(oneLine(message).prefix(messageLimit))
-                }
-                return line
-            }
-            if tests.count > testsListed {
-                lines.append("- … and \(String(tests.count - testsListed)) more in the build's test report")
-            }
-            sections.append("### Failed tests\n\n" + lines.joined(separator: "\n"))
-        }
-        return NewWorkItemDraft(kind: .bug, title: title, body: sections.joined(separator: "\n\n"))
     }
 
     /// Returns the draft of "New Follow-Up Item": a task that names the merge request and carries its link.
@@ -248,30 +197,21 @@ public enum NewWorkItem {
     }
 }
 
-/// Where a new work item starts: the entry points of NEW-01 to NEW-04.
+/// Where a new work item starts: the entry points of NEW-01, NEW-02 and NEW-04.
 public enum NewWorkItemSource: Hashable, Sendable {
     /// "New Work Item": the page with the type's template
     case blank(WorkItemKind)
-    /// "New Bug from This Build", with the build's page in Jenkins
-    case bugFromBuild(Build, URL?)
     /// "New Follow-Up Item" on a merge request
     case followUp(MergeRequest)
     /// "New Follow-Up Item" on a work item
     case followUpOfWorkItem(WorkItem)
 
-    /// the build whose failed tests the draft lists when they are known
-    public var failedTestsBuild: BuildID? {
-        if case .bugFromBuild(let build, _) = self, (build.testCounts?.failed ?? 0) > 0 { build.id } else { nil }
-    }
-
     /// Returns the draft of the entry point.
     ///
-    /// - Parameter failedTests: the failed tests of ``failedTestsBuild``; `nil` when they aren't known
     /// - Returns: the draft
-    public func draft(failedTests: [FailedTest]?) -> NewWorkItemDraft {
+    public var draft: NewWorkItemDraft {
         switch self {
         case .blank(let kind): NewWorkItemDraft(kind: kind)
-        case .bugFromBuild(let build, let url): NewWorkItem.bugFromBuild(build, buildURL: url, failedTests: failedTests)
         case .followUp(let mergeRequest): NewWorkItem.followUp(of: mergeRequest)
         case .followUpOfWorkItem(let workItem): NewWorkItem.followUp(of: workItem)
         }
