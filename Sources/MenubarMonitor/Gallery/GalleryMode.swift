@@ -20,7 +20,7 @@ enum GalleryMode {
     static let usage = """
         usage: MegaMonitor --gallery [--only <screen or id>]... [--appearance light|dark|light-hc|dark-hc]
                                          [--type-size <\(DynamicTypeSize.allCases.map { "\($0)" }.joined(separator: "|"))>]
-                                         [--reduce-transparency] [--reduce-motion] [--activate] [--manifest <path>]
+                                         [--reduce-transparency] [--reduce-motion] [--activate] [--readme] [--manifest <path>]
         """
 
     static func run(arguments: [String]) -> Never {
@@ -77,6 +77,8 @@ struct GalleryOptions {
     var reduceTransparency = false
     var reduceMotion = false
     var activate = false
+    /// the README's look: the app's own window titles, no entry id, and the panes without a window frame
+    var readme = false
     var manifest: URL?
 
     init(arguments: [String]) throws(UsageError) {
@@ -111,6 +113,8 @@ struct GalleryOptions {
                 reduceMotion = true
             case "--activate":
                 activate = true
+            case "--readme":
+                readme = true
             case "--manifest":
                 manifest = URL(filePath: try value(of: argument))
             default:
@@ -143,7 +147,8 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
         var topLeft = NSPoint.zero
         for entry in entries {
             var styleMask: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
-            if Self.mainWindowScreens.contains(entry.screen) {
+            let readmeStyle = options.readme ? Self.readmeStyle(of: entry) : nil
+            if readmeStyle == .mainWindow || (readmeStyle == nil && Self.mainWindowScreens.contains(entry.screen)) {
                 // As the real main window: the split view's columns reach under the toolbar, which splits over them,
                 // and the sidebar floats (MAIN-WINDOW-04).
                 styleMask.insert(.fullSizeContentView)
@@ -154,7 +159,14 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
                 backing: .buffered,
                 defer: false
             )
-            window.title = entry.id
+            window.title = readmeStyle.map { $0 == .settings ? "Settings" : "MegaMonitor" } ?? entry.id
+            if readmeStyle == .frameless {
+                // The alert and the pane have no title bar of their own: only the content, its corners rounded.
+                window.styleMask = [.borderless]
+                window.isOpaque = false
+                window.backgroundColor = .clear
+                window.hasShadow = false
+            }
             window.isReleasedWhenClosed = false
             // Without the open animation, a screenshot never catches a window still growing to its size.
             window.animationBehavior = .none
@@ -162,6 +174,12 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
             let hostingView = NSHostingView(rootView: entry.makeView(fixtures).modifier(GalleryEnvironment(options: options)))
             hostingView.sceneBridgingOptions = .all
             window.contentView = hostingView
+            if readmeStyle == .frameless {
+                hostingView.wantsLayer = true
+                hostingView.layer?.cornerRadius = 18
+                hostingView.layer?.cornerCurve = .continuous
+                hostingView.layer?.masksToBounds = true
+            }
             window.setContentSize(Self.fittingSize(of: hostingView, entry: entry))
             topLeft = window.cascadeTopLeft(from: topLeft)
             if options.activate {
@@ -220,6 +238,27 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
         return NSSize(
             width: fitting.width > 1 ? fitting.width : entry.size.width,
             height: fitting.height > 1 ? fitting.height : entry.size.height)
+    }
+
+    /// How a README shot's window looks (`--readme`); the `readme.*` entries by their state, the others as plain windows.
+    private enum ReadmeStyle {
+        /// the main window: the toolbar over the columns, the title hidden under it
+        case mainWindow
+        /// a window with a title bar of its own that says "MegaMonitor"
+        case window
+        /// Settings: a title bar that says "Settings"
+        case settings
+        /// no title bar: the pane and the alert
+        case frameless
+    }
+
+    private static func readmeStyle(of entry: GalleryEntry) -> ReadmeStyle {
+        switch entry.id {
+        case "readme.pane", "readme.alert": .frameless
+        case "readme.settings-menu-bar": .settings
+        case "readme.work-item": .window
+        default: .mainWindow
+        }
     }
 
     /// The screens whose entries show the main window, with its sidebar and toolbar.

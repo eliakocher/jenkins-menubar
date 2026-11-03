@@ -34,6 +34,32 @@ struct AppRouteTests {
         #expect(AppRoute(url: try #require(URL(string: link))) == expected)
     }
 
+    @Test("INBOX-07 an item link carries the card to bring into view, and reads back as the same route")
+    func itemLinks() throws {
+        let page = try #require(URL(string: "https://gitlab.example.com/group/project/-/merge_requests/12"))
+        let route = AppRoute.openItem(link: page, card: .claude)
+        #expect(AppRoute(url: route.url) == route)
+        #expect(route.url.scheme == AppIdentity.urlScheme)
+        #expect(route.url.absoluteString.contains("card=claude"))
+        // Without a card the link has none, and an unknown or differently cased card is read as far as it can be.
+        let plain = AppRoute.openItem(link: page, card: nil)
+        #expect(AppRoute(url: plain.url) == plain)
+        #expect(!plain.url.absoluteString.contains("card"))
+        let encoded = page.absoluteString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? ""
+        for (link, expected) in [
+            ("megamonitor://item?url=\(encoded)&card=discussion", AppRoute.openItem(link: page, card: .discussion)),
+            ("menubar-monitor://item?url=\(encoded)&card=CLAUDE", .openItem(link: page, card: .claude)),
+            ("megamonitor://item?card=failed-tests&url=\(encoded)", .openItem(link: page, card: .failedTests)),
+            ("megamonitor://item?url=\(encoded)&card=nonsense", .openItem(link: page, card: nil)),
+            // Refused, each opens the main window: no link, two links, not a web link.
+            ("megamonitor://item?card=claude", .mainWindow),
+            ("megamonitor://item?url=\(encoded)&url=\(encoded)&card=claude", .mainWindow),
+            ("megamonitor://item?url=file%3A%2F%2F%2Fetc%2Fpasswd&card=claude", .mainWindow),
+        ] as [(String, AppRoute)] {
+            #expect(AppRoute(url: try #require(URL(string: link))) == expected, "\(link)")
+        }
+    }
+
     @Test("APP-03 a route's own link reads back as the same route")
     func roundTrip() {
         for pane in SettingsPane.allCases {

@@ -23,11 +23,14 @@ struct InboxData: Sendable {
     var appWideProblems: [PanelModel.ProblemItem]
     /// whether the team values are missing (TEAM-03), which shows their row alone
     var teamValuesMissing: Bool
+    /// the groups in the user's order (Settings → Notifications)
+    var groupOrder: [InboxGroup]
 
     init(
         now: Date, pending: [InboxEntry] = [], snoozed: [InboxEntry] = [], done: [InboxEntry] = [], fetchedAt: Date? = nil,
         problem: Problem? = nil, actionProblem: Problem? = nil, hasLoadedDone: Bool = true, isLoadingDone: Bool = false,
-        isLoading: Bool = false, appWideProblems: [PanelModel.ProblemItem] = [], teamValuesMissing: Bool = false
+        isLoading: Bool = false, appWideProblems: [PanelModel.ProblemItem] = [], teamValuesMissing: Bool = false,
+        groupOrder: [InboxGroup] = InboxGroup.allCases
     ) {
         self.now = now
         self.pending = pending
@@ -41,6 +44,7 @@ struct InboxData: Sendable {
         self.isLoading = isLoading
         self.appWideProblems = appWideProblems
         self.teamValuesMissing = teamValuesMissing
+        self.groupOrder = groupOrder
     }
 
     /// Returns what the store holds now. It reads the lists, so only the Inbox list calls it, not the window's root.
@@ -56,7 +60,8 @@ struct InboxData: Sendable {
             problem: store.problem, actionProblem: store.actionProblem, hasLoadedDone: store.hasLoadedDone,
             isLoadingDone: store.isLoadingDone, isLoading: store.isLoading,
             appWideProblems: MainWindowProblems.appWide(jenkins: model.projects.problem, update: model.updates.state),
-            teamValuesMissing: MainWindowProblems.teamValuesMissing(model.projects.problem))
+            teamValuesMissing: MainWindowProblems.teamValuesMissing(model.projects.problem),
+            groupOrder: store.rules.groupOrder)
     }
 }
 
@@ -103,6 +108,11 @@ struct InboxListModel: Sendable {
     struct Section: Hashable, Sendable, Identifiable {
         var group: InboxGroup
         var rows: [InboxRowModel]
+        /// whether the "Add a To-Do…" field sits at the top of the group: My To-Dos, while pending rows show
+        var showsAddField = false
+
+        /// whether a drag can reorder the rows: my own to-dos in the pending list, with nothing narrowing it
+        var canReorder = false
 
         var id: InboxGroup { group }
         var title: String { group.title }
@@ -147,7 +157,8 @@ struct InboxListModel: Sendable {
         pendingCount = data.pending.count
         snoozedCount = data.snoozed.count
         doneCount = data.hasLoadedDone ? data.done.count : nil
-        markAllCount = data.pending.count
+        // My own to-dos are my list, not notifications: Mark All Done leaves them.
+        markAllCount = data.pending.count { !$0.isMine }
         projects = Set((data.pending + data.snoozed + data.done).compactMap(\.projectPath)).sorted()
         problems = data.appWideProblems
         actionNote = data.actionProblem?.message
@@ -191,8 +202,14 @@ struct InboxListModel: Sendable {
             .filter { (filter.group == nil || $0.group == filter.group) && (filter.project == nil || $0.projectPath == filter.project) }
             .map { InboxRowModel($0, now: data.now, calendar: calendar) }
             .filter { $0.matches(query) }
-        sections = InboxGroup.displayOrder.compactMap { group in
+        // The add field shows while the pending list isn't narrowed or searched, so My To-Dos is there even when empty.
+        let addsTodos = filter.state == .pending && query.isEmpty && filter.project == nil
+            && (filter.group == nil || filter.group == .myToDos)
+        sections = InboxGroupOrder.merged(stored: data.groupOrder.map(\.rawValue)).compactMap { group in
             let inGroup = rows.filter { $0.entry.group == group }
+            if group == .myToDos, addsTodos {
+                return Section(group: group, rows: inGroup, showsAddField: true, canReorder: true)
+            }
             return inGroup.isEmpty ? nil : Section(group: group, rows: inGroup)
         }
         if sections.isEmpty {
@@ -217,9 +234,23 @@ struct InboxListModel: Sendable {
 }
 
 extension InboxGroup {
-    /// The groups in the order the window lists them: Claude's answers first, since they are what the user waits for, then
-    /// GitLab's groups in the Core's order (INBOX-02).
-    static let displayOrder: [InboxGroup] = allCases.filter { $0 == .claude } + allCases.filter { $0 != .claude }
+    /// The groups in their default order, for what has no user order at hand, like the pane's summary line; the window and
+    /// the flyout follow ``InboxNotificationRules/groupOrder`` (INBOX-15).
+    static let displayOrder: [InboxGroup] = allCases
+
+    /// the group's symbol in Settings → Notifications and the Inbox's filter
+    var systemImage: String {
+        switch self {
+        case .myToDos: "checklist"
+        case .coffee: "cup.and.saucer.fill"
+        case .claude: "sparkles"
+        case .mentions: "at"
+        case .reviewRequests: "eye.circle.fill"
+        case .assigned: "person.crop.circle.fill"
+        case .builds: "hammer.fill"
+        case .other: "tray.fill"
+        }
+    }
 }
 
 extension InboxFilter.State {

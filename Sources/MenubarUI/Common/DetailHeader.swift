@@ -7,6 +7,9 @@ import SwiftUI
 struct DetailPage<Content: View>: View {
     /// the shown item: a new one scrolls back to the top
     let id: AnyHashable
+    /// whether the page takes a request to scroll to one of its cards (``CardFocus``): the pages whose cards are marked
+    /// with ``SwiftUICore/View/cardFocusTarget(_:)``
+    var focusesCards = false
     @ViewBuilder var content: (ScrollViewProxy) -> Content
 
     var body: some View {
@@ -18,6 +21,7 @@ struct DetailPage<Content: View>: View {
                 .pageContentWidth()
             }
             .id(id)
+            .takesCardFocus(proxy, enabled: focusesCards)
         }
     }
 }

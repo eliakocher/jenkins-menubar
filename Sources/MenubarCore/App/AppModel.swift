@@ -219,6 +219,7 @@ public final class AppModel {
 
         connectAI()
         connectInboxLocal()
+        connectInboxDelivery()
         projects.requestCheck = { [weak self] in
             self?.onScheduler { await $0.checkNow() }
         }

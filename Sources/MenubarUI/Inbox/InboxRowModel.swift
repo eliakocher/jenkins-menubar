@@ -26,6 +26,10 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
     /// what line 2 says for a thing of this app instead of an author: the build's number and title, the item's title; `nil`
     /// for none
     let subtitle: String?
+    /// when one of my to-dos is due, "Due today", "Due tomorrow", "Due 12 Nov"; `nil` for a row without a date
+    let dueText: String?
+    /// whether the date of one of my pending to-dos has passed: the text turns red
+    let isOverdue: Bool
 
     var id: String { entry.id }
 
@@ -71,6 +75,9 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
         snoozeText = entry.snoozedUntil.map { Self.wakeText($0, now: now, calendar: calendar) }
         excerpt = Self.excerpt(of: entry)
         subtitle = Self.subtitle(of: entry)
+        let due = entry.dueDate.map { Self.dueText($0, now: now, calendar: calendar) }
+        dueText = due?.text
+        isOverdue = due?.isOverdue == true && entry.myTodo?.doneAt == nil
     }
 
     /// Returns line 1: what the row is about, in sentence case, then the target's title.
@@ -81,6 +88,10 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
         // A thing of this app says it all in its own words: "Claude answered: Why did it fail?".
         if case .event(let event) = entry.source, event.source == .local {
             return event.headline
+        }
+        // My own to-do is just what I wrote.
+        if entry.isMine {
+            return entry.title
         }
         let lead = lead(of: entry)
         return entry.title.isEmpty ? lead : "\(lead): \(entry.title)"
@@ -162,6 +173,8 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
         case .otherTodo: ("checklist", .secondary)
         case .claudeAnswered: ("sparkles", .purple)
         case .digestReady: (MainWindowSection.digest.systemImage, .purple)
+        case .coffeeBreak: ("cup.and.saucer.fill", .orange)
+        case .myTodo: ("circle", .accent)
         default: ("circle.fill", .secondary)
         }
     }
@@ -199,6 +212,31 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
         return line.count > 200 ? String(line.prefix(200)) + "…" : line
     }
 
+    /// Returns when a to-do is due, as people say it, and whether the day has passed.
+    ///
+    /// - Parameters:
+    ///   - date: the due date
+    ///   - now: the time of the look
+    ///   - calendar: the user's calendar
+    static func dueText(_ date: Date, now: Date, calendar: Calendar = .current) -> (text: String, isOverdue: Bool) {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)).day ?? 0
+        let style = Date.FormatStyle(
+            locale: calendar.locale ?? .autoupdatingCurrent, calendar: calendar, timeZone: calendar.timeZone)
+        switch days {
+        case ..<0:
+            return ("Overdue since \(date.formatted(style.day().month(.abbreviated)))", true)
+        case 0:
+            // A time earlier today has passed too.
+            return ("Due today", date < now && calendar.component(.hour, from: date) + calendar.component(.minute, from: date) > 0)
+        case 1:
+            return ("Due tomorrow", false)
+        case 2..<7:
+            return ("Due \(date.formatted(style.weekday(.abbreviated)))", false)
+        default:
+            return ("Due \(date.formatted(style.day().month(.abbreviated)))", false)
+        }
+    }
+
     /// Returns when a snoozed row wakes, as people say it: "Until 14:30" today, "Until tomorrow 09:00", "Until Mon 09:00"
     /// within a week, "Until 12 Nov 09:00" beyond.
     ///
@@ -230,7 +268,7 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
     /// - Parameter query: the search text, trimmed; empty matches every row
     func matches(_ query: String) -> Bool {
         query.isEmpty
-            || [title, reference?.text, author?.name, author?.username, entry.projectPath, entry.reference, excerpt, subtitle]
+            || [title, reference?.text, author?.name, author?.username, entry.projectPath, entry.reference, excerpt, subtitle, dueText]
                 .contains { $0?.localizedCaseInsensitiveContains(query) == true }
     }
 

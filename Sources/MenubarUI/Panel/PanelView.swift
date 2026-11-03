@@ -77,10 +77,11 @@ enum PanelView {
             inbox: inbox ? Self.inbox(model.inbox) : PanelData.Inbox())
     }
 
-    /// Returns the Inbox's pending rows and badge as plain values.
+    /// Returns the Inbox's pending rows and badge as plain values. The rows follow the user's group order (INBOX-15), so the
+    /// pane's flyout lists My To-Dos and the coffee first, and the newest first inside a group.
     static func inbox(_ store: InboxStore) -> PanelData.Inbox {
         PanelData.Inbox(
-            entries: store.pending, badgeCount: store.badgeCount, hasLoaded: store.fetchedAt != nil, isLoading: store.isLoading,
+            entries: store.sections.flatMap(\.entries), badgeCount: store.badgeCount, hasLoaded: store.fetchedAt != nil, isLoading: store.isLoading,
             problem: store.problem)
     }
 }

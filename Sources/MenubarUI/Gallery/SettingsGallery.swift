@@ -142,6 +142,7 @@ private struct SettingsWindowGalleryView: View {
         SettingsShell(selection: $pane, query: $query) { pane in
             switch pane {
             case .general: GeneralGalleryView()
+            case .menuBar: MenuBarSettingsForm(preferences: .constant(Preferences()))
             case .notifications: NotificationsGalleryView()
             case .appearance: AppearanceSettingsForm()
             case .accounts:
@@ -179,6 +180,9 @@ extension GalleryCatalog {
                 SettingsWindowGalleryView(fixtures: f, pane: pane)
             }
         } + [
+            GalleryEntry(screen: "settings-window", state: "menuBar-narrow", size: SettingsMetrics.minimumWindow) { f in
+                SettingsWindowGalleryView(fixtures: f, pane: .menuBar)
+            },
             GalleryEntry(screen: "settings-window", state: "search", size: SettingsMetrics.window) { f in
                 SettingsWindowGalleryView(fixtures: f, pane: .team, query: "freeze")
             },

@@ -154,6 +154,12 @@ struct MenuPaneModel: Sendable {
                 area.summary.append(.count(symbol: "person.crop.circle.fill", tint: .gitLab(.blue), text: "\(count) assigned"))
             case .claude:
                 area.summary.append(.count(symbol: "sparkles", tint: .secondary, text: "\(count) from Claude"))
+            case .myToDos:
+                area.summary.append(.count(symbol: "checklist", tint: .gitLab(.blue), text: "\(count) to do"))
+            case .coffee:
+                area.summary.append(.count(symbol: "cup.and.saucer.fill", tint: .gitLab(.orange), text: "coffee"))
+            case .builds:
+                area.summary.append(.count(symbol: "xmark.circle.fill", tint: .gitLab(.red), text: "\(count) failing"))
             default:
                 area.summary.append(.count(symbol: nil, tint: nil, text: "\(count) \(group.title.lowercased())"))
             }

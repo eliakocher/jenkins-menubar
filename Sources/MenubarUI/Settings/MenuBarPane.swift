@@ -11,7 +11,7 @@ struct MenuBarSettingsForm: View {
     @ViewState var sample = MenuBarPreview.Sample.busy
 
     /// a drag list row's pitch: its content and the list's own padding
-    private static let rowHeight: CGFloat = 40
+    private static let rowHeight: CGFloat = 42
 
     private var layout: Binding<MenuBarLayout> {
         $preferences.menuBarLayout
@@ -99,7 +99,7 @@ struct MenuBarSettingsForm: View {
             .listStyle(.plain)
             .scrollDisabled(true)
             .scrollContentBackground(.hidden)
-            .frame(height: Self.rowHeight * CGFloat(parts.count) + 8)
+            .frame(height: Self.rowHeight * CGFloat(parts.count) + 4)
             .settingsAnchor(.menuBarParts)
             resetRow(isDefault: preferences.menuBarLayout.isDefaultItem) {
                 preferences.menuBarLayout.resetItem()
@@ -203,7 +203,7 @@ struct MenuBarSettingsForm: View {
             .listStyle(.plain)
             .scrollDisabled(true)
             .scrollContentBackground(.hidden)
-            .frame(height: Self.rowHeight * CGFloat(rows.count) + 8)
+            .frame(height: Self.rowHeight * CGFloat(rows.count) + 4)
             .settingsAnchor(.menuPaneRows)
             LabeledContent {
                 Picker("Width", selection: layout.paneWidth) {
@@ -458,7 +458,7 @@ struct MenuBarPreview: View {
             .frame(height: 28)
             .background(dark ? Color.black.opacity(0.42) : Color.white.opacity(0.62))
         }
-        .frame(height: 64)
+        .frame(height: 46)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay {

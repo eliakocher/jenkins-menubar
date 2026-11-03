@@ -208,13 +208,13 @@ public struct BuildAlertView: View {
 
 /// The grey of the alert's facts and notes, lighter than `.secondary` over the tinted glass: the vibrant primary style
 /// at a fixed opacity (the user, 2026-10-30: "the grey text a bit lighter").
-private struct AlertGreyStyle: ShapeStyle {
+struct AlertGreyStyle: ShapeStyle {
     func resolve(in environment: EnvironmentValues) -> some ShapeStyle {
         HierarchicalShapeStyle.primary.opacity(environment.colorScheme == .dark ? 0.80 : 0.72)
     }
 }
 
-private extension ShapeStyle where Self == AlertGreyStyle {
+extension ShapeStyle where Self == AlertGreyStyle {
     static var alertGrey: AlertGreyStyle { AlertGreyStyle() }
 }
 
@@ -243,7 +243,7 @@ public struct AlertPager {
 }
 
 /// "‹ 1 of 3 ›" above the butler.
-private struct AlertPagerBar: View {
+struct AlertPagerBar: View {
     let pager: AlertPager
 
     var body: some View {

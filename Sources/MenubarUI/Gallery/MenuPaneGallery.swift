@@ -13,15 +13,18 @@ struct MenuPaneGalleryView: View {
     var highlight: MenuNavigation.PaneRow?
     /// the flyout row the pointer is on, by index
     var flyoutHighlight: Int?
+    /// Settings → Menu Bar's layout (APP-11)
+    var layout = MenuBarLayout()
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(alignment: .menuFlyoutTop, spacing: MenuFlyoutPlacement.gap) {
-            MenuPaneContent(model: MenuPaneModel(data), navigation: navigation)
+            MenuPaneContent(model: MenuPaneModel(data, layout: layout), navigation: navigation)
                 .containerShape(.rect(cornerRadius: 16))
                 .glassEffect(.regular, in: .rect(cornerRadius: 16))
             if let open {
-                MenuFlyoutContent(flyout: MenuFlyout(data, area: open), highlight: flyoutHighlight)
+                MenuFlyoutContent(
+                    flyout: MenuFlyout(data, area: open, limit: layout.row(open).flyoutRows), highlight: flyoutHighlight)
                     .glassEffect(.regular, in: .rect(cornerRadius: MenuMetrics.flyoutCorner))
             }
         }

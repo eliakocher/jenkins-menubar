@@ -14,6 +14,11 @@ import Foundation
 ///   (a second `url`, or none, is ambiguous and refused); every other parameter is ignored. A refused link opens the
 ///   main window like any unknown one.
 ///
+/// - `megamonitor://item?url=<https link>&card=<card>`: a build, merge request or work item of that link in the app, as a
+///   click on it does, and with `card` (`claude`, `discussion`, `failed-tests` or `console-log`) its page scrolled to
+///   that card. Only an `http` or `https` link in exactly one `url` parameter counts; an unknown `card` shows the page
+///   from the top; a refused link opens the main window.
+///
 /// Any other link of the scheme opens the main window.
 public enum AppRoute: Hashable, Sendable {
     case settings(SettingsPane)
@@ -23,6 +28,8 @@ public enum AppRoute: Hashable, Sendable {
     /// the https link of a team file to preview in Settings → Team, as the link had it (TEAM-02); never applied by
     /// the route itself
     case importTeamFile(link: URL)
+    /// a build, merge request or work item by its web link, with the card of its page to bring into view
+    case openItem(link: URL, card: DetailCardID?)
     case mainWindow
 
     /// A section of the main window's sidebar, named as in its link.
@@ -66,6 +73,17 @@ public enum AppRoute: Hashable, Sendable {
             } else {
                 self = .mainWindow
             }
+        case "item":
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let links = items.filter { $0.name == "url" }
+            if links.count == 1, let text = links[0].value, let link = URL(string: text),
+                ["http", "https"].contains(link.scheme?.lowercased()), link.host(percentEncoded: false)?.isEmpty == false
+            {
+                let card = items.first { $0.name == "card" }?.value.flatMap { DetailCardID(rawValue: $0.lowercased()) }
+                self = .openItem(link: link, card: card)
+            } else {
+                self = .mainWindow
+            }
         case "open":
             self = name.flatMap(Section.init(rawValue:)).map(AppRoute.open) ?? .mainWindow
         default:
@@ -90,6 +108,11 @@ public enum AppRoute: Hashable, Sendable {
         case .importTeamFile(let link):
             components.host = "import"
             components.queryItems = [URLQueryItem(name: "url", value: link.absoluteString)]
+        case .openItem(let link, let card):
+            components.host = "item"
+            components.queryItems =
+                [URLQueryItem(name: "url", value: link.absoluteString)]
+                + (card.map { [URLQueryItem(name: "card", value: $0.rawValue)] } ?? [])
         case .mainWindow:
             components.host = "open"
         }

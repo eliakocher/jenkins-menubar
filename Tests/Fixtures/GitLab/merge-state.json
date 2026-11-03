@@ -1,0 +1,49 @@
+{
+  "data": {
+    "project": {
+      "removeSourceBranchAfterMerge": true,
+      "mergeRequestsFfOnlyEnabled": false,
+      "mergeRequest": {
+        "state": "opened",
+        "draft": false,
+        "detailedMergeStatus": "NOT_APPROVED",
+        "mergeabilityChecks": [
+          { "identifier": "NOT_APPROVED", "status": "FAILED" },
+          { "identifier": "CI_MUST_PASS", "status": "FAILED" },
+          { "identifier": "DISCUSSIONS_NOT_RESOLVED", "status": "SUCCESS" },
+          { "identifier": "DRAFT_STATUS", "status": "SUCCESS" },
+          { "identifier": "CONFLICT", "status": "SUCCESS" },
+          { "identifier": "NEED_REBASE", "status": "SUCCESS" },
+          { "identifier": "NOT_OPEN", "status": "SUCCESS" },
+          { "identifier": "STATUS_CHECKS_MUST_PASS", "status": "WARNING" },
+          { "identifier": "JIRA_ASSOCIATION_MISSING", "status": "INACTIVE" },
+          { "identifier": "LOCKED_PATHS", "status": "INACTIVE" }
+        ],
+        "diffHeadSha": "4f2a9c1e5b7d3a8f0c6e2b9d1a4f7c3e5b8d0a2f",
+        "sourceBranch": "feature/export-retry",
+        "targetBranch": "develop",
+        "commitCount": 3,
+        "divergedFromTargetBranch": true,
+        "conflicts": false,
+        "squash": true,
+        "squashOnMerge": true,
+        "squashReadOnly": false,
+        "shouldRemoveSourceBranch": null,
+        "forceRemoveSourceBranch": null,
+        "defaultMergeCommitMessage": "Merge branch 'feature/export-retry' into 'develop'\n\nAdd a retry to the export job\n\nSee merge request group/project!16",
+        "defaultSquashCommitMessage": "Add a retry to the export job",
+        "autoMergeEnabled": false,
+        "autoMergeStrategy": null,
+        "availableAutoMergeStrategies": ["merge_when_checks_pass"],
+        "mergeUser": null,
+        "mergedAt": null,
+        "closedAt": null,
+        "mergeError": null,
+        "mergeOngoing": false,
+        "rebaseInProgress": false,
+        "headPipeline": { "status": "RUNNING" },
+        "userPermissions": { "canMerge": true, "pushToSourceBranch": true, "updateMergeRequest": true, "removeSourceBranch": true }
+      }
+    }
+  }
+}

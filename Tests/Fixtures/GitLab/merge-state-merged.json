@@ -1,0 +1,38 @@
+{
+  "data": {
+    "project": {
+      "removeSourceBranchAfterMerge": false,
+      "mergeRequestsFfOnlyEnabled": true,
+      "mergeRequest": {
+        "state": "merged",
+        "draft": false,
+        "detailedMergeStatus": "NOT_OPEN",
+        "mergeabilityChecks": [{ "identifier": "NOT_OPEN", "status": "FAILED" }],
+        "diffHeadSha": "9b1d77e0c4a2f6e8b3d5a7c9e1f0b2d4a6c8e0f2",
+        "sourceBranch": "feature/dark-icons",
+        "targetBranch": "main",
+        "commitCount": 1,
+        "divergedFromTargetBranch": false,
+        "conflicts": false,
+        "squash": false,
+        "squashOnMerge": true,
+        "squashReadOnly": true,
+        "shouldRemoveSourceBranch": true,
+        "forceRemoveSourceBranch": false,
+        "defaultMergeCommitMessage": null,
+        "defaultSquashCommitMessage": "Draw the icons for the dark appearance",
+        "autoMergeEnabled": false,
+        "autoMergeStrategy": null,
+        "availableAutoMergeStrategies": [],
+        "mergeUser": { "username": "akim", "name": "Alex Kim" },
+        "mergedAt": "2026-11-02T16:20:11.512Z",
+        "closedAt": null,
+        "mergeError": null,
+        "mergeOngoing": false,
+        "rebaseInProgress": false,
+        "headPipeline": { "status": "SUCCESS" },
+        "userPermissions": { "canMerge": false, "pushToSourceBranch": false, "updateMergeRequest": false, "removeSourceBranch": false }
+      }
+    }
+  }
+}

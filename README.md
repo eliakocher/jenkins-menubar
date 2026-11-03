@@ -3,9 +3,68 @@
 A native macOS menu bar app for a GitLab project that Jenkins builds with a multibranch job. It shows your builds,
 merge requests, work items, checkouts and release slots, and tells you the moment a build finishes.
 
-![The menu bar pane with the Pipelines flyout open: running, failed and passed builds](docs/panel.png)
+![The menu bar pane with the Pipelines flyout open: running, failed and passed builds](docs/screenshots/pane.png)
 
-![The main window at Pipelines: the list of builds and the stages of the selected one](docs/main-window.png)
+![The main window at Pipelines: the list of builds and the stages of the selected one](docs/screenshots/main-window.png)
+
+More [screenshots](#screenshots) are below. They show made-up data, in dark mode.
+
+## Screenshots
+
+Every screenshot is drawn from the app's design gallery with made-up people, projects and branches; nothing here is a real
+team's data. They are in dark mode, and the app follows the system's appearance. `scripts/readme-shots.sh` renders them again.
+
+### A failed build, its tests and its console log
+
+![Pipelines with a failed build selected: its stages, the failed tests, the build info, the recent builds and the console log opened below](docs/screenshots/pipelines.png)
+
+*A failed build shows its failed stages and tests, how it compares to the recent builds, and the console log, searchable, with the errors and warnings to jump to.*
+
+### A merge request
+
+![A merge request: the Merge card with the blocked checks, the reviewers, the approvals and the builds](docs/screenshots/merge-request.png)
+
+*A merge request's detail: what blocks the merge and the way to fix it, the reviewers, the approvals, the builds and the code changes.*
+
+### A work item
+
+![A work item: its facts, its merge requests with their builds, its slot with the code freeze countdown and its description](docs/screenshots/work-item.png)
+
+*A work item's facts, the merge requests behind it with their builds, its slot's dates and its description.*
+
+### Slots
+
+![Slots: the roadmap of the release slots and the current slot with its epics and items](docs/screenshots/slots.png)
+
+*The roadmap of the release slots, and the current one open: its dates, its items by epic, and the ones at risk.*
+
+### The Inbox
+
+![The Inbox: My To-Dos, a coffee break, Claude's answer, mentions and review requests](docs/screenshots/inbox.png)
+
+*GitLab's to-dos in groups, with the app's own entries and your own to-dos beside them.*
+
+### The Digest
+
+![The Digest: a summary of what needs you today, with the merge requests, reviews, builds and work items behind it](docs/screenshots/digest.png)
+
+*The morning digest, written by Claude when you turn it on: what needs you, in order, with a link to each thing.*
+
+### Workspaces
+
+![Workspaces: six local checkouts with their branch and state, and the selected one's work item, merge request and build](docs/screenshots/workspaces.png)
+
+*Your local checkouts, and the work item, merge request and build behind each one.*
+
+### Settings → Menu Bar and the alert
+
+<img src="docs/screenshots/settings-menu-bar.png" alt="Settings, Menu Bar: a live preview of the menu bar item on a light and a dark menu bar, and the list of what it shows" width="420">
+
+*Settings → Menu Bar: a live preview, and what the icon and the pane show, in your order.*
+
+<img src="docs/screenshots/alert.png" alt="The alert of a failed build, with the butler, the build's numbers and the buttons Show Build, Rebuild, Show MR and Dismiss" width="320">
+
+*The alert when a build you follow fails, one of several pages.*
 
 ## Install
 
@@ -33,9 +92,11 @@ Nothing is rebuilt without that click.
 ## What it does
 
 - **Menu bar icon and pane**: the icon counts your running, failed, unstable and successful builds, and marks
-  problems. Its glass pane is a short overview: one row each for Pipelines, Merge Requests and Work Items, with counts
+  problems. Its glass pane is a short overview: one row each for Pipelines, Inbox, Merge Requests and Work Items, with counts
   and a summary. Hover a row (or press →) and a flyout beside the pane lists the items; a click opens one in Jenkins or
-  GitLab, and its menu has **Show in Window**. **Check Now**, **Open Window**, Settings and Quit sit at the bottom.
+  GitLab, and its menu has **Show in Window**. **Check Now**, **Open Window**, Settings and Quit sit at the bottom. **Settings → Menu Bar**
+  chooses what the icon shows (the counts, a red dot while the Inbox has something, the butler, a slot countdown) and
+  which rows the pane has, in what order and with how long a list, with a live preview.
 - **Global hotkey**: **Settings → General** can set a shortcut that opens the main window from any app (and hides it
   again). Off by default.
 - **Alerts**: a big alert window or a banner (your choice) when a build you follow finishes, and optionally a banner
@@ -43,10 +104,17 @@ Nothing is rebuilt without that click.
   one click; **Open Console** and **Hide Until the Next Build** are in the alert's menu and on the banner.
 - **Main window** (⌘0; ⌘1 and on pick the sidebar's sections, in order):
   - **Pipelines**: your builds and the ones you watch, with stages, failed tests and links. A failed build shows its
-    failed test names, and a stage that passed on the same commit is marked **likely flaky**.
+    failed test names, and a stage that passed on the same commit is marked **likely flaky**. Its **Console Log** opens
+    in the app, with the errors and warnings to jump to, **Find**, and a followed end while the build runs.
+  - **Inbox**: GitLab's To-Do List in the app, grouped (mentions, review requests, assigned, builds, other), with Done,
+    Restore, Snooze and filters; done and snoozed here is done and snoozed in GitLab. It also holds entries of the app's
+    own that never reach GitLab (a Claude answer, the digest, a failed build, a coffee break) and **My To-Dos**, your own
+    list on this Mac. **Settings → Notifications** sets per kind whether it shows a big panel, a desktop notification or
+    only the Inbox, and whether it counts for the badge.
   - **Merge Requests**: yours, review requested and reviewed, each with a status badge in GitLab's colors and its
-    description. The details show the approvals and their rules, the unresolved threads, and the GitLab pipeline with
-    its jobs. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
+    description. The details show the approvals and their rules, the unresolved threads, the code changes, and the GitLab pipeline
+    with its jobs. A **Merge** card lists what blocks the merge, with the way to fix each, and can merge, set auto-merge,
+    rebase or mark a draft as ready, each only on your click and after a confirmation where it can't be undone. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
   - **Work Items**: committed and not committed, with filters and label filters, and their related merge requests.
     **New Work Item…** (⌘N) and **New Follow-Up Item** open GitLab's own new issue page, prefilled, in the
     browser.
@@ -74,8 +142,8 @@ Nothing is rebuilt without that click.
   first answer of each kind shows what goes; the morning digest is the one thing you can turn on to run by itself)
   and removes tokens and keys first.
 - **Easter eggs**: the butler sometimes has something to say. One switch in **Settings → General** turns them off.
-- **Settings** (⌘,): General, Notifications, Appearance, Accounts, Projects, Team, Pipelines, Work Items, Workspaces,
-  Claude and Advanced.
+- **Settings** (⌘,): General, Menu Bar, Notifications, Appearance, Accounts, Projects, Team, Pipelines, Work Items,
+  Workspaces, Claude and Advanced.
 - Jenkins is checked all the time; merge requests and work items load while you look at them, plus a few small
   background requests.
 
@@ -109,6 +177,7 @@ and the SwiftPM product `megamonitor`; the module names stay `MenubarCore`, `Men
 ./test.sh [filter]                 # the Swift Testing tests
 scripts/smoke.sh                   # runs the built app once against a local stub server
 scripts/gallery-shots.sh all       # screenshots of the design gallery (not committed)
+scripts/readme-shots.sh            # refreshes the README's screenshots in docs/screenshots/
 ```
 
 With Xcode installed, point both scripts at the Command Line Tools to build the way everyone else does:

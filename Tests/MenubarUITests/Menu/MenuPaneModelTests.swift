@@ -78,3 +78,47 @@ struct MenuPaneModelTests {
         #expect(MenuFlyout(data, area: .inbox).note == "Inbox Zero")
     }
 }
+
+/// The pane's rows from Settings → Menu Bar (APP-11).
+@Suite("MenuPaneModel layout")
+@MainActor
+struct MenuPaneLayoutTests {
+    private static let fixtures = Fixtures()
+
+    @Test("APP-11 the pane's rows follow the layout: order, rows that are off, flyouts and their entries")
+    func rowsFollowLayout() {
+        let f = Self.fixtures
+        let data = f.panel(mine: f.typicalBuilds)
+        #expect(MenuPaneModel(data).areas.map(\.section) == [.pipelines, .inbox, .mergeRequests, .workItems])
+
+        var layout = MenuBarLayout()
+        layout.moveRows(from: [2], to: 0)
+        layout.updateRow(.inbox) { $0.isOn = false }
+        layout.updateRow(.workItems) { $0.showsFlyout = false }
+        layout.updateRow(.pipelines) { $0.flyoutRows = 5 }
+        layout.paneWidth = .compact
+        let pane = MenuPaneModel(data, layout: layout)
+        #expect(pane.areas.map(\.section) == [.mergeRequests, .pipelines, .workItems])
+        #expect(pane.flyoutless == [.workItems])
+        #expect(pane.area(.pipelines)?.flyoutRows == 5)
+        #expect(pane.width == .compact)
+        #expect(MenuPaneView.rows(of: pane).prefix(3) == [.area(.mergeRequests), .area(.pipelines), .area(.workItems)])
+
+        // A flyout lists the row's number of entries, then Show All N in Window.
+        let many = f.panel(mine: (1...8).map {
+            f.finished("MR-\($0)", 1, "Build \($0)", .success, durationMinutes: 5, finishedMinutesAgo: Double($0))
+        })
+        let flyout = MenuFlyout(many, area: .pipelines, limit: 5)
+        #expect(flyout.entries.count == 5)
+        #expect(flyout.commands.contains(.showInWindow(all: 8)))
+
+        // Without a flyout, → does nothing on the row and Return opens it in the window.
+        var navigation = MenuNavigation()
+        navigation.paneRows = MenuPaneView.rows(of: pane)
+        navigation.flyoutless = pane.flyoutless
+        navigation.highlight = .area(.workItems)
+        #expect(navigation.handle(.right) == .none)
+        #expect(navigation.openArea == nil)
+        #expect(navigation.handle(.enter) == .activate(.area(.workItems)))
+    }
+}

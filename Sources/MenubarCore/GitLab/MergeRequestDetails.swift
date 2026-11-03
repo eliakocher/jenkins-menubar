@@ -648,6 +648,8 @@ public final class MergeRequestDetailsStore {
     /// (Task 7.06: every selection asked the reviews twice). Reset at each launch, so a GitLab update is picked up.
     @ObservationIgnored private var levels = Levels()
     @ObservationIgnored private let services: GitLabServices
+    /// the merge state and the Merge card's writes (MR-16); a write loads these details again
+    public let merge: MergeRequestMergeStore
 
     private struct Levels: Sendable {
         var details: MergeRequestDetailsLevel = .full
@@ -657,6 +659,8 @@ public final class MergeRequestDetailsStore {
     /// - Parameter services: the transport, the token and the team values; the logs record the requests
     public init(services: GitLabServices) {
         self.services = services
+        merge = MergeRequestMergeStore(services: services)
+        merge.afterWrite = { [weak self] mergeRequest in await self?.load(mergeRequest, force: true) }
     }
 
     /// Returns what is known of a merge request's details.

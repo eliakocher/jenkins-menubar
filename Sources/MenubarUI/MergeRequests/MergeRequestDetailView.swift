@@ -59,6 +59,7 @@ struct MergeRequestDetailContent: View {
 
     /// the cards the chips jump to
     private enum Card: Hashable {
+        case reviewers
         case approvals
         case discussion
         case builds
@@ -76,11 +77,22 @@ struct MergeRequestDetailContent: View {
                             header(model, state: state) { card in
                                 withAnimation(.snappy) { proxy.scrollTo(card, anchor: .top) }
                             }
+                            // The state at a glance, the checks with their fixes, and Merge (MR-16), right under the header.
+                            MergeCard(model: model, details: state.details, actions: actions) { target in
+                                let card: Card =
+                                    switch target {
+                                    case .reviewers: .reviewers
+                                    case .builds: .builds
+                                    case .discussion: .discussion
+                                    }
+                                withAnimation(.snappy) { proxy.scrollTo(card, anchor: .top) }
+                            }
                             // Compact fact cards in two columns when wide; the tall ones below, full width, in a fixed order:
                             // Description, Claude, Changes, Discussion.
                             CardColumnsLayout {
                                 // Each reviewer with their review, and Re-request Review where a review was given (MR-09, MR-10).
                                 ReviewersCard(model: model, actions: actions)
+                                    .id(Card.reviewers)
                                 // Loaded on selection, as the threads and the GitLab pipeline (MR-06 to MR-08).
                                 ApprovalsCard(state: state, retry: retry)
                                     .id(Card.approvals)
@@ -91,6 +103,7 @@ struct MergeRequestDetailContent: View {
                                 DescriptionSection(source: DescriptionSource(model.mergeRequest), inCard: true)
                                 // The inline chat with Claude about the code, while the Claude features are on (AI-07).
                                 MergeRequestClaudeCard(mergeRequest: model.mergeRequest)
+                                    .cardFocusPulse(.claude)
                                     .id(Card.claude)
                                 // The code itself, read only, folded where it is big or generated (MR-11).
                                 ChangesCard(mergeRequest: model.mergeRequest, changesURL: model.changesURL, actions: actions)
@@ -100,6 +113,7 @@ struct MergeRequestDetailContent: View {
                                     details: state.details, mergeRequest: model.mergeRequest, actions: actions,
                                     // The discussions come apart from the approvals and the pipeline (OD-07).
                                     isLoading: state.isAwaiting || state.details?.discussionsLoaded == false)
+                                    .cardFocusPulse(.discussion)
                                     .id(Card.discussion)
                             }
                         }
@@ -107,6 +121,8 @@ struct MergeRequestDetailContent: View {
                     }
                     // Another merge request starts at the top, with its own disclosures and re-request state.
                     .id(model.mergeRequest.id)
+                    // An Inbox entry for a Claude answer or a mention scrolls to its card and pulses it.
+                    .takesCardFocus(proxy, ids: [.claude: Card.claude, .discussion: Card.discussion])
                     // GitLab's links to the work items, once per update of the merge request (MR-12).
                     .task(id: LinksAsk(id: model.mergeRequest.id, updatedAt: model.mergeRequest.updatedAt)) {
                         await appModel?.loadItemLinks(

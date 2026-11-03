@@ -50,10 +50,30 @@ struct InboxRowContent: View {
 
     var body: some View {
         ListRow(title: row.title) {
-            Image(systemName: row.symbol)
-                .foregroundStyle(prominence == .increased ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tint.color))
-                .fontWeight(row.isMention ? .semibold : .regular)
-                .help(row.isMention ? "Mentions you" : "")
+            if row.entry.isMine {
+                // A checkbox finishes my own to-do, and takes the tick back in the Done list.
+                Button {
+                    if state == .done {
+                        actions.restore([row.entry])
+                    } else {
+                        actions.done([row.entry])
+                    }
+                } label: {
+                    Image(systemName: state == .done ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(
+                            prominence == .increased
+                                ? AnyShapeStyle(.secondary) : AnyShapeStyle(state == .done ? Color.green : Color.accentColor))
+                        .imageScale(.large)
+                        .accessibilityLabel(state == .done ? "Not Done" : "Done")
+                }
+                .buttonStyle(.borderless)
+                .help(state == .done ? "Not done after all" : "Done")
+            } else {
+                Image(systemName: row.symbol)
+                    .foregroundStyle(prominence == .increased ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tint.color))
+                    .fontWeight(row.isMention ? .semibold : .regular)
+                    .help(row.isMention ? "Mentions you" : "")
+            }
         } trailing: {
             ZStack(alignment: .trailing) {
                 // Both are always there, so the row keeps its width when the buttons come.
@@ -76,6 +96,7 @@ struct InboxRowContent: View {
             }
         }
         .foregroundStyle(state == .done ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+        .strikethrough(state == .done && row.entry.isMine)
         // Opened and done rows fade, so what is still new stands out.
         .opacity(isFaded ? 0.6 : 1)
         .contentShape(.rect)
@@ -130,6 +151,16 @@ struct InboxDetailsLine: View {
                     .truncationMode(.tail)
                     .layoutPriority(1)
             }
+            if let due = row.dueText {
+                Label {
+                    Text(verbatim: due)
+                } icon: {
+                    Image(systemName: "calendar")
+                }
+                .foregroundStyle(row.isOverdue ? AnyShapeStyle(MergeRequestStatus.Color.red.swiftUI) : AnyShapeStyle(.secondary))
+                .lineLimit(1)
+                .fixedSize()
+            }
             if let snooze = row.snoozeText {
                 Text(verbatim: "· \(snooze)")
                     .lineLimit(1)
@@ -159,8 +190,6 @@ private struct InboxRowButtons: View {
                 .menuIndicator(.hidden)
                 .fixedSize()
                 .help("Snooze")
-                .opacity(row.entry.todo == nil ? 0 : 1)
-                .disabled(row.entry.todo == nil)
                 doneButton
             case .snoozed:
                 Button {
@@ -200,8 +229,8 @@ private struct InboxRowButtons: View {
     }
 }
 
-/// The Snooze menu: an hour, tomorrow morning, next week, and a date of the user's choice (INBOX-04). A local entry can't
-/// be snoozed, so the menu is left out for it.
+/// The Snooze menu: an hour, tomorrow morning, next week, and a date of the user's choice (INBOX-04). Every entry sleeps:
+/// a GitLab to-do in GitLab, the others on this Mac.
 struct InboxSnoozeMenu<Label: View>: View {
     let entries: [InboxEntry]
     let actions: InboxActions

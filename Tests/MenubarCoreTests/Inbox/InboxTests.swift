@@ -199,7 +199,7 @@ struct InboxTests {
 
     // MARK: - INBOX-02
 
-    @Test("INBOX-02 pending rows are grouped Mentions, Review Requests, Assigned, Other, newest first")
+    @Test("INBOX-02 pending rows are grouped Mentions, Review Requests, Assigned, Builds, Other, newest first")
     func grouping() async throws {
         let world = try World()
         try world.answerFixture("InboxTodos", "todos.json")
@@ -208,10 +208,10 @@ struct InboxTests {
         await store.load()
 
         let groups = store.sections.map { ($0.group, $0.entries.map(\.id)) }
-        #expect(groups.map(\.0) == [.mentions, .reviewRequests, .assigned, .other])
+        #expect(groups.map(\.0) == [.mentions, .reviewRequests, .assigned, .builds, .other])
         #expect(groups.map(\.1) == [
             ["gid://gitlab/Todo/905", "gid://gitlab/Todo/900"], ["gid://gitlab/Todo/904"], ["gid://gitlab/Todo/903"],
-            ["gid://gitlab/Todo/902", "gid://gitlab/Todo/901"],
+            ["gid://gitlab/Todo/902"], ["gid://gitlab/Todo/901"],
         ])
         #expect(store.sections.first?.entries.first?.headline == "Sam Rivera mentioned you")
         #expect(store.snoozed.map(\.id) == ["gid://gitlab/Todo/899"])

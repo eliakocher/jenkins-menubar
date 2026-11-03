@@ -2,8 +2,9 @@ import AppKit
 import MenubarCore
 import SwiftUI
 
-/// The Inbox section's list (Task 7.03, INBOX-02): GitLab's To-Do List in the window, grouped Mentions, Review Requests,
-/// Assigned, Other, newest first, with the Pending, Snoozed and Done filters, Done, Snooze and Mark All Done. It is full
+/// The Inbox section's list (Task 7.03, INBOX-02): GitLab's To-Do List in the window and the user's own to-dos, grouped in
+/// the order of Settings → Notifications (My To-Dos, Coffee, Claude, Mentions, Review Requests, Assigned, Builds, Other),
+/// newest first, with the Pending, Snoozed and Done filters, Done, Snooze and Mark All Done. It is full
 /// width, like Slots: a click opens the target in the app (its list or "Opened"; ⌥ opens the browser).
 ///
 /// It reads the store from the environment and draws an ``InboxListContent`` from it, refreshed every 30 s for the ages.
@@ -51,6 +52,8 @@ struct InboxListContent: View {
     @ViewState private var isPickingDate = false
     /// the rows the date picker snoozes
     @ViewState private var dateEntries: [InboxEntry] = []
+    /// the to-do the form edits, or a new one
+    @ViewState private var todoSheet: MyTodoSheetTarget?
 
     var body: some View {
         List(selection: $selection) {
@@ -66,6 +69,9 @@ struct InboxListContent: View {
             }
             ForEach(model.sections) { section in
                 Section {
+                    if section.showsAddField {
+                        MyTodoAddField(add: actions.addTodo) { todoSheet = .new }
+                    }
                     ForEach(section.rows) { row in
                         InboxRowContent(row: row, state: filter.state, actions: actions) { entries in
                             dateEntries = entries
@@ -74,6 +80,8 @@ struct InboxListContent: View {
                         .tag(row.id)
                         .onTapGesture { open(row) }
                     }
+                    // A drag reorders my own to-dos, and only them.
+                    .onMove(perform: section.canReorder && section.rows.count > 1 ? { actions.moveTodos($0, $1) } : nil)
                 } header: {
                     InboxSectionHeader(title: section.title, count: section.rows.count)
                 }
@@ -82,9 +90,13 @@ struct InboxListContent: View {
         .contextMenu(forSelectionType: String.self) { ids in
             menu(for: rows(of: ids))
         } primaryAction: { ids in
-            // Return and a double-click open the first one, as a click does.
+            // Return and a double-click open the first one, as a click does; a to-do of mine without a link opens its form.
             if let row = rows(of: ids).first {
-                open(row)
+                if row.entry.isMine, row.entry.targetURL == nil, let todo = row.entry.myTodo {
+                    todoSheet = .edit(todo)
+                } else {
+                    open(row)
+                }
             }
         }
         .onKeyPress(keys: [.delete, .deleteForward]) { press in
@@ -111,6 +123,18 @@ struct InboxListContent: View {
         } message: {
             Text("This marks all \(model.markAllCount) pending to-dos done in GitLab. Snoozed ones stay snoozed.")
         }
+        .sheet(item: $todoSheet) { target in
+            MyTodoSheet(target: target, parseLink: actions.parseLink) { draft in
+                if case .edit(let todo) = target {
+                    actions.saveTodo(todo.id, draft)
+                } else {
+                    actions.saveTodo(nil, draft)
+                }
+                todoSheet = nil
+            } cancel: {
+                todoSheet = nil
+            }
+        }
         .sheet(isPresented: $isPickingDate) {
             InboxSnoozeSheet(count: dateEntries.count) { date in
                 actions.snooze(dateEntries, .until(date))
@@ -131,6 +155,10 @@ struct InboxListContent: View {
         guard NSEvent.modifierFlags.isDisjoint(with: [.shift, .command]) else {
             return
         }
+        // A to-do of mine without a link has nothing to open: its checkbox and its form are what it has.
+        guard !row.entry.isMine || row.entry.targetURL != nil else {
+            return
+        }
         actions.open(row.entry)
     }
 
@@ -143,10 +171,8 @@ struct InboxListContent: View {
             switch filter.state {
             case .pending:
                 Button(many ? "Mark \(entries.count) Done" : "Done") { actions.done(entries) }
-                if entries.allSatisfy({ $0.todo != nil }) {
-                    InboxSnoozeMenu(entries: entries, actions: actions) { dateEntries = $0; isPickingDate = true } label: {
-                        Text("Snooze")
-                    }
+                InboxSnoozeMenu(entries: entries, actions: actions) { dateEntries = $0; isPickingDate = true } label: {
+                    Text("Snooze")
                 }
             case .snoozed:
                 Button("Wake Now") { actions.wake(entries) }
@@ -157,10 +183,20 @@ struct InboxListContent: View {
             if !many, let url = entries[0].targetURL {
                 Divider()
                 Button("Show in App") { actions.open(entries[0]) }
-                if !InboxOpening.isLocal(entries[0]) {
+                if entries[0].isMine {
+                    Button("Open in Browser") { links.open(url) }
+                    Button("Copy Link") { links.copy(url) }
+                } else if !InboxOpening.isLocal(entries[0]) {
                     Button("Open in GitLab") { links.open(url) }
                     Button("Copy Link") { links.copy(url) }
                 }
+            }
+            if entries.allSatisfy(\.isMine) {
+                Divider()
+                if !many, let todo = entries[0].myTodo {
+                    Button("Edit…") { todoSheet = .edit(todo) }
+                }
+                Button(many ? "Delete \(entries.count) To-Dos" : "Delete", role: .destructive) { actions.deleteTodos(entries) }
             }
         }
     }

@@ -1,0 +1,37 @@
+{
+  "data": {
+    "project": {
+      "removeSourceBranchAfterMerge": false,
+      "mergeRequestsFfOnlyEnabled": false,
+      "mergeRequest": {
+        "state": "opened",
+        "draft": true,
+        "detailedMergeStatus": "DRAFT_STATUS",
+        "diffHeadSha": "1c3e5a7b9d0f2e4c6a8b0d2f4e6a8c0b2d4f6e8a",
+        "sourceBranch": "feature/onboarding",
+        "targetBranch": "develop",
+        "commitCount": 2,
+        "divergedFromTargetBranch": false,
+        "conflicts": false,
+        "squash": false,
+        "squashOnMerge": false,
+        "squashReadOnly": true,
+        "shouldRemoveSourceBranch": false,
+        "forceRemoveSourceBranch": true,
+        "defaultMergeCommitMessage": "Merge branch 'feature/onboarding' into 'develop'",
+        "defaultSquashCommitMessage": "Rework the onboarding",
+        "autoMergeEnabled": true,
+        "autoMergeStrategy": "merge_when_checks_pass",
+        "availableAutoMergeStrategies": [],
+        "mergeUser": { "username": "slee", "name": "Sam Lee" },
+        "mergedAt": null,
+        "closedAt": null,
+        "mergeError": null,
+        "mergeOngoing": false,
+        "rebaseInProgress": false,
+        "headPipeline": null,
+        "userPermissions": { "canMerge": true, "pushToSourceBranch": false, "updateMergeRequest": true, "removeSourceBranch": true }
+      }
+    }
+  }
+}

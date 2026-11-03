@@ -22,11 +22,29 @@ public protocol Effects: Sendable {
     /// - Parameter notice: the notice
     /// - Returns: `false` when notifications aren't allowed, so no banner showed
     func postNotice(_ notice: SlotNotice) async -> Bool
+
+    /// Shows an Inbox event in the app's big panel, in front of every window, without taking the keyboard (Task 7.03,
+    /// ``InboxDelivery/bigPanel``). Events that come while it is open join it as pages.
+    ///
+    /// - Parameter event: the event
+    func showInboxPanel(_ event: InboxEvent) async
+
+    /// Posts an Inbox event as a macOS banner, with Show, Mark Done and Snooze 1 Hour (``InboxDelivery/desktopNotification``).
+    ///
+    /// - Parameter event: the event
+    /// - Returns: `false` when notifications aren't allowed, so no banner showed
+    func postInboxBanner(_ event: InboxEvent) async -> Bool
 }
 
 extension Effects {
     /// Effects without banners for notices show none.
     public func postNotice(_ notice: SlotNotice) async -> Bool { false }
+
+    /// Effects without a panel for Inbox events show none.
+    public func showInboxPanel(_ event: InboxEvent) async {}
+
+    /// Effects without banners for Inbox events post none.
+    public func postInboxBanner(_ event: InboxEvent) async -> Bool { false }
 }
 
 #if DEBUG
@@ -38,6 +56,8 @@ public actor FakeEffects: Effects {
         case banner(BuildAlert)
         case sound(AlertContent.Sound)
         case notice(SlotNotice)
+        case inboxPanel(InboxEvent)
+        case inboxBanner(InboxEvent)
     }
 
     /// what was asked, in order
@@ -75,6 +95,28 @@ public actor FakeEffects: Effects {
         }
         calls.append(.notice(notice))
         return true
+    }
+
+    public func showInboxPanel(_ event: InboxEvent) {
+        calls.append(.inboxPanel(event))
+    }
+
+    public func postInboxBanner(_ event: InboxEvent) -> Bool {
+        guard notificationsAllowed else {
+            return false
+        }
+        calls.append(.inboxBanner(event))
+        return true
+    }
+
+    /// the Inbox events shown in the big panel, in order
+    public var inboxPanels: [InboxEvent] {
+        calls.compactMap { if case .inboxPanel(let event) = $0 { event } else { nil } }
+    }
+
+    /// the Inbox events posted as banners, in order
+    public var inboxBanners: [InboxEvent] {
+        calls.compactMap { if case .inboxBanner(let event) = $0 { event } else { nil } }
     }
 
     /// the slot notices posted, in order

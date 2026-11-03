@@ -50,7 +50,35 @@ extension Fixtures {
             todo(7, .buildFailed, mergeRequest: 204, "Fix the login redirect after a timeout", by: nil, ago: 40),
             todo(8, .unmergeable, mergeRequest: 187, "Move the color values into one file", by: nil, ago: 60 * 50),
         ]
-        return (todos.map { InboxEntry(todo: $0) } + local.map { InboxEntry(event: $0) }).sorted { $0.date > $1.date }
+        return (todos.map { InboxEntry(todo: $0) } + local.map { InboxEntry(event: $0) } + inboxCoffee + inboxMine).sorted { $0.date > $1.date }
+    }
+
+    /// today's coffee break, a local entry of its own group
+    var inboxCoffee: [InboxEntry] {
+        [InboxEntry(event: .coffeeBreak(line: "Warm cups, cold pipelines, that's the plan.", at: minutesAgo(103)))]
+    }
+
+    /// three to-dos of my own: one with a note and a date, one with a link, one overdue
+    var inboxMine: [InboxEntry] {
+        let day: TimeInterval = 86400
+        let todos = [
+            MyTodo(
+                id: "a", title: "Prepare the demo for Thursday", note: "Walk through the new Inbox and the coffee break",
+                dueDate: Calendar.current.startOfDay(for: now).addingTimeInterval(day), createdAt: minutesAgo(30)),
+            MyTodo(
+                id: "b", title: "Review the retry change",
+                link: MyTodoLink(url: URL(string: "\(gitLabHost)/-/merge_requests/210")!, kind: .mergeRequest, reference: "\(projectPath)!210"),
+                createdAt: minutesAgo(90)),
+            MyTodo(
+                id: "c", title: "Send the release notes to the team", dueDate: Calendar.current.startOfDay(for: now).addingTimeInterval(-day),
+                createdAt: minutesAgo(60 * 20)),
+        ]
+        return todos.enumerated().map { InboxEntry(mine: $1, position: $0) }
+    }
+
+    /// a to-do of mine that is done
+    var inboxMineDone: InboxEntry {
+        InboxEntry(mine: MyTodo(id: "d", title: "Book the meeting room", createdAt: minutesAgo(60 * 30), doneAt: minutesAgo(60 * 3)))
     }
 
     /// two snoozed to-dos: one wakes this afternoon, one tomorrow morning
@@ -72,6 +100,7 @@ extension Fixtures {
             InboxEntry(todo: todo(22, .mentioned, workItem: 29, "Dark mode for the report page", by: sam, ago: 60 * 8, body: "@jdoe looks fine?", state: .done)),
             InboxEntry(todo: todo(23, .assigned, workItem: 25, "Fix the flaky export test", by: jane, ago: 60 * 30, state: .done)),
             InboxEntry(todo: todo(24, .buildFailed, mergeRequest: 181, "Add a retry to the export job", by: nil, ago: 60 * 52, state: .done)),
+            inboxMineDone,
         ]
     }
 
@@ -93,7 +122,8 @@ extension Fixtures {
 
     /// the pane's Inbox: the pending rows and their count
     var inboxPanel: PanelData.Inbox {
-        PanelData.Inbox(entries: inboxPending, badgeCount: inboxPending.count)
+        let entries = inboxPending.filter { !$0.isMine && $0.kind != .coffeeBreak }
+        return PanelData.Inbox(entries: entries, badgeCount: entries.count)
     }
 }
 
@@ -177,6 +207,22 @@ extension GalleryCatalog {
             GalleryEntry(screen: "inbox", state: "pane-flyout", size: CGSize(width: 800, height: 640)) { f in
                 MenuPaneGalleryView(data: f.menuPaneData, open: .inbox, flyoutHighlight: 1)
                     .environment(\.inboxIsSeen) { f.inboxSeen.contains($0) }
+            },
+            GalleryEntry(screen: "inbox", state: "my-todos-empty", size: CGSize(width: size.width, height: 520)) { f in
+                InboxGalleryView(
+                    data: f.inboxData(pending: [], snoozed: [], done: []), panel: f.panel(),
+                    size: CGSize(width: size.width, height: 520))
+            },
+            GalleryEntry(screen: "inbox", state: "my-todos-filtered", size: size) { f in
+                InboxGalleryView(data: f.inboxData(), panel: f.panel(), filter: InboxViewFilter(group: .myToDos))
+            },
+            GalleryEntry(screen: "inbox", state: "my-order-builds-first", size: CGSize(width: size.width, height: 820)) { f in
+                var data = f.inboxData()
+                data.groupOrder = [.builds, .claude, .mentions, .reviewRequests, .assigned, .myToDos, .coffee, .other]
+                return InboxGalleryView(data: data, panel: f.panel(), seen: f.inboxSeen, size: CGSize(width: size.width, height: 820))
+            },
+            GalleryEntry(screen: "inbox", state: "todo-sheet", size: CGSize(width: 380, height: 330)) { f in
+                MyTodoSheet(target: .edit(f.inboxMine[0].myTodo!), parseLink: { _ in nil }, save: { _ in }, cancel: {})
             },
             GalleryEntry(screen: "inbox", state: "pane-flyout-empty", size: CGSize(width: 800, height: 520)) { f in
                 var data = f.menuPaneData

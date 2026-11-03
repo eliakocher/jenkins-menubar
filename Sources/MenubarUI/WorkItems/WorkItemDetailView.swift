@@ -82,7 +82,7 @@ struct WorkItemDetailContent: View {
 
     var body: some View {
         if let model {
-            DetailPage(id: model.workItem.id) { proxy in
+            DetailPage(id: model.workItem.id, focusesCards: true) { proxy in
                 header(model) { card in
                     withAnimation(.snappy) { proxy.scrollTo(card, anchor: .top) }
                 }
@@ -100,9 +100,11 @@ struct WorkItemDetailContent: View {
                     // Ask Claude, while the Claude features are on (AI-05, AI-08).
                     if showsClaude(model) {
                         WorkItemClaudeCard(workItem: model.workItem)
+                            .cardFocusTarget(.claude)
                     }
                     // The comments, in the merge request's thread look, loaded on selection too (WIN-02).
                     WorkItemDiscussionCard(source: DescriptionSource(model.workItem), actions: actions)
+                        .cardFocusTarget(.discussion)
                 }
             }
         } else {

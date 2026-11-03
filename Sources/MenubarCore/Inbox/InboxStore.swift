@@ -370,6 +370,97 @@ public final class InboxStore {
         rebuild()
     }
 
+    // MARK: - My to-dos
+
+    /// my own to-dos in my order, whether pending, snoozed or done
+    public var myTodos: [MyTodo] { mine.todos }
+
+    /// the places a typed link is read against: the team's Jenkins jobs and GitLab, and the primary project for a bare `!123`
+    public var linkContext: MyTodoLink.Context {
+        MyTodoLink.Context(projects: services.team.projects(), primary: services.team.primaryProject())
+    }
+
+    /// Adds a to-do from the quick-add field's words: a pasted GitLab or Jenkins link, or a bare `!123` or `#123`, becomes
+    /// the reference chip (``MyTodoLink/parse(_:context:)``). It goes on top of the list and never to GitLab.
+    ///
+    /// - Parameter text: what was typed
+    /// - Returns: the new to-do; `nil` for empty words
+    @discardableResult
+    public func addMyTodo(_ text: String) -> MyTodo? {
+        let parsed = MyTodoLink.parse(text, context: linkContext)
+        return addMyTodo(MyTodoDraft(title: parsed.title, link: parsed.link))
+    }
+
+    /// Adds a to-do from the form.
+    ///
+    /// - Parameter draft: the title, the note, the date and the link
+    /// - Returns: the new to-do; `nil` for an empty title
+    @discardableResult
+    public func addMyTodo(_ draft: MyTodoDraft) -> MyTodo? {
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return nil
+        }
+        let todo = MyTodo(
+            title: title, note: draft.note.trimmingCharacters(in: .whitespacesAndNewlines), dueDate: draft.dueDate,
+            link: draft.link, createdAt: services.now())
+        mine.add(todo)
+        saveMine()
+        return todo
+    }
+
+    /// Changes a to-do's words, date and link; an empty title changes nothing.
+    ///
+    /// - Parameters:
+    ///   - id: the to-do's id (``MyTodo/id``)
+    ///   - draft: the new values
+    public func updateMyTodo(_ id: String, with draft: MyTodoDraft) {
+        let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else {
+            return
+        }
+        var clean = draft
+        clean.title = title
+        clean.note = draft.note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if mine.update(id, with: clean) {
+            saveMine()
+        }
+    }
+
+    /// Deletes a to-do for good.
+    ///
+    /// - Parameter id: the to-do's id
+    public func deleteMyTodo(_ id: String) {
+        mine.remove(id)
+        saveMine()
+    }
+
+    /// Moves my pending to-dos as a drag in the list does.
+    ///
+    /// - Parameters:
+    ///   - source: the offsets of the dragged rows among my pending to-dos, in the order the list shows them
+    ///   - destination: the offset they are dropped before
+    public func moveMyTodos(from source: IndexSet, to destination: Int) {
+        let shown = pending.filter(\.isMine).sorted { ($0.position ?? 0) < ($1.position ?? 0) }.map(\.myTodo?.id)
+        mine.move(visible: shown.compactMap { $0 }, from: source, to: destination)
+        saveMine()
+    }
+
+    private func saveMine() {
+        try? myTodosFile.save(mine)
+        rebuild()
+    }
+
+    /// Returns the row an announced event has now, so a panel's or a banner's Done and Snooze act on it: a GitLab to-do by
+    /// its id, a local entry by its own.
+    ///
+    /// - Parameter event: the event
+    /// - Returns: the row; `nil` when the event isn't in the Inbox (its Inbox toggle is off, or it is gone)
+    public func entry(for event: InboxEvent) -> InboxEntry? {
+        let id = event.todoID ?? event.id
+        return (pending + snoozed + done).first { $0.id == id }
+    }
+
     // MARK: - Done, Restore, Snooze
 
     /// Marks a row done (INBOX-03): a to-do in GitLab, a local entry here. The row moves at once and comes back if

@@ -25,6 +25,8 @@ final class NativeEffects: Effects {
     private static let hiddenPreviewsPlaceholder = "Jenkins build"
 
     private let panels = AlertPanels()
+    /// the Inbox's big panel for the events delivered as ``InboxDelivery/bigPanel`` (INBOX-14)
+    private let inboxPanels = InboxEventPanels()
     /// the finished builds whose banner couldn't show, so their window says why (ALERT-03)
     private var bannerFallbacks: Set<UUID> = []
     /// starts a build's rebuild, for the alert window's Rebuild; the app delegate sets it to the shell's (PIPE-09)
@@ -39,6 +41,36 @@ final class NativeEffects: Effects {
     /// delegate sets it to the shell's. Never `NSWorkspace`: while the app is the default browser, the link would come
     /// back to it.
     var onOpen: @MainActor (URL, Bool) -> Void = { _, _ in }
+
+    /// runs a button of the Inbox's big panel or of an Inbox event's banner; the app delegate sets it to the shell's
+    var onInboxAction: @MainActor (InboxDeliveryAction, InboxEvent) -> Void = { _, _ in }
+
+    func showInboxPanel(_ event: InboxEvent) async {
+        inboxPanels.show(event) { [weak self] action, event in self?.onInboxAction(action, event) }
+    }
+
+    /// Posts an Inbox event as a macOS banner with Show, Mark Done and Snooze 1 Hour (INBOX-14). It never plays a sound.
+    func postInboxBanner(_ event: InboxEvent) async -> Bool {
+        guard await bannersAllowed() else {
+            return false
+        }
+        let content = UNMutableNotificationContent()
+        content.title = InboxBanner.title(of: event)
+        content.subtitle = InboxBanner.subtitle(of: event)
+        content.body = InboxBanner.body(of: event)
+        content.categoryIdentifier = InboxBanner.category
+        content.userInfo = InboxBanner.userInfo(for: event)
+        content.threadIdentifier = "inbox-\(event.kind.rawValue)"
+        content.sound = nil
+        do {
+            try await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "inbox-\(event.id)", content: content, trigger: nil))
+            return true
+        } catch {
+            AppLog.warning("The banner of an Inbox event (\(event.kind.rawValue)) didn't post: \(error.localizedDescription)")
+            return false
+        }
+    }
 
     func showAlertWindow(_ alert: BuildAlert) async {
         panels.show(
@@ -156,7 +188,30 @@ final class NativeEffects: Effects {
                 hiddenPreviewsBodyPlaceholder: hiddenPreviewsPlaceholder,
                 options: [])
         }
-        UNUserNotificationCenter.current().setNotificationCategories(Set(categories))
+        UNUserNotificationCenter.current().setNotificationCategories(Set(categories + [inboxCategory()]))
+    }
+
+    /// The category of an Inbox event's banner: Show, Mark Done and Snooze 1 Hour.
+    private static func inboxCategory() -> UNNotificationCategory {
+        UNNotificationCategory(
+            identifier: InboxBanner.category,
+            actions: InboxBanner.actions.map { action in
+                UNNotificationAction(
+                    identifier: InboxBanner.identifier(of: action), title: action.bannerTitle, options: [],
+                    icon: UNNotificationActionIcon(systemImageName: inboxIcon(of: action)))
+            },
+            intentIdentifiers: [],
+            hiddenPreviewsBodyPlaceholder: "MegaMonitor",
+            options: [])
+    }
+
+    private static func inboxIcon(of action: InboxDeliveryAction) -> String {
+        switch action {
+        case .show: "arrow.up.forward.app"
+        case .done: "checkmark.circle"
+        case .snooze: "moon.zzz"
+        case .dismiss: "xmark"
+        }
     }
 
     /// The symbol of a banner action.

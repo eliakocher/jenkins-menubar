@@ -21,6 +21,16 @@ struct InboxActions {
     /// opens an entry's target in the app, ⌥ in the browser, and notes it as seen; a thing of this app (a Claude answer,
     /// the digest) clears itself as well. Opening a GitLab to-do never marks it done (the user, 2026-11-03).
     var open: @MainActor (InboxEntry) -> Void = { _ in }
+    /// adds a to-do of my own from the quick-add field's words; a link or `!123` in them becomes the chip (INBOX-16)
+    var addTodo: @MainActor (String) -> Void = { _ in }
+    /// keeps my to-do's form: the id of the one edited, or `nil` for a new one
+    var saveTodo: @MainActor (String?, MyTodoDraft) -> Void = { _, _ in }
+    /// deletes my to-dos for good
+    var deleteTodos: @MainActor ([InboxEntry]) -> Void = { _ in }
+    /// moves my pending to-dos as a drag does: the offsets among them, and where they are dropped
+    var moveTodos: @MainActor (IndexSet, Int) -> Void = { _, _ in }
+    /// reads the form's link field: a pasted GitLab or Jenkins link, or `!123`
+    var parseLink: @MainActor (String) -> MyTodoLink? = { _ in nil }
 
     /// actions that do nothing, for the gallery
     static var none: InboxActions { InboxActions() }
@@ -42,7 +52,18 @@ struct InboxActions {
             retry: { Task { await store.load() } },
             open: { entry in
                 InboxOpening.open(entry, store: store, links: links, router: router)
-            })
+            },
+            addTodo: { text in store.addMyTodo(text) },
+            saveTodo: { id, draft in
+                if let id {
+                    store.updateMyTodo(id, with: draft)
+                } else {
+                    store.addMyTodo(draft)
+                }
+            },
+            deleteTodos: { rows in for row in rows { if let todo = row.myTodo { store.deleteMyTodo(todo.id) } } },
+            moveTodos: { source, destination in store.moveMyTodos(from: source, to: destination) },
+            parseLink: { text in MyTodoLink.parseLink(text, context: store.linkContext) })
     }
 }
 
@@ -57,16 +78,21 @@ enum InboxOpening {
     ///   - links: how links open: in the app, ⌥ in the browser
     ///   - router: the window's router, for a `megamonitor://` link of a thing of this app
     static func open(_ entry: InboxEntry, store: InboxStore, links: GitLabSectionActions, router: WindowRouter) {
-        store.seen.markSeen(entry.id)
+        // One of my own to-dos stays as it is: its checkbox is what finishes it.
+        if !entry.isMine {
+            store.seen.markSeen(entry.id)
+        }
         if let url = entry.targetURL {
             if let route = AppRoute(url: url) {
                 switch route {
                 case .open(let section): router.open(section)
                 case .settings(let pane): router.open(.settings(pane: pane))
+                case .openItem(let link, let card): links.follow(link, card: card)
                 default: router.open(.main)
                 }
             } else {
-                links.follow(url)
+                // A Claude answer shows its card: the item opens, then scrolls to it.
+                links.follow(url, card: entry.focusCard)
             }
         }
         if isLocal(entry) {

@@ -19,6 +19,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     case slotWarning
     case inboxNotifications
     case coffeeBreak
+    case inboxGroupOrder
     // Appearance
     case contentWidth
     case textSize
@@ -65,7 +66,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .openAtLogin, .shortcut, .linkRouting: .general
         case .showInMenuBar, .menuBarIcon, .menuBarParts, .menuPaneRows, .menuPaneWidth: .menuBar
-        case .buildAlerts, .mutedJobs, .slotWarning, .inboxNotifications, .coffeeBreak: .notifications
+        case .buildAlerts, .mutedJobs, .slotWarning, .inboxNotifications, .coffeeBreak, .inboxGroupOrder: .notifications
         case .contentWidth, .textSize, .diffLayout, .discussions, .sidebarOrder: .appearance
         case .gitLabURL, .gitLabToken, .jenkinsToken, .accountCheck: .accounts
         case .projects, .jenkinsJob: .projects
@@ -94,6 +95,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .slotWarning: "Warn before a code freeze"
         case .inboxNotifications: "What lands in the Inbox"
         case .coffeeBreak: "Coffee break"
+        case .inboxGroupOrder: "Order of the Inbox groups"
         case .contentWidth: "Content width"
         case .textSize: "Text size"
         case .diffLayout: "Code changes layout"
@@ -142,8 +144,9 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .buildAlerts: ["alert", "banner", "window", "notification", "sound", "stage", "preview"]
         case .mutedJobs: ["mute", "muted", "quiet", "my builds", "watched builds", "job", "notify"]
         case .slotWarning: ["slot", "code freeze", "warning", "committed", "merge request"]
-        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "to-do", "todo", "unread", "only my projects", "notification"]
+        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "to-do", "todo", "unread", "only my projects", "notification", "delivery", "big panel", "panel", "desktop notification", "banner", "popup"]
         case .coffeeBreak: ["coffee", "break", "haiku", "daily", "08:59", "joke", "fun", "time", "reminder", "inbox"]
+        case .inboxGroupOrder: ["inbox", "order", "groups", "reorder", "drag", "move", "my to-dos", "coffee", "claude", "mentions", "builds", "reset"]
         case .contentWidth: ["width", "wide", "narrow", "cards", "window"]
         case .textSize: ["reading size", "font", "bigger", "smaller", "descriptions", "comments"]
         case .diffLayout: ["diff", "side by side", "inline", "layout", "folders", "folded"]

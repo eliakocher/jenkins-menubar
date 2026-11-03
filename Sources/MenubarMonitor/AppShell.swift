@@ -313,6 +313,53 @@ final class AppShell {
         }
     }
 
+    /// Runs a button of the Inbox's big panel or of an Inbox event's banner (INBOX-14): Show opens the target in the app and
+    /// notes it as seen, Done and Snooze 1 Hour act on the event's Inbox entry. A click that starts the app waits for the
+    /// launch, which loads the to-dos.
+    ///
+    /// - Parameters:
+    ///   - action: the button
+    ///   - event: the event the panel or the banner is about
+    func inboxAction(_ action: InboxDeliveryAction, for event: InboxEvent) {
+        Task {
+            await launching?.value
+            let store = model.inbox
+            let entry = store.entry(for: event)
+            switch action {
+            case .show:
+                if let entry {
+                    store.seen.markSeen(entry.id)
+                }
+                if let url = event.targetURL {
+                    if let route = AppRoute(url: url) {
+                        open(route)
+                    } else {
+                        // A Claude answer shows its card, as in the Inbox's list.
+                        if open(url, inApp: true), let card = event.kind.focusCard {
+                            router.requestCardFocus(card)
+                        }
+                    }
+                } else {
+                    open(.open(.inbox))
+                }
+                // A thing of this app clears when it is opened, as in the Inbox's list.
+                if let entry, entry.isLocalItem {
+                    await store.markDone(entry)
+                }
+            case .done:
+                if let entry {
+                    await store.markDone(entry)
+                }
+            case .snooze:
+                if let entry {
+                    await store.snooze(entry, .oneHour)
+                }
+            case .dismiss:
+                break
+            }
+        }
+    }
+
     /// Handles a web link that macOS gave this app as the default browser (APP-09): a Jenkins build, a GitLab merge request
     /// or work item opens in the window, in its list or under "Opened" (WIN-06); every other link, ⌥ held, or any link
     /// while the router is off goes on to the browser the user had. A link is never dropped.
@@ -337,11 +384,14 @@ final class AppShell {
     /// - Parameters:
     ///   - url: the link
     ///   - inApp: whether the app should show it, if it can
-    func open(_ url: URL, inApp: Bool) {
+    /// - Returns: whether the app shows it; `false` when it went to the browser
+    @discardableResult
+    func open(_ url: URL, inApp: Bool) -> Bool {
         if inApp, router.openItemLink(url, model: model) {
-            return
+            return true
         }
         openInBrowser(url)
+        return false
     }
 
     /// Shows a link's place in the main window: a build in Pipelines or under "Opened", a merge request or work item in
@@ -385,6 +435,10 @@ final class AppShell {
             router.open(.settings(pane: pane))
         case .open(let section):
             router.open(section)
+        case .openItem(let link, let card):
+            if open(link, inApp: true), let card {
+                router.requestCardFocus(card)
+            }
         case .importTeamFile:
             // Settings → Team fetches the file and asks before anything changes (TEAM-02).
             route.requestTeamFileImport(on: model.settings)

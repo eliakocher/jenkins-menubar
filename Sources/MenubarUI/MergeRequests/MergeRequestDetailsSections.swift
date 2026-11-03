@@ -614,6 +614,12 @@ struct MergeRequestDetailsFixtures: Sendable {
     var reReviewPhase: ReReviewPhase?
     /// the code changes, by merge request reference (MR-11)
     var changes: [String: MergeRequestChangesState] = [:]
+    /// the merge state, by merge request reference (MR-16)
+    var mergeStates: [String: MergeStateLoad] = [:]
+    /// what the Merge card's last write is doing, by merge request reference
+    var mergeActivity: [String: MergeActivity] = [:]
+    /// the Merge card's own state: the confirmation, the commit message fields
+    var mergePhase: MergeCardPhase?
 }
 
 private struct MergeRequestDetailsFixturesKey: EnvironmentKey {

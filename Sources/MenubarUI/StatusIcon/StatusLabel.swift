@@ -107,17 +107,64 @@ enum StatusMarkersImage {
         let isTemplate = model.style != .color
         // Computed once: the parts walk the layout.
         let parts = model.parts
+        let redDot = isTemplate && parts.contains(.inboxDot)
         let key = Key(
-            parts: parts, style: model.style, colorScheme: isTemplate ? nil : colorScheme, hat: model.hat,
+            parts: parts, style: model.style, colorScheme: isTemplate && !redDot ? nil : colorScheme, hat: model.hat,
             bow: model.bow)
         if let image = cache[key] {
             return image
         }
-        // Template images use the alpha only, so the label color is black there; the color style needs the real one.
-        let label: Color = isTemplate ? .black : (colorScheme == .dark ? .white : .black)
+        let image: NSImage
+        if redDot {
+            image = templateWithRedDot(parts: parts, model: model, colorScheme: colorScheme)
+        } else {
+            // Template images use the alpha only, so the label color is black there; the color style needs the real one.
+            let label: Color = isTemplate ? .black : (colorScheme == .dark ? .white : .black)
+            image = render(parts: parts, model: model, label: label, layer: .all)
+            image.isTemplate = isTemplate
+        }
+        cache[key] = image
+        return image
+    }
+
+    /// Which parts a rendering draws: all, all but the red dot (whose place stays empty), or only the dot.
+    private enum Layer {
+        case all, withoutDot, dotOnly
+    }
+
+    /// The monochrome item with the red Inbox dot (the user, 2026-11-03): an image can't be part template, so the
+    /// template layer is filled with the label color the menu bar tints a template with, in the label's appearance
+    /// (light or dark, as the color style's), and the red dot is drawn on top. The highlighted item keeps its colors, as a
+    /// template does on macOS 26's highlight.
+    private static func templateWithRedDot(
+        parts: [StatusLabelModel.Part], model: StatusLabelModel, colorScheme: ColorScheme
+    ) -> NSImage {
+        let mask = render(parts: parts, model: model, label: .black, layer: .withoutDot)
+        let dot = render(parts: parts, model: model, label: .black, layer: .dotOnly)
+        let appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
+        let image = NSImage(size: mask.size, flipped: false) { rect in
+            mask.draw(in: rect)
+            let fill = { NSColor.labelColor.set(); rect.fill(using: .sourceAtop) }
+            if let appearance {
+                appearance.performAsCurrentDrawingAppearance(fill)
+            } else {
+                fill()
+            }
+            dot.draw(in: rect)
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    private static func render(
+        parts: [StatusLabelModel.Part], model: StatusLabelModel, label: Color, layer: Layer
+    ) -> NSImage {
         let content = HStack(spacing: 4) {
             ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                let isDot = part == .inboxDot
                 view(of: part, in: model, label: label)
+                    .opacity(layer == .withoutDot && isDot || layer == .dotOnly && !isDot ? 0 : 1)
             }
         }
         .font(Font(NSFont.menuBarFont(ofSize: 0)))
@@ -126,10 +173,7 @@ enum StatusMarkersImage {
         .frame(height: height)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 2
-        let image = renderer.nsImage ?? AppImages.butler(hat: nil, bow: nil)
-        image.isTemplate = isTemplate
-        cache[key] = image
-        return image
+        return renderer.nsImage ?? AppImages.butler(hat: nil, bow: nil)
     }
 
     @ViewBuilder
@@ -137,7 +181,7 @@ enum StatusMarkersImage {
         let color = model.color(of: part) ?? label
         switch part {
         case .inboxDot:
-            // Red in the color style; the monochrome template only keeps its shape, which the menu bar tints.
+            // Red in both styles: in monochrome it is drawn on top of the tinted template (``templateWithRedDot``).
             Circle().fill(Color.red).frame(width: 6, height: 6)
         case .count(_, let count), .inboxCount(let count), .reviews(let count):
             HStack(spacing: 2) {

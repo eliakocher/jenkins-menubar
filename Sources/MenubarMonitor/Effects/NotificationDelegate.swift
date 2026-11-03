@@ -14,19 +14,23 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     private let rebuild: @MainActor @Sendable (BuildID) -> Void
     private let hide: @MainActor @Sendable (BuildID) -> Void
     private let open: @MainActor @Sendable (URL, Bool) -> Void
+    private let inboxAction: @MainActor @Sendable (InboxDeliveryAction, InboxEvent) -> Void
 
     /// - Parameters:
     ///   - rebuild: starts a build's rebuild, once the app has launched
     ///   - hide: hides a build until its job's next build, once the app has launched
     ///   - open: shows a link in the app (`true`) or opens it in the browser (`false`), once the app has launched
+    ///   - inboxAction: runs Show, Mark Done or Snooze 1 Hour of an Inbox event's banner, once the app has launched (INBOX-14)
     init(
         rebuild: @escaping @MainActor @Sendable (BuildID) -> Void,
         hide: @escaping @MainActor @Sendable (BuildID) -> Void,
-        open: @escaping @MainActor @Sendable (URL, Bool) -> Void
+        open: @escaping @MainActor @Sendable (URL, Bool) -> Void,
+        inboxAction: @escaping @MainActor @Sendable (InboxDeliveryAction, InboxEvent) -> Void
     ) {
         self.rebuild = rebuild
         self.hide = hide
         self.open = open
+        self.inboxAction = inboxAction
     }
 
     func userNotificationCenter(
@@ -42,6 +46,16 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
            let link = response.notification.request.content.userInfo[Self.noticeURLKey] as? String, let url = URL(string: link)
         {
             await MainActor.run { _ = NSWorkspace.shared.open(url) }
+            return
+        }
+        // An Inbox event's banner: Show, Mark Done, Snooze 1 Hour, or a click on the banner, which shows the event (INBOX-14).
+        if let event = InboxBanner.event(from: response.notification.request.content.userInfo) {
+            let clicked = action == UNNotificationDefaultActionIdentifier ? nil : action
+            guard action != UNNotificationDismissActionIdentifier, let intent = InboxBanner.action(forIdentifier: clicked) else {
+                return
+            }
+            let inboxAction = inboxAction
+            await MainActor.run { inboxAction(intent, event) }
             return
         }
         guard action != UNNotificationDismissActionIdentifier,

@@ -131,6 +131,10 @@ public final class WindowRouter {
     /// grows by one whenever the window's search field should take the keyboard focus: Edit › Find… (⌘F)
     public private(set) var searchFocusRequest = 0
 
+    /// the card of a detail to scroll to and pulse, once: what opening a Claude answer from the Inbox asks for. The detail
+    /// that has the card takes it, whether it was open already or appears when it has loaded.
+    public private(set) var cardFocus = CardFocus()
+
     /// Opens the rebuilt app and quits, after "Update Ready — Rebuild" installed it (APP-05). The app sets it; until
     /// then the new app is installed but not opened.
     @ObservationIgnored public var onRebuilt: (@MainActor (URL) -> Void)?
@@ -298,6 +302,21 @@ public final class WindowRouter {
         selection.workspaces = checkout
         section = .workspaces
         focusList()
+    }
+
+    /// Asks the detail of the item just shown to bring a card into view, which it does once (see ``CardFocus``). Call it
+    /// after the item is shown.
+    ///
+    /// - Parameter card: the card to scroll to
+    public func requestCardFocus(_ card: DetailCardID) {
+        cardFocus.request(card)
+    }
+
+    /// Takes the waiting card request, for the detail that has the card.
+    ///
+    /// - Returns: the card; `nil` when none waits or it expired
+    public func takeCardFocus() -> DetailCardID? {
+        cardFocus.take()
     }
 
     /// Asks the shown section's list to take the keyboard focus, as after ⌘1 to ⌘4 (`main-window.md`, Keyboard).

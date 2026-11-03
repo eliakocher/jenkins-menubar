@@ -239,13 +239,16 @@ extension GalleryCatalog {
         let size = CGSize(width: MainWindowGalleryView<EmptyView, EmptyView>.defaultSize.width, height: 1250)
         let reviewersSize = CGSize(width: size.width, height: 820)
         func entry(
-            _ state: String, _ pick: @escaping @MainActor (MergeRequestsFixtures) -> (MergeRequest, MergeRequestDetailsState)
+            _ state: String, merge: @escaping @MainActor (MergeRequestsFixtures) -> MergeStateLoad = { _ in .init(state: nil, failed: true) },
+            _ pick: @escaping @MainActor (MergeRequestsFixtures) -> (MergeRequest, MergeRequestDetailsState)
         ) -> GalleryEntry {
             GalleryEntry(screen: "merge-requests", state: state, size: size) { f in
                 let m = f.mergeRequestsScreen
                 let (selected, details) = pick(m)
                 return MergeRequestsGalleryView(panel: m.panel(m.sections + [m.mr16]), selection: selected.id, size: size)
-                    .environment(\.mergeRequestDetailsFixtures, MergeRequestDetailsFixtures(states: [selected.reference: details]))
+                    .environment(
+                        \.mergeRequestDetailsFixtures,
+                        MergeRequestDetailsFixtures(states: [selected.reference: details], mergeStates: [selected.reference: merge(m)]))
             }
         }
         /// !17 with what the Reviewers section is doing about a re-request
@@ -293,7 +296,7 @@ extension GalleryCatalog {
             reviewers("reviewers-confirm", phase: .confirming),
             reviewers("reviewers-token", access: .readOnly, phase: .needsToken),
             reviewers("reviewers-failed", phase: .done(failed)),
-            entry("details") { ($0.mr16, .loaded($0.details16)) },
+            entry("details", merge: { .init(state: $0.mergeBlocked) }) { ($0.mr16, .loaded($0.details16)) },
             // The Changes card alone, at the detail's width: it sits below the other cards. Inline, then side by side.
             changes("changes", layout: .inline, width: 640),
             changes("changes-split", layout: .sideBySide, width: 1000),
@@ -301,9 +304,9 @@ extension GalleryCatalog {
             changes(
                 "changes-large", layout: .inline, width: 640, unfoldedFolders: [MergeRequestsFixtures.largeFolders[0]],
                 pick: { $0.changesLarge }),
-            entry("details-no-rules") { ($0.mr21, .loaded($0.details21)) },
+            entry("details-no-rules", merge: { .init(state: $0.mergeReady) }) { ($0.mr21, .loaded($0.details21)) },
             entry("details-failed") { ($0.mr14, MergeRequestDetailsState(details: nil, isCurrent: false, failed: true)) },
-        ]
+        ] + mergeCardEntries
     }
 }
 #endif

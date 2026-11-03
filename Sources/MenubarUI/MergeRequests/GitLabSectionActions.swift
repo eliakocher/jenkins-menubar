@@ -30,13 +30,21 @@ struct GitLabSectionActions {
     /// opens a link to a build, merge request or work item in the app, under "Opened" when it isn't in a list; returns
     /// whether it was one (WIN-06). `nil` in the gallery.
     var openInApp: (@MainActor (URL) -> Bool)?
+    /// asks the detail just shown to scroll to a card and pulse it, see ``WindowRouter/requestCardFocus(_:)``
+    var focusCard: @MainActor (DetailCardID) -> Void = { _ in }
 
     /// Follows a link that may lead to a build, merge request or work item: in the app when it is one, else as ``open``.
     ///
-    /// - Parameter url: the link
+    /// - Parameters:
+    ///   - url: the link
+    ///   - card: the card of the item's page to bring into view, when it is shown in the app; the browser gets none
     @MainActor
-    func follow(_ url: URL) {
-        if openInApp?(url) != true {
+    func follow(_ url: URL, card: DetailCardID? = nil) {
+        if openInApp?(url) == true {
+            if let card {
+                focusCard(card)
+            }
+        } else {
             open(url)
         }
     }
@@ -79,7 +87,8 @@ struct GitLabSectionActions {
             showInSlots: { router.showInSlots($0) },
             watchBuilds: { MergeRequestWatching.watch($0, model: model, router: router) },
             newWorkItem: NewWorkItemLauncher.action(model: model) { router.browse($0, fallback: openURL) },
-            openInApp: { router.openItemLink($0, model: model) })
+            openInApp: { router.openItemLink($0, model: model) },
+            focusCard: { router.requestCardFocus($0) })
     }
 }
 

@@ -191,22 +191,10 @@ public struct GeneralSettingsForm: View {
                     isOn: openAtLogin, status: loginStatus, error: loginError,
                     openSystemSettings: actions.openLoginItemsSettings,
                     caption: nil)
-                Toggle(isOn: $preferences.showInMenuBar) {
-                    SettingsRowLabel(
-                        "Show in menu bar", "Checks and alerts go on while it's hidden")
-                }
-                .settingsSwitch()
-                Picker(selection: $preferences.iconStyle) {
-                    ForEach(Preferences.IconStyle.allCases, id: \.self) { style in
-                        Text(SettingsOptionTitles.iconStyle(style)).tag(style)
-                    }
-                } label: {
-                    SettingsRowLabel("Menu bar icon")
-                }
-                .pickerStyle(.menu)
-                .settingsAnchor(.menuBarIcon)
             } header: {
-                SettingsSectionHeader("Startup and Menu Bar")
+                SettingsSectionHeader("Startup")
+            } footer: {
+                SettingsFooter("The menu bar item and its menu have a pane of their own: Menu Bar.")
             }
             Section {
                 LabeledContent {
@@ -269,6 +257,7 @@ public struct NotificationsSettingsForm: View {
     private let policy: NotificationPolicy
     private let setGroup: (NotificationPolicy.Group, Bool) -> Void
     private let resetJob: (String) -> Void
+    private let inboxPermission: NotificationPermission?
 
     /// - Parameters:
     ///   - preferences: the preferences; a change saves at once
@@ -278,12 +267,14 @@ public struct NotificationsSettingsForm: View {
     ///   - policy: which builds may alert: My Builds, Watching, and the jobs with a setting of their own (ALERT-09)
     ///   - setGroup: switches a group's alerts on or off
     ///   - resetJob: makes a job follow its group again, by job key
+    ///   - inboxPermission: what macOS allows, for the Inbox's Desktop Notification choice; `nil` while it isn't known
     public init(
         preferences: Binding<Preferences>, notification: NotificationNotice?, canPreview: Bool,
         actions: GeneralSettingsActions, policy: NotificationPolicy = NotificationPolicy(),
         setGroup: @escaping (NotificationPolicy.Group, Bool) -> Void = { _, _ in },
-        resetJob: @escaping (String) -> Void = { _ in }
+        resetJob: @escaping (String) -> Void = { _ in }, inboxPermission: NotificationPermission? = nil
     ) {
+        self.inboxPermission = inboxPermission
         self.policy = policy
         self.setGroup = setGroup
         self.resetJob = resetJob
@@ -367,7 +358,7 @@ public struct NotificationsSettingsForm: View {
             } footer: {
                 SettingsFooter("Quiet builds stay in the lists and the menu bar; only their alerts and banners stop.")
             }
-            InboxNotificationsSection(rules: $preferences.inboxNotifications)
+            InboxNotificationsSection(rules: $preferences.inboxNotifications, permission: inboxPermission, actions: actions)
             Section {
                 Toggle(isOn: $preferences.slotAlerts) {
                     SettingsRowLabel(
@@ -559,7 +550,8 @@ struct NotificationsPane: View {
                 permission: { permission = $0 }),
             policy: model.projects.notifications,
             setGroup: { model.setNotifications(for: $0, isOn: $1) },
-            resetJob: { model.setNotifications(nil, forJob: $0) })
+            resetJob: { model.setNotifications(nil, forJob: $0) },
+            inboxPermission: permission)
             .task {
                 permission = await system.notificationPermission()
             }

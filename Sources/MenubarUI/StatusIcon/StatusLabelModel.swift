@@ -23,7 +23,7 @@ public struct StatusLabelModel: Hashable, Sendable {
         case identity
         case problem
         case count(BuildCounts.Kind, Int)
-        /// a small red dot: the Inbox has items that count in its badge (Task 7.03). Never animated.
+        /// a small red dot: the Inbox has items that count in its badge (Task 7.03); red in both styles. Never animated.
         case inboxDot
         /// the Inbox's badge as a number, with the tray, when the layout asks for the count (APP-11)
         case inboxCount(Int)
@@ -206,6 +206,12 @@ public struct StatusLabelModel: Hashable, Sendable {
         }
     }
 
+    /// whether the monochrome item has the red Inbox dot: the rest stays the menu bar's tint and only the dot is red, so
+    /// the image is the template tinted where it is drawn, with the dot on top
+    public var hasRedDotOnTemplate: Bool {
+        style == .monochrome && parts.contains(.inboxDot)
+    }
+
     /// how the parts are drawn
     public var rendering: Rendering {
         parts == [.identity] ? .identity : .image
@@ -233,6 +239,10 @@ public struct StatusLabelModel: Hashable, Sendable {
     /// - Parameter part: the part
     /// - Returns: the color; `nil` for the menu bar's own tint
     public func color(of part: Part) -> Color? {
+        // The Inbox dot is red in both styles (the user, 2026-11-03).
+        if case .inboxDot = part {
+            return .red
+        }
         guard style == .color else {
             return nil
         }

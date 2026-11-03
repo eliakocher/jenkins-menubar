@@ -48,6 +48,15 @@ The logs had no such answers.
 | `merge-request-closes-issues.json` | MergeRequestClosesIssues (REST `closes_issues`) | GitLab's REST reference, "List issues that close on merge": the fields the app reads, made-up values; not taken from a real server |
 | `merge-request-related-issues.json` | MergeRequestRelatedIssues (REST `related_issues`) | the reference, "List issues related to the merge request"; one issue has `references.full` and one lives in another project |
 
+## Merge from the app (MR-16; written from GitLab's GraphQL schema, never from a real answer)
+
+| File | Operation | Source |
+|---|---|---|
+| `merge-state.json` | MergeRequestMergeState | made up from the schema: open, blocked by approvals and a running pipeline, behind, squash encouraged, a warning and inactive checks |
+| `merge-state-merged.json` | MergeRequestMergeState | made up: merged by Alex Kim in a fast-forward project that always squashes, no permissions left |
+| `merge-state-basic.json` | MergeRequestMergeState | made up: the answer without `mergeabilityChecks`, a draft with auto-merge on, a project that never squashes |
+| `merge-state-unknown-field.json` | MergeRequestMergeState | made up in the shape of `merge-request-details-unknown-field.json`: a GitLab that refuses `mergeabilityChecks` |
+
 ## Comment writes and members (written from GitLab's reference, never from a real answer)
 
 | File | Operation | Source |

@@ -100,7 +100,9 @@ struct InboxRowModelTests {
                 subjectKey: "k", useCase: "Q", failed: false, title: "T", reference: nil, excerpt: nil, url: nil, at: Self.now))
         let data = InboxData(now: Self.now, pending: [mention, review, answer], fetchedAt: Self.now)
         let all = InboxListModel(data, filter: InboxViewFilter(), query: "")
-        #expect(all.sections.map(\.group) == [.claude, .mentions, .reviewRequests])
+        // My To-Dos is first, with its add field, even while it has no rows.
+        #expect(all.sections.map(\.group) == [.myToDos, .claude, .mentions, .reviewRequests])
+        #expect(all.sections.first?.showsAddField == true && all.sections.first?.rows.isEmpty == true)
         #expect(InboxListModel(data, filter: InboxViewFilter(group: .mentions), query: "").rows.count == 1)
         #expect(InboxListModel(data, filter: InboxViewFilter(project: "nope"), query: "").empty?.title == "Nothing Here")
         #expect(InboxListModel(data, filter: InboxViewFilter(), query: "other thing").rows.count == 1)
@@ -110,7 +112,10 @@ struct InboxRowModelTests {
         var notLoaded = data
         notLoaded.hasLoadedDone = false
         #expect(InboxListModel(notLoaded, filter: InboxViewFilter(state: .done), query: "").isPlaceholder)
-        #expect(InboxListModel(InboxData(now: Self.now, fetchedAt: Self.now), filter: InboxViewFilter(), query: "").empty?.title == "Inbox Zero")
+        // Nothing pending: My To-Dos and its add field stand, so there is no empty state over them.
+        let zero = InboxListModel(InboxData(now: Self.now, fetchedAt: Self.now), filter: InboxViewFilter(), query: "")
+        #expect(zero.sections.map(\.group) == [.myToDos] && zero.empty == nil)
+        #expect(InboxListModel(InboxData(now: Self.now, fetchedAt: Self.now), filter: InboxViewFilter(state: .done), query: "").empty?.title == "Nothing Done Yet")
         // The first load shows bars; a failed first load shows the error alone.
         #expect(InboxListModel(InboxData(now: Self.now), filter: InboxViewFilter(), query: "").isPlaceholder)
         let failed = InboxListModel(InboxData(now: Self.now, problem: .unreachable(.gitLab)), filter: InboxViewFilter(), query: "")

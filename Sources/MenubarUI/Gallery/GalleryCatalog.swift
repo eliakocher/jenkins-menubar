@@ -39,9 +39,9 @@ public enum GalleryCatalog {
         GalleryEntry(screen: "placeholder", state: "environment", size: CGSize(width: 420, height: 360)) { _ in
             GalleryPlaceholderView()
         },
-    ] + statusIconEntries + menuPaneEntries + alertEntries + watchSheetEntries
+    ] + statusIconEntries + menuBarEntries + menuPaneEntries + alertEntries + watchSheetEntries
         + welcomeEntries
-        + mainWindowEntries + inboxEntries + openedRowsEntries + pipelinesEntries + rebuildSheetEntries + consoleLogEntries
+        + mainWindowEntries + inboxEntries + inboxDeliveryEntries + openedRowsEntries + pipelinesEntries + rebuildSheetEntries + consoleLogEntries
         + mergeRequestsEntries
         + mergeRequestDetailsEntries
         + workItemsEntries
@@ -51,5 +51,6 @@ public enum GalleryCatalog {
         + digestEntries
         + markdownEntries
         + settingsEntries + updateRowEntries
+        + readmeEntries
 }
 #endif

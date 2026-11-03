@@ -76,7 +76,7 @@ struct BuildDetailContent: View {
 
     var body: some View {
         if let model {
-            DetailPage(id: model.item.id) { _ in
+            DetailPage(id: model.item.id, focusesCards: true) { _ in
                 header(model)
                 CardColumnsLayout {
                     if showsStagesCard(model) {
@@ -96,6 +96,7 @@ struct BuildDetailContent: View {
                     // Why Did It Fail?, while the Claude features are on (AI-02, AI-05).
                     if model.canExplain, case .build(let row) = model.item {
                         ExplainBuildSection(build: row.build, page: row.buildPage?.url, inCard: true)
+                            .cardFocusTarget(.claude)
                     }
                     // The console log, collapsed until opened, full width and last (PIPE-12).
                     if case .build(let row) = model.item {
