@@ -220,10 +220,10 @@ public enum ClaudeReadGuard {
         "'" + program.replacingOccurrences(of: "'", with: "'\\''") + "' " + argument + " || exit 2"
     }
 
-    /// Returns the program to run as the hook: the app's own executable, when it is the app's (`megamonitor`); `nil`
-    /// in tests and anything else that runs this code.
+    /// Returns the program to run as the hook: the app's own executable, when it is the app's (`megamonitor` in a debug
+    /// build, `MegaMonitor` in the bundle `build.sh` makes); `nil` in tests and anything else that runs this code.
     public static func appProgram(bundle: Bundle = .main) -> String? {
-        guard let url = bundle.executableURL, url.lastPathComponent == "megamonitor" else {
+        guard let url = bundle.executableURL, url.lastPathComponent.lowercased() == "megamonitor" else {
             return nil
         }
         return url.path(percentEncoded: false)

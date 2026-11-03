@@ -5,7 +5,14 @@ versions follow [Semantic Versioning](https://semver.org/). The version lives in
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-11-03
+
 ### Added
+- **Your slash commands and skills work in the Claude card, as in Claude Code** (with "Use My Claude Code Setup" on).
+  Claude can run git and your MCP tools, asking you first with **Allow**, **Always for This Chat** or **Deny**, and
+  it can ask you questions with buttons.
+- Claude's answers **stream into the card**, each tool call shows as a quiet line, and **Stop** interrupts.
+- **Raw Response** under an answer shows its Markdown source and the run's details, with Copy.
 - **Mega Corners** in Settings: each screen corner runs an action like macOS's own hot corners, a shortcut or an app,
   and another one with ⌘, ⌥, ⌃ or ⇧ held.
 - Mega Corners can open a MegaMonitor section, Search, Refresh Now, or mute alerts for an hour.
@@ -16,13 +23,12 @@ versions follow [Semantic Versioning](https://semver.org/). The version lives in
   in the sidebar and in the menu bar pane wears a small gift until you open it.
 
 ### Changed
-- **Claude can use your skills in chats** when your Claude Code setup is on and the chat doesn't read a checkout, but
-  only skills that read. A skill that needs git or wants to change something still doesn't run there.
 - **Add Required Reviewers shows who it adds:** those people come first in the Suggested row, marked "Required".
   Hovering the button highlights them, and its tooltip lists them by approval rule.
 
 ### Fixed
 - The suggested reviewers no longer use the sparkles symbol, which means Claude.
+- In a question about code, a skill can no longer read files outside the checkout.
 - A window opened by a Mega Corner now comes in front of other apps.
 - **The peeking butler only shows up in a MegaMonitor window while you're looking at it** (the window is focused). If
   you switch away while he's out, he ducks back right away. The menu bar pane works as before.

@@ -115,6 +115,32 @@ struct ClaudeReadGuardTests {
         #expect(output("not json").contains("deny"))
     }
 
+    @Test("AI-09 the hook's program is the app's own executable, as build.sh names it in the bundle or as a debug build names it; any other program is none", arguments: [
+        ("MegaMonitor", true),
+        ("megamonitor", true),
+        ("swiftpm-testing-helper", false),
+    ])
+    func appProgram(executable: String, isApp: Bool) throws {
+        let app = FileManager.default.temporaryDirectory
+            .appending(path: "read-guard-\(UUID().uuidString)/Probe.app", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: app.deletingLastPathComponent()) }
+        let contents = app.appending(path: "Contents", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: contents.appending(path: "MacOS"), withIntermediateDirectories: true)
+        let plist: [String: Any] = ["CFBundleExecutable": executable, "CFBundleIdentifier": "local.probe.\(UUID().uuidString)"]
+        try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            .write(to: contents.appending(path: "Info.plist"))
+        let program = contents.appending(path: "MacOS/\(executable)")
+        try Data().write(to: program)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: program.path(percentEncoded: false))
+
+        let bundle = try #require(Bundle(url: app))
+        let found = ClaudeReadGuard.appProgram(bundle: bundle)
+        #expect((found != nil) == isApp)
+        if isApp {
+            #expect(found?.hasSuffix("/Contents/MacOS/\(executable)") == true)
+        }
+    }
+
     @Test("AI-09 the hook's command quotes the app's program and never holds the folder; a hook that can't run blocks the call")
     func settings() throws {
         let settings = ClaudeReadGuard.settings(program: "/Users/dev/Apps/Mega Monitor's.app/Contents/MacOS/megamonitor")
