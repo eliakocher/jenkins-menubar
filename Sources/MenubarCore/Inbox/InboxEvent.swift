@@ -42,6 +42,12 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
         [.inbox, .badge]
     }
 
+    /// Whether an entry of this kind can be snoozed anywhere: the Inbox's rows, the big panel, a banner's buttons. The coffee
+    /// break can't (the user, 2026-11-03: "coffee is mandatory"); it can be marked done or dismissed.
+    public var canSnooze: Bool {
+        self != .coffeeBreak
+    }
+
     /// the Inbox group of its entries (INBOX-02)
     public var group: InboxGroup {
         switch self {

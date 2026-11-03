@@ -1,0 +1,16 @@
+{
+  "errors": [
+    {
+      "message": "Field 'mergedAfter' doesn't exist on type 'MergeRequestConnection'",
+      "locations": [{ "line": 33, "column": 29 }],
+      "path": ["query MergeRequests", "currentUser", "mergedAuthored", "mergedAfter"],
+      "extensions": { "code": "argumentNotAccepted", "name": "authoredMergeRequests", "typeName": "Field", "argumentName": "mergedAfter" }
+    },
+    {
+      "message": "Argument 'sort' on Field 'mergedAuthored' has an invalid value (MERGED_AT_DESC). Expected type 'MergeRequestSort'.",
+      "locations": [{ "line": 33, "column": 29 }],
+      "path": ["query MergeRequests", "currentUser", "mergedAuthored", "sort"],
+      "extensions": { "code": "argumentLiteralsIncompatible", "typeName": "Field", "argumentName": "sort" }
+    }
+  ]
+}

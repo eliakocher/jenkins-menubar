@@ -114,16 +114,6 @@ enum MutationPayloadShape {
 }
 
 extension GitLabClient {
-    /// Rebases the source branch onto the target: `PUT /projects/:id/merge_requests/:iid/rebase` (GitLab's REST
-    /// documentation; GraphQL has no rebase). GitLab answers `202 {"rebase_in_progress": true}` and rebases in the
-    /// background; `rebaseInProgress` of the merge state says when it is done.
-    ///
-    /// - Parameter source: the merge request
-    /// - Throws: ``GitLabError`` with GitLab's words, like "Cannot push to source branch"
-    public func rebase(_ source: DescriptionSource) async throws {
-        _ = try await mergeREST("PUT", "rebase", of: source, operation: "MergeRequestRebase")
-    }
-
     /// Cancels an auto-merge: `POST …/cancel_merge_when_pipeline_succeeds`, which every 19.x GitLab knows (deprecated in
     /// 19.5), else `POST …/cancel_auto_merge`, its successor since 19.5 (GitLab's REST documentation; GraphQL has no
     /// cancel). The successor is asked only when the old one is gone (HTTP 404 or 405).
@@ -217,7 +207,7 @@ public struct MergeStateLoad: Hashable, Sendable {
 /// What the Merge card's last write is doing, or did (MR-16).
 public enum MergeActivity: Hashable, Sendable {
     case idle
-    /// on its way; a rebase stays here while GitLab rebases
+    /// on its way; a merge stays here while GitLab merges in the background
     case running(MergeAction)
     case succeeded(MergeAction)
     /// GitLab's words, with whether the token looks like it can't write
@@ -246,7 +236,7 @@ public final class MergeRequestMergeStore {
     @ObservationIgnored private var level = MergeStateLevel.full
     /// what else a write refreshes: the details, whose approvals and threads the checks name
     @ObservationIgnored var afterWrite: (@MainActor (MergeRequest) async -> Void)?
-    /// how long between two looks at a rebase or a merge GitLab runs in the background, and how many looks at most
+    /// how long between two looks at a merge GitLab runs in the background, and how many looks at most
     @ObservationIgnored var pollInterval: Duration = .seconds(2)
     @ObservationIgnored var pollLimit = 30
 
@@ -333,8 +323,8 @@ public final class MergeRequestMergeStore {
         entries[key] = entry
     }
 
-    /// Runs one of the card's writes, on the user's click: merge, set or cancel auto-merge, rebase, mark ready. Then
-    /// loads the merge state and the details again; a rebase or a merge GitLab runs in the background is looked at
+    /// Runs one of the card's writes, on the user's click: merge, set or cancel auto-merge, mark ready. Then loads the
+    /// merge state and the details again; a merge GitLab runs in the background is looked at
     /// until it ends. Nothing runs while another write for the merge request is on its way.
     ///
     /// A merge sends the head commit the card showed, so it never takes commits the user didn't see; without one
@@ -366,6 +356,10 @@ public final class MergeRequestMergeStore {
                 try await Self.send(action, client: client, source: source, state: state, options: options)
                 return nil
             } catch let error as GitLabError {
+                // A refusal that can be a token without the `api` scope asks GitLab for the scopes, once per token.
+                if await services.tokenIsToBlame(for: error) {
+                    return (Problem.readOnlyToken(action: action.title).message, true)
+                }
                 return (error.description, error.looksLikeMissingScope)
             } catch {
                 return (error.localizedDescription, false)
@@ -380,7 +374,10 @@ public final class MergeRequestMergeStore {
         entry = entries[key] ?? Entry()
         if let (message, needsToken) = failure {
             entry.activity = .failed(action, message: message, needsToken: needsToken)
-        } else if action == .rebase, let error = entry.state?.mergeError, entry.state?.isRebasing == false {
+        } else if action == .merge, entry.state?.lifecycle == .opened, entry.state?.isMerging == false,
+            let error = entry.state?.mergeError
+        {
+            // GitLab took the merge, then failed it in the background.
             entry.activity = .failed(action, message: error, needsToken: false)
         } else {
             entry.activity = .succeeded(action)
@@ -388,10 +385,10 @@ public final class MergeRequestMergeStore {
         entries[key] = entry
     }
 
-    /// Looks at the merge state until GitLab's rebase or merge in the background ends, at most ``pollLimit`` times.
+    /// Looks at the merge state until GitLab's merge in the background ends, at most ``pollLimit`` times.
     private func waitForBackgroundWork(_ mergeRequest: MergeRequest) async {
         var looks = 0
-        while looks < pollLimit, let state = entries[mergeRequest.reference]?.state, state.isRebasing || state.isMerging {
+        while looks < pollLimit, let state = entries[mergeRequest.reference]?.state, state.isMerging {
             looks += 1
             try? await services.clock.sleep(for: pollInterval)
             await load(mergeRequest, force: true)
@@ -417,8 +414,6 @@ public final class MergeRequestMergeStore {
             try await client.send(operation)
         case .cancelAutoMerge:
             try await client.cancelAutoMerge(source)
-        case .rebase:
-            try await client.rebase(source)
         case .markReady:
             guard let operation = GitLabOperation<Void>.setDraft(source, draft: false) else {
                 throw GitLabError(.httpStatus(.gitLab, status: 404))

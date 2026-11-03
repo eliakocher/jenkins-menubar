@@ -45,6 +45,9 @@ struct InboxRowContent: View {
     @ViewState private var isHovered = false
     /// whether the row was opened: it shows faded
     @Environment(\.inboxIsSeen) private var isSeen
+    /// whether GitLab refused the row's change and it was put back: it shakes and tints for a moment
+    @Environment(\.inboxIsBounced) private var isBounced
+    @ViewState private var shake: CGFloat = 0
     /// `.increased` on the selected row, whose accent fill would swallow the colors
     @Environment(\.backgroundProminence) private var prominence
 
@@ -99,6 +102,19 @@ struct InboxRowContent: View {
         .strikethrough(state == .done && row.entry.isMine)
         // Opened and done rows fade, so what is still new stands out.
         .opacity(isFaded ? 0.6 : 1)
+        .background(MergeRequestStatus.Color.red.swiftUI.opacity(isBounced(row.id) ? 0.14 : 0))
+        .animation(.easeOut(duration: 0.4), value: isBounced(row.id))
+        .offset(x: shake)
+        // The row comes back already marked: it shakes as it appears.
+        .task(id: isBounced(row.id)) {
+            guard isBounced(row.id) else {
+                return
+            }
+            for x: CGFloat in [-7, 7, -5, 5, -2, 0] {
+                withAnimation(.linear(duration: 0.05)) { shake = x }
+                try? await Task.sleep(for: .milliseconds(55))
+            }
+        }
         .contentShape(.rect)
         .onHover { isHovered = $0 }
         .help(row.help)
@@ -106,6 +122,20 @@ struct InboxRowContent: View {
 
     private var isFaded: Bool {
         (state == .done || isSeen(row.id)) && !isHovered
+    }
+}
+
+/// Whether the Inbox row with an id was just put back after GitLab refused its change.
+private struct InboxIsBouncedKey: EnvironmentKey {
+    static let defaultValue: @MainActor (String) -> Bool = { _ in false }
+}
+
+extension EnvironmentValues {
+    /// Returns whether an Inbox row was put back after a refusal. The window's list sets it from the store; the gallery from
+    /// its fixtures.
+    var inboxIsBounced: @MainActor (String) -> Bool {
+        get { self[InboxIsBouncedKey.self] }
+        set { self[InboxIsBouncedKey.self] = newValue }
     }
 }
 
@@ -182,14 +212,16 @@ private struct InboxRowButtons: View {
         HStack(spacing: 4) {
             switch state {
             case .pending:
-                InboxSnoozeMenu(entries: [row.entry], actions: actions, pickDate: pickDate) {
-                    Image(systemName: "moon.zzz")
-                        .accessibilityLabel("Snooze")
+                if row.entry.canSnooze {
+                    InboxSnoozeMenu(entries: [row.entry], actions: actions, pickDate: pickDate) {
+                        Image(systemName: "moon.zzz")
+                            .accessibilityLabel("Snooze")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("Snooze")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("Snooze")
                 doneButton
             case .snoozed:
                 Button {

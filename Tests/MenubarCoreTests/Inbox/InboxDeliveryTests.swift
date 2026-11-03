@@ -186,25 +186,35 @@ struct InboxDeliveryTests {
     func panelButtonsActOnTheEntry() async throws {
         let setup = try Setup()
         let store = setup.model.inbox
-        let event = Self.coffee()
+        let event = Self.review("review|panel")
         store.addLocal(event)
         let entry = try #require(store.entry(for: event))
-        #expect(entry.id == event.id && entry.group == .coffee)
+        #expect(entry.id == event.id)
 
         await store.snooze(entry, .oneHour)
         #expect(store.pending.isEmpty)
-        #expect(store.snoozed.map(\.kind) == [.coffeeBreak])
+        #expect(store.snoozed.map(\.kind) == [.reviewRequested])
         #expect(store.badgeCount == 0)
         #expect(store.entry(for: event) != nil)
 
         let sleeping = try #require(store.snoozed.first)
         await store.unsnooze(sleeping)
-        #expect(store.pending.map(\.kind) == [.coffeeBreak])
+        #expect(store.pending.map(\.kind) == [.reviewRequested])
 
         await store.markDone(try #require(store.entry(for: event)))
-        #expect(store.done.map(\.kind) == [.coffeeBreak])
+        #expect(store.done.map(\.kind) == [.reviewRequested])
         // An event that isn't in the Inbox has no entry to act on.
         #expect(store.entry(for: Self.review("review|nowhere")) == nil)
+
+        // The coffee break takes Done, and no Snooze (the user, 2026-11-03: "coffee is mandatory").
+        let coffee = Self.coffee()
+        store.addLocal(coffee)
+        let cup = try #require(store.entry(for: coffee))
+        #expect(cup.group == .coffee)
+        await store.snooze(cup, .oneHour)
+        #expect(store.snoozed.isEmpty && store.pending.map(\.kind) == [.coffeeBreak])
+        await store.markDone(cup)
+        #expect(store.done.map(\.kind).contains(.coffeeBreak))
     }
 
     // MARK: - INBOX-15

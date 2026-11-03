@@ -412,13 +412,14 @@ struct SettingsStoreTests {
 
         await harness.store.checkAccounts()
 
-        #expect(harness.store.accounts[.gitlab] == AccountStatus(
-            ok: true, message: "Signed in as alex.doe. The token can only read: re-requesting a review needs the api scope"))
+        let readOnly = try #require(harness.store.accounts[.gitlab])
+        #expect(readOnly == AccountStatus(ok: true, message: "Signed in as alex.doe", scopes: ["read_api"]))
+        #expect(readOnly.writeAccess == .readOnly && readOnly.scopesText == "read_api")
 
         // A token that has api, or a GitLab that doesn't answer the scope check, is just signed in.
         harness.stub.answer("GET", path: "/api/v4/personal_access_tokens/self", body: #"{"scopes":["api"]}"#)
         await harness.store.checkAccounts()
-        #expect(harness.store.accounts[.gitlab] == AccountStatus(ok: true, message: "Signed in as alex.doe"))
+        #expect(harness.store.accounts[.gitlab] == AccountStatus(ok: true, message: "Signed in as alex.doe", scopes: ["api"]))
         harness.stub.answer("GET", path: "/api/v4/personal_access_tokens/self", status: 404)
         await harness.store.checkAccounts()
         #expect(harness.store.accounts[.gitlab] == AccountStatus(ok: true, message: "Signed in as alex.doe"))

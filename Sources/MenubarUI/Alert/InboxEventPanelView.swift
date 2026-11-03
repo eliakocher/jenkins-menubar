@@ -61,7 +61,7 @@ public struct InboxEventPanelView: View {
 
 /// One event in the big panel, in the look of the failed-build alert: a symbol where the butler is, the reference chip, the
 /// headline, the target's title, a line, and the buttons: Show, Done, Snooze 1 Hour and Dismiss. The coffee break
-/// wears a ☕ on a warm disc and has no Show. 320 pt wide; the height fits the content.
+/// wears a ☕ on a warm disc and has no Show and no Snooze (its Done says "On My Way ☕"). 320 pt wide; the height fits the content.
 public struct InboxEventView: View {
     let event: InboxEvent
     let pager: AlertPager?
@@ -113,9 +113,14 @@ public struct InboxEventView: View {
                 if canShow {
                     button(.show, isDefault: true)
                 }
-                HStack(spacing: 8) {
+                if event.kind.canSnooze {
+                    HStack(spacing: 8) {
+                        button(.done, isDefault: !canShow)
+                        button(.snooze)
+                    }
+                } else {
+                    // The coffee break can't be snoozed: Done is the one way to take it, full width.
                     button(.done, isDefault: !canShow)
-                    button(.snooze)
                 }
                 if let pager {
                     HStack(spacing: 8) {
@@ -145,7 +150,7 @@ public struct InboxEventView: View {
     }
 
     private func button(_ action: InboxDeliveryAction, isDefault: Bool = false) -> some View {
-        Button(action.panelTitle) {
+        Button(action.panelTitle(for: event.kind)) {
             perform(action)
         }
         .controlSize(.large)

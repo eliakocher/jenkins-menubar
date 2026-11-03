@@ -458,7 +458,10 @@ public final class ReviewerSuggestionStore {
                 do {
                     return AddReviewersOutcome(reviewers: try await session.client.addReviewers(usernames, to: source))
                 } catch let error as GitLabError {
-                    return AddReviewersOutcome(failure: error.description, needsToken: error.looksLikeMissingScope)
+                    let blamed = await services.tokenIsToBlame(for: error)
+                    return AddReviewersOutcome(
+                        failure: blamed ? Problem.readOnlyToken(action: "Adding reviewers").message : error.description,
+                        needsToken: blamed || error.looksLikeMissingScope)
                 } catch {
                     return AddReviewersOutcome(failure: error.localizedDescription)
                 }

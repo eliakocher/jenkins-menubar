@@ -19,11 +19,16 @@ enum MergeCardPhase: Equatable {
 /// The merge request detail's Merge card (MR-16): the state at a glance in one tinted headline, the checks that need
 /// something with their fix inline and the passed ones folded to "3 checks passed", what merging does (the commits, the
 /// branches and the work item), the options (delete the source branch, squash, the commit message) and the actions:
-/// Merge after an inline confirmation, Set to Auto-Merge, Cancel Auto-Merge, Rebase and Mark as Ready.
+/// Merge after an inline confirmation, Set to Auto-Merge, Cancel Auto-Merge and Mark as Ready, as GitLab's own merge
+/// widget offers them (the user, 2026-11-03: "the merge button should do what gitlab does"; no Rebase).
 ///
 /// Every write runs on a click only; afterwards the merge request is loaded again and the outcome shows, a failure with
 /// GitLab's words and Try Again.
 struct MergeCard: View {
+    /// whether Merge asks "Merge !16 into develop? This can't be undone." first: the app's rule for a write that can't be
+    /// undone; `false` merges on the first click, as GitLab's widget does
+    static let confirmsMerge = true
+
     let model: MergeRequestDetailModel
     let details: MergeRequestDetails?
     let actions: GitLabSectionActions
@@ -94,7 +99,7 @@ struct MergeCard: View {
             // With nothing open, the headline's "All 8 checks passed" unfolds them.
             let foldsInHeadline = overview.open.isEmpty && !overview.passed.isEmpty
             MergeHeadline(
-                headline: overview.headline, isWorking: activity.running != nil || state.isRebasing || state.isMerging,
+                headline: overview.headline, isWorking: activity.running != nil || state.isMerging,
                 isUnfolded: foldsInHeadline && isOpen ? showsPassed : nil
             ) {
                 withAnimation(.snappy) { showsPassed.toggle() }
@@ -158,13 +163,9 @@ struct MergeCard: View {
         .background(.fill.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    /// whether the check's fix is the write on its way, or GitLab's rebase it started
+    /// whether the check's fix is the write on its way
     private func isRunning(_ check: MergeCheck) -> Bool {
-        switch check.fix {
-        case .rebase: activity.running == .rebase || load.state?.isRebasing == true
-        case .markReady: activity.running == .markReady
-        default: false
-        }
+        check.fix == .markReady && activity.running == .markReady
     }
 
     /// Runs a check's fix: a jump in the page, a page in the browser, or a write.
@@ -179,7 +180,6 @@ struct MergeCard: View {
             }
         case .showThreads: jump(.discussion)
         case .markReady: run(.markReady, state: load.state)
-        case .rebase: run(.rebase, state: load.state)
         case .openConflicts: actions.open(mergeRequest.webURL.appending(path: "conflicts"))
         case .openInGitLab: actions.open(mergeRequest.webURL)
         case nil: break
@@ -303,7 +303,7 @@ struct MergeCard: View {
         } else if let primary {
             HStack(spacing: 10) {
                 Button {
-                    if primary == .merge {
+                    if primary == .merge, Self.confirmsMerge {
                         withAnimation(.snappy) { phase = .confirming }
                     } else {
                         run(primary, state: state)
@@ -316,7 +316,7 @@ struct MergeCard: View {
                         } else {
                             Image(systemName: Self.symbol(primary))
                         }
-                        Text(verbatim: running == primary ? Self.runningTitle(primary) : primary.title)
+                        Text(verbatim: running == primary ? Self.runningTitle(primary) : Self.title(primary, state: state))
                     }
                 }
                 .buttonStyle(MergeButtonStyle(tint: Self.tint(primary), isFilled: primary != .cancelAutoMerge))
@@ -399,7 +399,9 @@ struct MergeCard: View {
         case .failed(let action, let message, let needsToken):
             OutcomeLine(
                 symbol: "exclamationmark.triangle.fill", tint: MergeRequestStatus.Color.red.swiftUI,
-                text: needsToken ? "\(message). \(action.title) needs a GitLab token with the api scope." : message,
+                // A message that already names the scope ("GitLab refused: your token may only have read access…") stands alone.
+                text: needsToken && !message.contains("api scope")
+                    ? "\(message). \(action.title) needs a GitLab token with the api scope." : message,
                 dismiss: dismiss
             ) {
                 if needsToken {
@@ -451,7 +453,6 @@ struct MergeCard: View {
         case .merge: "arrow.triangle.merge"
         case .setAutoMerge: "clock.badge.checkmark"
         case .cancelAutoMerge: "xmark.circle"
-        case .rebase: "arrow.triangle.2.circlepath"
         case .markReady: "checkmark.circle"
         }
     }
@@ -461,7 +462,6 @@ struct MergeCard: View {
         case .merge: "Merging…"
         case .setAutoMerge: "Setting Auto-Merge…"
         case .cancelAutoMerge: "Canceling…"
-        case .rebase: "Rebasing…"
         case .markReady: "Marking as Ready…"
         }
     }
@@ -477,12 +477,16 @@ struct MergeCard: View {
 
     private static func help(_ action: MergeAction, state: MergeState) -> String {
         switch action {
-        case .merge: "Merges into \(state.targetBranch), after your confirmation"
-        case .setAutoMerge: "GitLab merges it once every check passes"
+        case .merge: "Merges into \(state.targetBranch)\(confirmsMerge ? ", after your confirmation" : "")"
+        case .setAutoMerge: state.autoMergeJoinsTrain ? "Adds it to the merge train" : "GitLab merges it once every check passes"
         case .cancelAutoMerge: "Stops GitLab from merging it when the checks pass"
-        case .rebase: "Rebases \(state.sourceBranch) onto \(state.targetBranch) in GitLab"
         case .markReady: "Takes the draft mark off"
         }
+    }
+
+    /// the button's words: GitLab's "Add to Merge Train" when that is the auto-merge it offers
+    private static func title(_ action: MergeAction, state: MergeState) -> String {
+        action == .setAutoMerge && state.autoMergeJoinsTrain ? "Add to Merge Train" : action.title
     }
 
     private static func doneText(_ action: MergeAction, state: MergeState) -> String {
@@ -490,7 +494,6 @@ struct MergeCard: View {
         case .merge: state.lifecycle == .merged ? "Merged into \(state.targetBranch)" : "GitLab took the merge"
         case .setAutoMerge: "Auto-merge set: GitLab merges it when the checks pass"
         case .cancelAutoMerge: "Auto-merge canceled"
-        case .rebase: "Rebased onto \(state.targetBranch)"
         case .markReady: "Marked as ready"
         }
     }
@@ -598,7 +601,7 @@ private struct MergeCheckRow: View {
                 HStack(spacing: 6) {
                     ProgressView()
                         .controlSize(.small)
-                    Text(verbatim: check.fix == .rebase ? "Rebasing…" : "Saving…")
+                    Text(verbatim: "Saving…")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -746,6 +749,7 @@ extension MergeCheck.Status {
         case .failed: "xmark.circle.fill"
         case .pending: "clock.fill"
         case .warning: "exclamationmark.triangle.fill"
+        case .info: "info.circle.fill"
         case .passed: "checkmark.circle.fill"
         }
     }
@@ -754,6 +758,7 @@ extension MergeCheck.Status {
         switch self {
         case .failed: MergeRequestStatus.Color.red.swiftUI
         case .pending, .warning: MergeRequestStatus.Color.orange.swiftUI
+        case .info: MergeRequestStatus.Color.neutral.swiftUI
         case .passed: MergeRequestStatus.Color.green.swiftUI
         }
     }
@@ -768,7 +773,6 @@ extension MergeCheck.Fix {
         case .showBuild: "Show Build"
         case .showThreads: "Show Threads"
         case .markReady: "Mark as Ready"
-        case .rebase: "Rebase"
         case .openConflicts, .openInGitLab: "Open in GitLab"
         }
     }
@@ -783,7 +787,6 @@ extension MergeCheck.Fix {
         case .showBuild: "Shows the merge request's build"
         case .showThreads: "Jumps to the open threads in the Discussion card"
         case .markReady: "Takes the draft mark off in GitLab"
-        case .rebase: "Rebases the source branch onto the target branch in GitLab"
         case .openConflicts: "Opens GitLab's page for the conflicts"
         case .openInGitLab: "Opens the merge request in GitLab"
         }

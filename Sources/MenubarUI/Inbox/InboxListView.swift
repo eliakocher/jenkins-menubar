@@ -29,6 +29,7 @@ public struct InboxListView: View {
                 filter: $filter, actions: .live(model: model, links: links, router: router), links: links)
             // Each row asks for its own seen mark, so marking one draws that row and not the list.
             .environment(\.inboxIsSeen) { [store = model.inbox] in store.seen.isSeen($0) }
+            .environment(\.inboxIsBounced) { [store = model.inbox] in store.bouncedIDs.contains($0) }
         }
         // The Done list is asked while it shows (INBOX-01), and again when the user comes back to it.
         .task(id: filter.state) {
@@ -59,7 +60,9 @@ struct InboxListContent: View {
         List(selection: $selection) {
             MainWindowProblemRows(model.problems, openSettings: links.openSettings)
             if let note = model.actionNote {
-                InboxActionNote(text: note)
+                InboxActionNote(
+                    text: note, fixesToken: model.actionFixesToken, openAccounts: { links.openSettings(.accounts) },
+                    dismiss: actions.dismissNote)
             }
             if model.showsFilterBar {
                 InboxFilterBar(model: model, filter: $filter, isConfirmingMarkAll: $isConfirmingMarkAll)
@@ -171,8 +174,11 @@ struct InboxListContent: View {
             switch filter.state {
             case .pending:
                 Button(many ? "Mark \(entries.count) Done" : "Done") { actions.done(entries) }
-                InboxSnoozeMenu(entries: entries, actions: actions) { dateEntries = $0; isPickingDate = true } label: {
-                    Text("Snooze")
+                // The coffee break can't be snoozed.
+                if entries.allSatisfy(\.canSnooze) {
+                    InboxSnoozeMenu(entries: entries, actions: actions) { dateEntries = $0; isPickingDate = true } label: {
+                        Text("Snooze")
+                    }
                 }
             case .snoozed:
                 Button("Wake Now") { actions.wake(entries) }
@@ -249,20 +255,43 @@ private struct InboxSectionHeader: View {
     }
 }
 
-/// A Done, Restore or Snooze that GitLab refused and that was put back: a quiet line above the rows.
+/// A Done, Restore or Snooze that GitLab refused and that was put back: a tinted banner above the rows, with the words of
+/// the refusal, and for a token that can only read the way to Settings → Accounts.
 private struct InboxActionNote: View {
     let text: String
+    let fixesToken: Bool
+    let openAccounts: () -> Void
+    let dismiss: () -> Void
 
     var body: some View {
-        Label {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: fixesToken ? "key.fill" : "arrow.uturn.backward.circle.fill")
+                .foregroundStyle(MergeRequestStatus.Color.orange.swiftUI)
             Text(verbatim: text)
-                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-            Image(systemName: "arrow.uturn.backward.circle")
+                .textSelection(.enabled)
+            Spacer(minLength: 8)
+            if fixesToken {
+                Button("Open Settings → Accounts", action: openAccounts)
+                    .buttonStyle(.link)
+            }
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .imageScale(.small)
+                    .accessibilityLabel("Dismiss")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
         }
         .font(.callout)
-        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(
+            MergeRequestStatus.Color.orange.swiftUI.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(MergeRequestStatus.Color.orange.swiftUI.opacity(0.35), lineWidth: 0.75)
+        }
         .listRowSeparator(.hidden)
         .selectionDisabled()
     }

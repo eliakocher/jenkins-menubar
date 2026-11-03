@@ -51,8 +51,9 @@ extension GitLabOperation where Value == String {
             name: "CurrentUser",
             query: "query CurrentUser { currentUser { username } }",
             decode: { body in
-                guard let username = try GraphQLAnswer<CurrentUserShape>.decode(body).data?.currentUser?.username else {
-                    throw GitLabError(.rejectedToken(.gitLab))
+                let answer = try GraphQLAnswer<CurrentUserShape>.decode(body)
+                guard let username = answer.data?.currentUser?.username else {
+                    throw signedInRefusal(answer.errors)
                 }
                 return username
             },
@@ -66,8 +67,9 @@ extension GitLabOperation where Value == String {
             name: "Metadata",
             query: "query Metadata { metadata { version } }",
             decode: { body in
-                guard let version = try GraphQLAnswer<MetadataShape>.decode(body).data?.metadata?.version else {
-                    throw GitLabError(.rejectedToken(.gitLab))
+                let answer = try GraphQLAnswer<MetadataShape>.decode(body)
+                guard let version = answer.data?.metadata?.version else {
+                    throw signedInRefusal(answer.errors)
                 }
                 return version
             },
@@ -99,7 +101,11 @@ extension GitLabOperation where Value == [Int] {
 
 extension GitLabOperation where Value == MergeRequestList {
     /// My open MRs, 50 per list: authored, assigned, and those whose review is asked of me (MR-01). A 200 without
-    /// `currentUser` is a rejected token (MR-05).
+    /// `currentUser` is a rejected token (MR-05) unless it carries GraphQL errors, like GitLab's "Query has complexity of
+    /// 329, which exceeds max complexity of 250": those are the problem, with GitLab's words.
+    ///
+    /// The merged lists are not in it: a bigger query hit GitLab's complexity limit (MR-17), so they have their own,
+    /// ``recentlyMerged(now:)``.
     public static var mergeRequests: GitLabOperation {
         GitLabOperation(
             name: "MergeRequests",
@@ -129,8 +135,55 @@ extension GitLabOperation where Value == MergeRequestList {
                 }
                 """,
             decode: { body in
-                guard let user = try GraphQLAnswer<MergeRequestsShape>.decode(body).data?.currentUser else {
-                    throw GitLabError(.rejectedToken(.gitLab))
+                let answer = try GraphQLAnswer<MergeRequestsShape>.decode(body)
+                guard let user = answer.data?.currentUser else {
+                    throw signedInRefusal(answer.errors)
+                }
+                return user.list
+            },
+            failure: signedInFailure)
+    }
+
+    /// How far back "Recently Merged" looks (MR-17).
+    public static let mergedWindow: TimeInterval = 7 * 24 * 3600
+
+    /// The MRs of mine merged within the last ``mergedWindow``, in a query of their own and as small as it can be, since
+    /// GitLab limits a query's complexity: the 10 latest merges of each of authored, assigned and review requested, with
+    /// only what a Recently Merged row shows. The value is a list without open MRs, its `merged` newest merge first, each
+    /// MR once with all its roles (MR-17).
+    ///
+    /// - Parameter now: the time the window counts back from
+    public static func recentlyMerged(now: Date) -> GitLabOperation {
+        let after = Date.ISO8601FormatStyle().format(now.addingTimeInterval(-mergedWindow))
+        return GitLabOperation(
+            name: "RecentlyMerged",
+            query: """
+                fragment merged on MergeRequest {
+                  iid
+                  title
+                  webUrl
+                  reference(full: true)
+                  updatedAt
+                  mergedAt
+                  targetBranch
+                  mergeUser { username name }
+                  author { username name }
+                }
+
+                query RecentlyMerged($mergedAfter: Time!) {
+                  currentUser {
+                    username
+                    mergedAuthored: authoredMergeRequests(state: merged, mergedAfter: $mergedAfter, sort: MERGED_AT_DESC, first: 10) { nodes { ...merged } }
+                    mergedAssigned: assignedMergeRequests(state: merged, mergedAfter: $mergedAfter, sort: MERGED_AT_DESC, first: 10) { nodes { ...merged } }
+                    mergedReviewing: reviewRequestedMergeRequests(state: merged, mergedAfter: $mergedAfter, sort: MERGED_AT_DESC, first: 10) { nodes { ...merged } }
+                  }
+                }
+                """,
+            variables: .object([("mergedAfter", .string(after))]),
+            decode: { body in
+                let answer = try GraphQLAnswer<RecentlyMergedShape>.decode(body)
+                guard let user = answer.data?.currentUser else {
+                    throw signedInRefusal(answer.errors)
                 }
                 return user.list
             },
@@ -247,22 +300,60 @@ extension GitLabOperation where Value == [RelatedMergeRequest] {
 }
 
 /// A 200 without the signed-in user's data is a rejected token (MR-05), whatever else the answer says.
-private let signedInFailure: @Sendable (Int, [String]) -> Problem = { status, _ in
-    (200..<300).contains(status) ? .rejectedToken(.gitLab) : .httpStatus(.gitLab, status: status)
+/// A 200 with GraphQL error messages is GitLab's refusal of the request (a validation error, "exceeds max complexity"),
+/// never a rejected token: a real one answers 401.
+private let signedInFailure: @Sendable (Int, [String]) -> Problem = { status, errors in
+    guard (200..<300).contains(status) else {
+        return .httpStatus(.gitLab, status: status)
+    }
+    return errors.isEmpty ? .rejectedToken(.gitLab) : .graphQLErrors(messages: errors)
+}
+
+/// The error of an answer without the signed-in user: GitLab's errors when it sent some, like "exceeds max complexity" or an
+/// unknown field of an older GitLab, otherwise a rejected token (MR-05). A rejected token is HTTP 401, which the client
+/// handles before this.
+func signedInRefusal<Shape>(_ errors: [GraphQLAnswer<Shape>.Message]?) -> GitLabError {
+    guard let errors, !errors.isEmpty else {
+        return GitLabError(.rejectedToken(.gitLab))
+    }
+    return GitLabError(.graphQLErrors(messages: errors.map(\.message)))
 }
 
 // MARK: - Results
 
-/// The answer of ``GitLabOperation/mergeRequests``: my username and my open MRs, each once.
+/// The answer of ``GitLabOperation/recentlyMerged(now:)``: my username, my open MRs, each once, and the MRs of mine merged
+/// lately.
 public struct MergeRequestList: Codable, Hashable, Sendable {
     /// my GitLab username, as the answer names it
     public var username: String
     /// the MRs of the three lists, each once by its URL with all its roles, in the order GitLab sent them
     public var mergeRequests: [MergeRequest]
+    /// the MRs merged within the window of the query that are mine (authored, assigned, or my review was asked), each
+    /// once, newest merge first; empty in an answer or a cache from before the Recently Merged section (MR-17)
+    public var merged: [MergeRequest]
 
-    public init(username: String, mergeRequests: [MergeRequest]) {
+    public init(username: String, mergeRequests: [MergeRequest], merged: [MergeRequest] = []) {
         self.username = username
         self.mergeRequests = mergeRequests
+        self.merged = merged
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case username, mergeRequests, merged
+    }
+
+    // A list cached before `merged` was asked for decodes with none.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            username: try container.decode(String.self, forKey: .username),
+            mergeRequests: try container.decode([MergeRequest].self, forKey: .mergeRequests),
+            merged: try container.decodeIfPresent([MergeRequest].self, forKey: .merged) ?? [])
+    }
+
+    /// Returns the MR with a URL, open or merged.
+    public func mergeRequest(id: URL) -> MergeRequest? {
+        mergeRequests.first { $0.id == id } ?? merged.first { $0.id == id }
     }
 }
 
@@ -430,10 +521,15 @@ struct MergeRequestsShape: Decodable {
 
         /// One MR per URL, with the roles of every list it is in.
         var list: MergeRequestList {
+            MergeRequestList(
+                username: username, mergeRequests: Self.merge([(.authored, authored), (.assigned, assigned), (.reviewRequested, reviewing)]))
+        }
+
+        static func merge(_ lists: [(MergeRequest.Role, Nodes<Node>?)]) -> [MergeRequest] {
             var mergeRequests: [MergeRequest] = []
             var index: [URL: Int] = [:]
-            for (role, nodes) in [(MergeRequest.Role.authored, authored), (.assigned, assigned), (.reviewRequested, reviewing)] {
-                for node in nodes.nodes {
+            for (role, nodes) in lists {
+                for node in nodes?.nodes ?? [] {
                     guard let mergeRequest = node.mergeRequest(role: role) else { continue }
                     if let at = index[mergeRequest.webURL] {
                         mergeRequests[at].roles.insert(role)
@@ -443,7 +539,7 @@ struct MergeRequestsShape: Decodable {
                     }
                 }
             }
-            return MergeRequestList(username: username, mergeRequests: mergeRequests)
+            return mergeRequests
         }
     }
 
@@ -456,6 +552,9 @@ struct MergeRequestsShape: Decodable {
         var updatedAt: Date
         var detailedMergeStatus: String?
         var sourceBranch: String?
+        var targetBranch: String?
+        var mergedAt: Date?
+        var mergeUser: Author?
         var author: Author?
         var headPipeline: Pipeline?
         var diffStatsSummary: MergeRequest.DiffStats?
@@ -503,7 +602,30 @@ struct MergeRequestsShape: Decodable {
                 diffStats: diffStatsSummary,
                 updatedAt: updatedAt,
                 roles: [role],
-                sourceBranch: sourceBranch)
+                sourceBranch: sourceBranch,
+                targetBranch: targetBranch,
+                mergedAt: mergedAt,
+                mergedBy: mergeUser.map { MergeRequest.Person(username: $0.username, name: $0.name) })
+        }
+    }
+}
+
+/// The answer of the Recently Merged query (MR-17): the same nodes, fewer of their fields.
+struct RecentlyMergedShape: Decodable {
+    var currentUser: User?
+
+    struct User: Decodable {
+        var username: String
+        var mergedAuthored: Nodes<MergeRequestsShape.Node>?
+        var mergedAssigned: Nodes<MergeRequestsShape.Node>?
+        var mergedReviewing: Nodes<MergeRequestsShape.Node>?
+
+        /// The merged MRs, one per URL with the roles of every list it is in, newest merge first.
+        var list: MergeRequestList {
+            let merged = MergeRequestsShape.User.merge(
+                [(.authored, mergedAuthored), (.assigned, mergedAssigned), (.reviewRequested, mergedReviewing)]
+            ).sorted { ($0.mergedAt ?? .distantPast, $0.iid) > ($1.mergedAt ?? .distantPast, $1.iid) }
+            return MergeRequestList(username: username, mergeRequests: [], merged: merged)
         }
     }
 }

@@ -9,13 +9,17 @@ struct MergeRequestsGalleryView: View {
     var selection: MergeRequest.ID?
     var query = ""
     var size = MainWindowGalleryView<EmptyView, EmptyView>.defaultSize
+    /// whether Recently Merged is open
+    var mergedExpanded: Bool?
 
     var body: some View {
         let data = MergeRequestsData(panel)
         MainWindowGalleryView(
             model: MainWindowShellModel(panel, section: .mergeRequests), section: .mergeRequests, searchText: query, size: size
         ) {
-            MergeRequestsListContent(model: MergeRequestsListModel(data, query: query), selection: .constant(selection), actions: .none)
+            MergeRequestsListContent(
+                model: MergeRequestsListModel(data, query: query), selection: .constant(selection), actions: .none,
+                mergedExpandedOverride: mergedExpanded)
         } detail: {
             MergeRequestDetailContent(model: MergeRequestDetailModel(data, selection: selection), actions: .gallery)
         }
@@ -33,6 +37,20 @@ extension GalleryCatalog {
             GalleryEntry(screen: "merge-requests", state: "sections", size: size) { f in
                 let m = f.mergeRequestsScreen
                 return MergeRequestsGalleryView(panel: m.panel(), selection: m.web8.id)
+            },
+            // MR-17: Recently Merged folded under the open sections (the default), open with a selected merged MR, and alone.
+            GalleryEntry(screen: "merge-requests", state: "merged-collapsed", size: size) { f in
+                let m = f.mergeRequestsScreen
+                return MergeRequestsGalleryView(panel: m.panel(merged: m.recentlyMerged), selection: m.mr21.id, mergedExpanded: false)
+            },
+            GalleryEntry(screen: "merge-requests", state: "merged-expanded", size: size) { f in
+                let m = f.mergeRequestsScreen
+                return MergeRequestsGalleryView(
+                    panel: m.panel(merged: m.recentlyMerged), selection: m.recentlyMerged[0].id, mergedExpanded: true)
+            },
+            GalleryEntry(screen: "merge-requests", state: "merged-only", size: size) { f in
+                let m = f.mergeRequestsScreen
+                return MergeRequestsGalleryView(panel: m.panel([], merged: m.recentlyMerged), selection: m.recentlyMerged[1].id)
             },
             GalleryEntry(screen: "merge-requests", state: "badges", size: size) { f in
                 let m = f.mergeRequestsScreen

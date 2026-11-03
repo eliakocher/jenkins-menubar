@@ -47,6 +47,8 @@ struct MenuFlyout: Sendable {
         case link(String, URL)
         /// "Open Settings…" at a pane, which fixes the note (MR-04)
         case settings(SettingsPane)
+        /// "Inbox Settings…": Settings → Notifications at the Inbox's part
+        case inboxSettings
 
         var title: String {
             switch self {
@@ -55,6 +57,7 @@ struct MenuFlyout: Sendable {
             case .watchBuild: "Watch a Build…"
             case .showHidden(let title), .link(let title, _): title
             case .settings: "Open Settings…"
+            case .inboxSettings: "Inbox Settings…"
             }
         }
 
@@ -129,9 +132,17 @@ struct MenuFlyout: Sendable {
         if rows.isEmpty, state.hasLoaded {
             note = "Inbox Zero"
         }
+        // A Done or Snooze that GitLab refused came back: say why, and for a token that can only read, where to fix it.
+        if let refused = state.actionProblem {
+            note = refused.message
+            if InboxListModel.fixesToken(refused) {
+                commands.append(.settings(.accounts))
+            }
+        }
         let shown = rows.count > limit ? "\(limit) of \(rows.count)" : String(rows.count)
         cap(rows.isEmpty ? [] : [Section(title: "Pending", count: shown, entries: rows.map { MenuEntry(inbox: $0) })])
         commands.append(.showInWindow(all: total > limit ? total : nil))
+        commands.append(.inboxSettings)
         if let url = data.team.gitLab.map({ GitLabLinks.todos(gitLab: $0) }) {
             commands.append(.link("All To-Dos in GitLab", url))
         }

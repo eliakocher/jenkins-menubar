@@ -120,7 +120,7 @@ struct MenuFlyoutContent: View {
         case .watchBuild: "eye"
         case .showHidden: "eye.slash"
         case .link: "arrow.up.forward.app"
-        case .settings: "gearshape"
+        case .settings, .inboxSettings: "gearshape"
         }
     }
 
@@ -133,7 +133,7 @@ struct MenuFlyoutContent: View {
             Button("Show in Window") { actions.showInWindow(entry.selection) }
         case .inbox(let row):
             Button("Done") { actions.inbox.done([row.entry]) }
-            if row.entry.todo != nil {
+            if row.entry.todo != nil, row.entry.canSnooze {
                 InboxSnoozeMenu(entries: [row.entry], actions: actions.inbox) { _ in } label: {
                     Text("Snooze")
                 }

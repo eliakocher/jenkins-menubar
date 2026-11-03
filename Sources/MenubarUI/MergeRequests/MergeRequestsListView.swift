@@ -59,8 +59,18 @@ struct MergeRequestsListContent: View {
     let actions: GitLabSectionActions
     /// the "In GitLab" section while the search has text (WIN-07)
     var search = GitLabSearchRows.hidden
+    /// whether Recently Merged is open, as the gallery shows it; `nil` follows the user's choice (MR-17)
+    var mergedExpandedOverride: Bool?
     /// the "In GitLab" row that the arrow keys are on; the list's own selection stays, so the detail doesn't change
     @ViewState private var highlighted: URL?
+    /// the user's choice for Recently Merged, "open" or "closed"; empty follows the default (MR-17)
+    @AppStorage(RecentlyMergedFold.key) private var storedMergedFold = ""
+
+    /// whether Recently Merged shows its rows now
+    private var mergedExpanded: Bool {
+        mergedExpandedOverride
+            ?? RecentlyMergedFold.isExpanded(stored: storedMergedFold, hasOpenSections: !model.sections.isEmpty, searching: !model.query.isEmpty)
+    }
 
     /// the list's selection with the "In GitLab" rows in it: the arrow keys reach them, and they open on a click or Return
     private var listSelection: Binding<MergeRequest.ID?> {
@@ -93,6 +103,9 @@ struct MergeRequestsListContent: View {
                                 .tag(row.id)
                         }
                     }
+                }
+                if let merged = model.merged {
+                    mergedSection(merged)
                 }
                 GitLabSearchSection(search: search, tag: \.url) { actions.follow($0.url) }
                 if let link = model.link {
@@ -154,6 +167,23 @@ struct MergeRequestsListContent: View {
                 if let selection, model.row(selection) != nil {
                     proxy.scrollTo(selection)
                 }
+            }
+        }
+    }
+
+    /// Recently Merged (MR-17): a header with the count that folds the section, and the rows. Folded, the selected row
+    /// stays, so what the detail shows is still in the list.
+    @ViewBuilder
+    private func mergedSection(_ merged: PanelModel.Subsection<MergeRequestRowModel>) -> some View {
+        let expanded = mergedExpanded
+        Section {
+            ForEach(merged.rows.filter { expanded || $0.id == selection }) { row in
+                MergeRequestRowContent(row: row)
+                    .tag(row.id)
+            }
+        } header: {
+            RecentlyMergedHeader(title: merged.title, count: merged.rows.count, isExpanded: expanded) {
+                storedMergedFold = RecentlyMergedFold.toggled(stored: storedMergedFold, isExpanded: expanded)
             }
         }
     }

@@ -27,7 +27,8 @@ public struct MergeState: Hashable, Sendable {
     public var pipelineStatus: MergeRequest.PipelineStatus?
     public var hasConflicts: Bool
     public var squash: Squash
-    /// whether the source branch goes after the merge: the merge request's choice, else the project's default
+    /// whether the source branch goes after the merge, as GitLab's widget starts it: `shouldRemoveSourceBranch ||
+    /// forceRemoveSourceBranch` (the latter is the merge request's setting, which the project's default fills in)
     public var removesSourceBranch: Bool
     public var defaultMergeMessage: String?
     public var defaultSquashMessage: String?
@@ -39,12 +40,10 @@ public struct MergeState: Hashable, Sendable {
     public var mergedBy: MergeRequest.Person?
     public var mergedAt: Date?
     public var closedAt: Date?
-    /// GitLab's last merge or rebase error, like "Rebase failed. Please rebase locally"
+    /// GitLab's last merge error
     public var mergeError: String?
     /// whether GitLab is merging it right now
     public var isMerging: Bool
-    /// whether GitLab is rebasing it right now
-    public var isRebasing: Bool
     /// whether the project only fast-forwards, so no merge commit is made
     public var fastForwardOnly: Bool
     public var permissions: Permissions
@@ -57,7 +56,7 @@ public struct MergeState: Hashable, Sendable {
         removesSourceBranch: Bool = false, defaultMergeMessage: String? = nil, defaultSquashMessage: String? = nil,
         autoMerge: AutoMerge? = nil, autoMergeStrategies: [String] = [], mergedBy: MergeRequest.Person? = nil,
         mergedAt: Date? = nil, closedAt: Date? = nil, mergeError: String? = nil, isMerging: Bool = false,
-        isRebasing: Bool = false, fastForwardOnly: Bool = false, permissions: Permissions = .all
+        fastForwardOnly: Bool = false, permissions: Permissions = .all
     ) {
         self.lifecycle = lifecycle
         self.isDraft = isDraft
@@ -82,7 +81,6 @@ public struct MergeState: Hashable, Sendable {
         self.closedAt = closedAt
         self.mergeError = mergeError
         self.isMerging = isMerging
-        self.isRebasing = isRebasing
         self.fastForwardOnly = fastForwardOnly
         self.permissions = permissions
     }
@@ -139,31 +137,31 @@ public struct MergeState: Hashable, Sendable {
     /// What the token's user may do with the merge request (`userPermissions`).
     public struct Permissions: Hashable, Sendable {
         public var canMerge: Bool
-        /// push to the source branch, which a rebase needs
-        public var canPushToSource: Bool
         /// edit the merge request, which marking it ready needs
         public var canUpdate: Bool
         /// choose whether the source branch goes
         public var canRemoveSourceBranch: Bool
 
-        public init(canMerge: Bool, canPushToSource: Bool, canUpdate: Bool, canRemoveSourceBranch: Bool) {
+        public init(canMerge: Bool, canUpdate: Bool, canRemoveSourceBranch: Bool) {
             self.canMerge = canMerge
-            self.canPushToSource = canPushToSource
             self.canUpdate = canUpdate
             self.canRemoveSourceBranch = canRemoveSourceBranch
         }
 
         /// everything allowed
-        public static let all = Permissions(canMerge: true, canPushToSource: true, canUpdate: true, canRemoveSourceBranch: true)
+        public static let all = Permissions(canMerge: true, canUpdate: true, canRemoveSourceBranch: true)
     }
 
-    /// GitLab's auto-merge strategy for "Set to Auto-Merge", as `MergeStrategyEnum` names it: merge when the checks pass
-    /// first, else the merge train's; `nil` when GitLab offers none.
+    /// GitLab's auto-merge strategy for "Set to Auto-Merge", as `MergeStrategyEnum` names it, in the order of GitLab's
+    /// widget (`getPreferredAutoMergeStrategy`): the merge train, then merge when the checks pass, then add to the merge
+    /// train when they pass; `nil` when GitLab offers none of them.
     public var autoMergeStrategy: String? {
-        let preferred = ["merge_when_checks_pass", "add_to_merge_train_when_checks_pass"]
-        let strategy = preferred.first(where: autoMergeStrategies.contains) ?? autoMergeStrategies.first
-        return strategy?.uppercased()
+        let preferred = ["merge_train", "merge_when_checks_pass", "add_to_merge_train_when_checks_pass"]
+        return preferred.first(where: autoMergeStrategies.contains)?.uppercased()
     }
+
+    /// whether the auto-merge GitLab offers puts the merge request on a merge train, which its button says
+    public var autoMergeJoinsTrain: Bool { autoMergeStrategy?.contains("TRAIN") == true }
 
     /// "1 commit and 1 merge commit into develop", "3 commits into develop" when fast-forwarding, "1 commit (4 squashed)
     /// and 1 merge commit into develop"; `nil` while the number of commits isn't known
@@ -192,7 +190,7 @@ public struct MergeState: Hashable, Sendable {
 /// approvals and threads.
 public struct MergeOverview: Hashable, Sendable {
     public var headline: Headline
-    /// the checks that failed, are pending or warn, in that order
+    /// the checks that failed, are pending, warn, or only inform, in that order
     public var open: [MergeCheck]
     /// the checks that passed
     public var passed: [MergeCheck]
@@ -240,7 +238,7 @@ public struct MergeOverview: Hashable, Sendable {
     public init(_ state: MergeState, approvals: String? = nil, openThreads: Int? = nil) {
         let checks = MergeCheck.checks(of: state, approvals: approvals, openThreads: openThreads)
         open = checks.filter { $0.status == .failed } + checks.filter { $0.status == .pending }
-            + checks.filter { $0.status == .warning }
+            + checks.filter { $0.status == .warning } + checks.filter { $0.status == .info }
         passed = checks.filter { $0.status == .passed }
         headline = Self.headline(state, checks: checks)
         actions = Self.actions(state, checks: checks)
@@ -281,9 +279,6 @@ public struct MergeOverview: Hashable, Sendable {
                 title: "Auto-merge on", detail: (train ? "Joins the merge train when checks pass" : "Merges when checks pass") + who,
                 tone: .autoMerge, symbol: "clock.badge.checkmark.fill")
         }
-        if state.isRebasing {
-            return Headline(title: "Rebasing…", detail: "Onto \(target)", tone: .waiting, symbol: "arrow.triangle.2.circlepath")
-        }
         let failed = checks.filter { $0.status == .failed }
         let pending = checks.filter { $0.status == .pending }
         if failed.isEmpty, !isReady(state, checks: checks), let status = state.status, checkingStatuses.contains(status) {
@@ -323,20 +318,18 @@ public struct MergeOverview: Hashable, Sendable {
         }
         var actions: [MergeAction] = []
         let permissions = state.permissions
+        // GitLab's widget: Cancel while auto-merge is set; else auto-merge whenever GitLab offers a strategy (it offers
+        // none once it could merge now); else Merge when it would merge now.
         if state.autoMerge != nil {
             if permissions.canMerge {
                 actions.append(.cancelAutoMerge)
             }
-        } else if isReady(state, checks: checks) {
-            if permissions.canMerge, state.headSHA != nil {
+        } else if permissions.canMerge, state.headSHA != nil {
+            if state.autoMergeStrategy != nil {
+                actions.append(.setAutoMerge)
+            } else if isReady(state, checks: checks) {
                 actions.append(.merge)
             }
-        } else if permissions.canMerge, state.autoMergeStrategy != nil, state.headSHA != nil {
-            actions.append(.setAutoMerge)
-        }
-        // While GitLab rebases, the check's row shows it, and nothing starts another.
-        if !state.isRebasing, checks.contains(where: { $0.fix == .rebase }) {
-            actions.append(.rebase)
         }
         if checks.contains(where: { $0.fix == .markReady }) {
             actions.append(.markReady)
@@ -359,7 +352,6 @@ public enum MergeAction: String, Hashable, Sendable, CaseIterable {
     case merge
     case setAutoMerge
     case cancelAutoMerge
-    case rebase
     case markReady
 
     /// the button's title, in Title Style
@@ -368,7 +360,6 @@ public enum MergeAction: String, Hashable, Sendable, CaseIterable {
         case .merge: "Merge"
         case .setAutoMerge: "Set to Auto-Merge"
         case .cancelAutoMerge: "Cancel Auto-Merge"
-        case .rebase: "Rebase"
         case .markReady: "Mark as Ready"
         }
     }
@@ -402,7 +393,7 @@ public struct MergeCheck: Hashable, Sendable, Identifiable {
         case threads
         case draft
         case conflicts
-        /// behind the target branch: a rebase needed, or only offered
+        /// behind the target branch: a rebase needed, or only for the record
         case behind
         /// any other check GitLab lists
         case other
@@ -412,8 +403,10 @@ public struct MergeCheck: Hashable, Sendable, Identifiable {
         case failed
         /// being checked, or the pipeline still running
         case pending
-        /// passed, with something worth saying: behind the target branch without needing a rebase
+        /// passed, with a warning of GitLab's
         case warning
+        /// for the record, blocking nothing: behind the target branch without needing a rebase
+        case info
         case passed
     }
 
@@ -429,8 +422,6 @@ public struct MergeCheck: Hashable, Sendable, Identifiable {
         case showThreads
         /// a write: marks the merge request ready
         case markReady
-        /// a write: rebases the source branch
-        case rebase
         /// opens GitLab's conflicts page
         case openConflicts
         /// opens the merge request in GitLab
@@ -466,8 +457,8 @@ public struct MergeCheck: Hashable, Sendable, Identifiable {
     }
 
     /// Returns the checks of a merge state: GitLab's own when it sent them, inactive ones and "not open" left out; else
-    /// the one ``MergeState/status`` names. Behind the target branch without a needed rebase adds a warning with
-    /// Rebase.
+    /// the one ``MergeState/status`` names. Behind the target branch without a needed rebase adds a line for the
+    /// record.
     static func checks(of state: MergeState, approvals: String?, openThreads: Int?) -> [MergeCheck] {
         let gitLab = state.checks ?? state.status.flatMap(Self.identifier(of:)).map {
             [MergeState.GitLabCheck(identifier: $0.identifier, status: $0.status)]
@@ -483,9 +474,7 @@ public struct MergeCheck: Hashable, Sendable, Identifiable {
             checks.removeAll { $0.kind == .behind }
             checks.append(
                 MergeCheck(
-                    id: "BEHIND", kind: .behind, status: .warning, title: behindTitle(state),
-                    detail: "Merging works as it is; a rebase runs the pipeline on the newest code.",
-                    fix: state.permissions.canPushToSource ? .rebase : nil))
+                    id: "BEHIND", kind: .behind, status: .info, title: behindTitle(state)))
         }
         return checks
     }
@@ -581,11 +570,10 @@ public struct MergeCheck: Hashable, Sendable, Identifiable {
                 detail: "\(state.sourceBranch) conflicts with \(target). Resolve them locally, or in GitLab when they're simple.",
                 fix: .openConflicts)
         case "NEED_REBASE":
-            let canRebase = canEdit.canPushToSource && !state.hasConflicts
             return make(
                 .behind, behindTitle(state), "Up to date with \(target)",
-                detail: "The project merges fast-forward only, so the branch needs a rebase first.",
-                fix: canRebase ? .rebase : .openInGitLab)
+                detail: "The project merges fast-forward only: rebase the branch in GitLab or locally first.",
+                fix: .openInGitLab)
         default:
             let (failed, ok) = otherTitles[identifier]
                 ?? (identifier.prefix(1) + identifier.dropFirst().lowercased().replacingOccurrences(of: "_", with: " "), "")
@@ -634,7 +622,6 @@ extension GitLabOperation where Value == MergeState {
             query: """
                 query MergeRequestMergeState($path: ID!, $iid: String!) {
                   project(fullPath: $path) {
-                    removeSourceBranchAfterMerge
                     mergeRequestsFfOnlyEnabled
                     mergeRequest(iid: $iid) {
                       state draft detailedMergeStatus \(checks)
@@ -643,9 +630,9 @@ extension GitLabOperation where Value == MergeState {
                       defaultMergeCommitMessage defaultSquashCommitMessage
                       autoMergeEnabled autoMergeStrategy availableAutoMergeStrategies
                       mergeUser { username name }
-                      mergedAt closedAt mergeError mergeOngoing rebaseInProgress
+                      mergedAt closedAt mergeError mergeOngoing
                       headPipeline { status }
-                      userPermissions { canMerge pushToSourceBranch updateMergeRequest removeSourceBranch }
+                      userPermissions { canMerge updateMergeRequest removeSourceBranch }
                     }
                   }
                 }
@@ -666,7 +653,6 @@ struct MergeStateShape: Decodable {
     var project: Project?
 
     struct Project: Decodable {
-        var removeSourceBranchAfterMerge: Bool?
         var mergeRequestsFfOnlyEnabled: Bool?
         var mergeRequest: Node?
     }
@@ -697,7 +683,6 @@ struct MergeStateShape: Decodable {
         var closedAt: Date?
         var mergeError: String?
         var mergeOngoing: Bool?
-        var rebaseInProgress: Bool?
         var headPipeline: Pipeline?
         var userPermissions: Permissions?
 
@@ -706,7 +691,8 @@ struct MergeStateShape: Decodable {
                 if squashReadOnly == true {
                     squashOnMerge == true ? .always : .never
                 } else {
-                    .optional(on: self.squash ?? squashOnMerge ?? false)
+                    // GitLab's widget starts the checkbox at `squashOnMerge`.
+                    .optional(on: squashOnMerge ?? self.squash ?? false)
                 }
             let person = mergeUser.map { MergeRequest.Person(username: $0.username, name: $0.name ?? "") }
             let lifecycle = MergeState.Lifecycle(rawValue: state ?? "") ?? .opened
@@ -723,8 +709,8 @@ struct MergeStateShape: Decodable {
                 pipelineStatus: headPipeline?.status.map(MergeRequest.PipelineStatus.init(rawValue:)),
                 hasConflicts: conflicts ?? false,
                 squash: squash,
-                // The merge request's own choice, else the project's default for new merge requests.
-                removesSourceBranch: shouldRemoveSourceBranch ?? forceRemoveSourceBranch ?? project.removeSourceBranchAfterMerge ?? false,
+                // As GitLab's widget starts its checkbox.
+                removesSourceBranch: shouldRemoveSourceBranch == true || forceRemoveSourceBranch == true,
                 defaultMergeMessage: defaultMergeCommitMessage,
                 defaultSquashMessage: defaultSquashCommitMessage,
                 autoMerge: autoMergeEnabled == true ? .init(strategy: autoMergeStrategy, setBy: person) : nil,
@@ -734,12 +720,11 @@ struct MergeStateShape: Decodable {
                 closedAt: closedAt,
                 mergeError: mergeError,
                 isMerging: mergeOngoing ?? false,
-                isRebasing: rebaseInProgress ?? false,
                 fastForwardOnly: project.mergeRequestsFfOnlyEnabled ?? false,
                 permissions: userPermissions.map {
                     .init(
-                        canMerge: $0.canMerge ?? false, canPushToSource: $0.pushToSourceBranch ?? false,
-                        canUpdate: $0.updateMergeRequest ?? false, canRemoveSourceBranch: $0.removeSourceBranch ?? false)
+                        canMerge: $0.canMerge ?? false, canUpdate: $0.updateMergeRequest ?? false,
+                        canRemoveSourceBranch: $0.removeSourceBranch ?? false)
                 } ?? .all)
         }
     }
@@ -760,7 +745,6 @@ struct MergeStateShape: Decodable {
 
     struct Permissions: Decodable {
         var canMerge: Bool?
-        var pushToSourceBranch: Bool?
         var updateMergeRequest: Bool?
         var removeSourceBranch: Bool?
     }

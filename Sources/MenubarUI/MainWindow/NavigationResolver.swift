@@ -75,7 +75,7 @@ final class NavigationResolver {
         case .pipelines:
             return "\(location.section.title) \(Build.label(forJob: item.split(separator: "/").last.map(String.init) ?? item))"
         case .mergeRequests:
-            let found = model.mergeRequests.list?.mergeRequests.first { $0.id.absoluteString == item }
+            let found = model.mergeRequests.list.flatMap { list in (list.mergeRequests + list.merged).first { $0.id.absoluteString == item } }
             return found.map { "!\(String($0.iid)) \($0.title)" } ?? location.section.title
         case .workItems:
             let found = model.workItems.lists?.all.first { $0.id == item }

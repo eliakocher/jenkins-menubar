@@ -64,6 +64,9 @@ struct MergeRequestsListModel: Sendable {
     var isPlaceholder: Bool
     /// the sections that have rows after the search, in MR-01's order
     var sections: [PanelModel.Subsection<MergeRequestRowModel>]
+    /// "Recently Merged" (MR-17): its rows apart from ``sections``, which hold the open ones; `nil` without any (after the
+    /// search too)
+    var merged: PanelModel.Subsection<MergeRequestRowModel>?
     /// "No open merge requests" with the link as its action: loaded, and nothing open
     var emptyLink: URL?
     /// whether the empty state shows
@@ -81,7 +84,7 @@ struct MergeRequestsListModel: Sendable {
 
     /// whether a search finds nothing, which shows the system's no-results view
     var findsNothing: Bool {
-        !query.isEmpty && setup == nil && !isPlaceholder && sections.isEmpty && !showsEmpty
+        !query.isEmpty && setup == nil && !isPlaceholder && sections.isEmpty && merged == nil && !showsEmpty
     }
 
     /// whether the "In GitLab" search may show: GitLab is asked only with the team values and the token (WIN-07)
@@ -97,7 +100,7 @@ struct MergeRequestsListModel: Sendable {
         guard let id else {
             return nil
         }
-        return sections.lazy.flatMap(\.rows).first { $0.id == id }
+        return (sections.lazy.flatMap(\.rows) + (merged?.rows ?? [])).first { $0.id == id }
     }
 
     /// Returns what the list shows.
@@ -112,6 +115,7 @@ struct MergeRequestsListModel: Sendable {
         setup = nil
         isPlaceholder = false
         sections = []
+        merged = nil
         emptyLink = nil
         showsEmpty = false
         link = nil
@@ -137,7 +141,7 @@ struct MergeRequestsListModel: Sendable {
             link = query.isEmpty ? gitLabLink : nil
             return
         }
-        let all = MergeRequestSections(list.mergeRequests, me: list.username)
+        let all = MergeRequestSections(list, now: data.now)
         let project = data.team.gitLabProject
         sections = all.sections.map { section in
             let rows = section.mergeRequests
@@ -146,7 +150,13 @@ struct MergeRequestsListModel: Sendable {
             return PanelModel.Subsection(title: section.title, rows: rows)
         }
         .filter { !$0.rows.isEmpty }
-        if all.isEmpty, query.isEmpty {
+        let mergedRows = all.merged
+            .map { MergeRequestRowModel(merged: $0, me: list.username, project: project, now: data.now) }
+            .filter { $0.matches(query) }
+        if !mergedRows.isEmpty {
+            merged = PanelModel.Subsection(title: MergeRequestSections.mergedTitle, rows: mergedRows)
+        }
+        if all.isEmpty, merged == nil, query.isEmpty {
             showsEmpty = true
             emptyLink = gitLabLink
         } else if query.isEmpty {
@@ -175,6 +185,9 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
     /// what follows ``lead`` on the row's second line, least important last: "by Sam Lee" (not for mine) and
     /// "pipeline canceled" (none without a pipeline, for a green one, or when the badge names it); with the age they are ``rest``
     var more: [String]
+    /// whether it is a Recently Merged row (MR-17): "!21 · merged 2h ago", then "into develop" and "by Sam Lee"
+    /// (not for mine); no age at the right end, since the details say it
+    var isMerged = false
 
     var id: MergeRequest.ID { mergeRequest.id }
 
@@ -207,6 +220,36 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
             more.append("pipeline \(pipeline.rawValue.lowercased())")
         }
         self.more = more
+    }
+
+    /// A row of the Recently Merged section: the reference chip, then "merged 2h ago · into develop" and who merged it when
+    /// it isn't me (MR-17).
+    ///
+    /// - Parameters:
+    ///   - mergeRequest: the merged MR
+    ///   - me: my GitLab username
+    ///   - project: the team's project path
+    ///   - now: the time the age counts from
+    init(merged mergeRequest: MergeRequest, me: String, project: String, now: Date) {
+        self.mergeRequest = mergeRequest
+        status = MergeRequestStatus.merged
+        shortReference = mergeRequest.shortReference(project: project)
+        isMerged = true
+        openTitle = "Open Merge Request \(shortReference) in GitLab"
+        isMine = mergeRequest.author.username == me
+        let when = mergeRequest.mergedAt.map { "merged \(GitLabText.age(since: $0, now: now)) ago" } ?? "merged"
+        age = ""
+        lead = "\(shortReference) · \(when)"
+        var more: [String] = []
+        if let target = mergeRequest.targetBranch, !target.isEmpty {
+            more.append("into \(target)")
+        }
+        // Whoever merged it, unless it was me.
+        if let by = mergeRequest.mergedBy, by.username != me {
+            more.append("by \(by.name.isEmpty ? "@" + by.username : by.name)")
+        }
+        self.more = more
+        rest = more.joined(separator: " · ")
     }
 
     /// Returns whether the row matches a search: its title, its short reference or its author's name, ignoring case
@@ -344,11 +387,11 @@ struct MergeRequestDetailModel: Sendable {
     /// - Parameters:
     ///   - data: the stores' values
     ///   - selection: the selected MR, by its web URL
-    /// - Returns: the detail; `nil` without a selection, or when the MR isn't in the list (merged, closed, the token
-    ///   removed), which shows a blank detail
+    /// - Returns: the detail; `nil` without a selection, or when the MR isn't in the list (closed, merged long ago, the
+    ///   token removed), which shows a blank detail
     init?(_ data: MergeRequestsData, selection: MergeRequest.ID?) {
         guard let selection, data.showsMergeRequests, let list = data.mergeRequests.list,
-            let mergeRequest = list.mergeRequests.first(where: { $0.id == selection })
+            let mergeRequest = list.mergeRequest(id: selection)
         else {
             return nil
         }

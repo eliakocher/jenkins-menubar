@@ -11,3 +11,4 @@ until the first run against a real GitLab. Host `gitlab.example.com`, made-up pr
 | `snooze-unknown.json` | TodoSnooze | a GitLab without the snooze mutation |
 | `todo-mark-done.json` | TodoMarkDone | GitLab took it |
 | `todo-mark-done-refused.json` | TodoMarkDone | GitLab refused it in the payload's `errors` |
+| `todo-mark-done-no-permission.json` | TodoMarkDone | the answer a mutation gets from a token with only `read_api`: HTTP 200, top-level `errors` ("does not exist or you don't have permission"), `data.todoMarkDone: null` (the shape of the user's own 2026-11-03 capture, with made-up values) |

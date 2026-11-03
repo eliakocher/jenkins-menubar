@@ -80,8 +80,10 @@ struct InboxViewFilter: Hashable, Sendable {
 struct InboxListModel: Sendable {
     /// the red rows on top: the app-wide ones, then the load's own
     var problems: [PanelModel.ProblemItem]
-    /// a failed Done, Restore or Snooze, which was put back: a quiet banner
+    /// a failed Done, Restore or Snooze, which was put back: the banner's words
     var actionNote: String?
+    /// whether the refusal is the token's (read-only), so the banner offers Settings → Accounts
+    var actionFixesToken = false
     /// no GitLab token: the setup steps stand in for the rows (MR-04)
     var needsToken: Bool
     /// rows of bars: the first load, or the first look at the Done list
@@ -162,6 +164,7 @@ struct InboxListModel: Sendable {
         projects = Set((data.pending + data.snoozed + data.done).compactMap(\.projectPath)).sorted()
         problems = data.appWideProblems
         actionNote = data.actionProblem?.message
+        actionFixesToken = data.actionProblem.map(Self.fixesToken) ?? false
         needsToken = data.problem == .noToken(.gitLab)
         isPlaceholder = false
         failure = nil
@@ -215,6 +218,12 @@ struct InboxListModel: Sendable {
         if sections.isEmpty {
             empty = Self.empty(filter: filter, query: query)
         }
+    }
+
+    /// Whether a refused write's problem is one that Settings → Accounts fixes: a read-only token, a missing scope, a
+    /// rejected token.
+    static func fixesToken(_ problem: Problem) -> Bool {
+        SettingsPane.pane(for: problem) == .accounts
     }
 
     /// Returns the words of an empty list.

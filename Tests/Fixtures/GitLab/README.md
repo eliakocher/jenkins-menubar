@@ -52,7 +52,7 @@ The logs had no such answers.
 
 | File | Operation | Source |
 |---|---|---|
-| `merge-state.json` | MergeRequestMergeState | made up from the schema: open, blocked by approvals and a running pipeline, behind, squash encouraged, a warning and inactive checks |
+| `merge-state.json` | MergeRequestMergeState | made up from the schema: open, blocked by approvals and a running pipeline, behind, squash encouraged, the branch deleted by the merge request's setting, a warning and inactive checks |
 | `merge-state-merged.json` | MergeRequestMergeState | made up: merged by Alex Kim in a fast-forward project that always squashes, no permissions left |
 | `merge-state-basic.json` | MergeRequestMergeState | made up: the answer without `mergeabilityChecks`, a draft with auto-merge on, a project that never squashes |
 | `merge-state-unknown-field.json` | MergeRequestMergeState | made up in the shape of `merge-request-details-unknown-field.json`: a GitLab that refuses `mergeabilityChecks` |

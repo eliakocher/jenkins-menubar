@@ -1,7 +1,6 @@
 {
   "data": {
     "project": {
-      "removeSourceBranchAfterMerge": true,
       "mergeRequestsFfOnlyEnabled": false,
       "mergeRequest": {
         "state": "opened",
@@ -29,7 +28,7 @@
         "squashOnMerge": true,
         "squashReadOnly": false,
         "shouldRemoveSourceBranch": null,
-        "forceRemoveSourceBranch": null,
+        "forceRemoveSourceBranch": true,
         "defaultMergeCommitMessage": "Merge branch 'feature/export-retry' into 'develop'\n\nAdd a retry to the export job\n\nSee merge request group/project!16",
         "defaultSquashCommitMessage": "Add a retry to the export job",
         "autoMergeEnabled": false,
@@ -40,9 +39,8 @@
         "closedAt": null,
         "mergeError": null,
         "mergeOngoing": false,
-        "rebaseInProgress": false,
         "headPipeline": { "status": "RUNNING" },
-        "userPermissions": { "canMerge": true, "pushToSourceBranch": true, "updateMergeRequest": true, "removeSourceBranch": true }
+        "userPermissions": { "canMerge": true, "updateMergeRequest": true, "removeSourceBranch": true }
       }
     }
   }

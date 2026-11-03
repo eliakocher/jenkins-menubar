@@ -41,6 +41,9 @@ public struct InboxEntry: Hashable, Sendable, Identifiable {
     /// the place in the user's own order, for a pending one of my to-dos; `nil` for the others, which go newest first
     public var position: Int?
 
+    /// whether the row can be snoozed: not the coffee break (``InboxEventKind/canSnooze``)
+    public var canSnooze: Bool { kind.canSnooze }
+
     public init(todo: InboxTodo, snoozedUntil: Date? = nil) {
         source = .todo(todo)
         id = todo.id

@@ -621,6 +621,14 @@ extension GalleryCatalog {
                 ]
                 return SettingsPaneGalleryView(height: 590) { AccountsGalleryView(model: model) }
             },
+            GalleryEntry(screen: "settings-accounts", state: "read-only-token", size: paneSize(660)) { f in
+                var model = f.settingsAccounts
+                model.results = [
+                    .jenkins: .signedIn(as: f.me), .gitlab: .signedIn(as: f.me, scopes: ["read_api", "read_user"]),
+                ]
+                model.gitLabTokensPage = URL(string: "https://gitlab.example.com/-/user_settings/personal_access_tokens")
+                return SettingsPaneGalleryView(height: 660) { AccountsGalleryView(model: model) }
+            },
             GalleryEntry(screen: "settings-accounts", state: "invalid-token", size: paneSize(560)) { f in
                 var model = f.settingsAccounts
                 model.errors = [.gitlab: "That does not look like a token: it has spaces or quotes"]

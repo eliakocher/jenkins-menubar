@@ -52,24 +52,15 @@ public struct MainWindowCommands: Commands {
         _sectionOrder = AppStorage(wrappedValue: "", SectionOrder.key, store: model.dependencies.preferences)
     }
 
-    /// Shows the standard About panel with the credits as the easter eggs setting has them.
+    /// Opens the About window, or brings it forward, with the credits as the easter eggs setting has them.
     private func showAbout() {
-        let style = NSMutableParagraphStyle()
-        style.alignment = .center
-        let credits = NSAttributedString(
-            string: EggRules.credits(eggs: model.pipelines.preferences.easterEggs),
-            attributes: [
-                .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize), .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: style,
-            ])
-        NSApp.activate()
-        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
+        AboutWindow.show(eggs: model.pipelines.preferences.easterEggs)
     }
 
     public var body: some Commands {
         SidebarCommands()
-        // The About panel with its credits: the butler's CC BY-SA attribution always, and the roll with the easter eggs on
-        // (EGG-21).
+        // The About window: the butler's CC BY-SA attribution and the author's credit always, the roll of gags with the
+        // easter eggs on (EGG-21).
         CommandGroup(replacing: .appInfo) {
             Button("About \(AppIdentity.displayName)") {
                 showAbout()

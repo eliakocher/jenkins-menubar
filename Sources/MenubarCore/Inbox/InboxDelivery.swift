@@ -143,6 +143,13 @@ public enum InboxDeliveryAction: String, Sendable, CaseIterable {
         }
     }
 
+    /// the button's name in the big panel for an event: the coffee break's Done says it is on its way
+    ///
+    /// - Parameter kind: the event's kind
+    public func panelTitle(for kind: InboxEventKind) -> String {
+        self == .done && kind == .coffeeBreak ? "On My Way ☕" : panelTitle
+    }
+
     /// the button's name on a banner: the banner's own dismissal is the system's
     public var bannerTitle: String {
         switch self {
@@ -221,8 +228,17 @@ public enum InboxBanner {
     public static let category = "inbox-event"
     /// the user info key that holds the event as JSON text
     public static let eventKey = "inboxEvent"
+    /// the notification category of the coffee break's banner, which has no Snooze (the coffee break can't be snoozed)
+    public static let coffeeCategory = "inbox-event-coffee"
     /// the actions, in the order the banner shows them
     public static let actions: [InboxDeliveryAction] = [.show, .done, .snooze]
+    /// the actions of the coffee break's banner
+    public static let coffeeActions: [InboxDeliveryAction] = [.done]
+
+    /// Returns the category an event's banner carries.
+    public static func category(for event: InboxEvent) -> String {
+        event.kind.canSnooze ? category : coffeeCategory
+    }
 
     /// Returns the identifier of an action's button.
     public static func identifier(of action: InboxDeliveryAction) -> String {

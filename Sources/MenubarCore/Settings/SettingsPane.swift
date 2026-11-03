@@ -126,7 +126,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     /// - Returns: the pane, or nil when no setting fixes the problem
     public static func pane(for problem: Problem) -> SettingsPane? {
         switch problem {
-        case .noToken, .rejectedToken, .missingScope: .accounts
+        case .noToken, .rejectedToken, .missingScope, .readOnlyToken: .accounts
         case .teamValuesMissing, .unknownJob: .projects
         // A server that fails, and any case added later, is nothing a setting fixes.
         default: nil

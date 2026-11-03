@@ -208,24 +208,4 @@ public enum EggRules {
     public static let attribution =
         "The butler is the Jenkins logo by Charles Lowell and Frontside (jenkins.io), licensed under CC BY-SA 3.0. "
         + "The butler images keep that license."
-
-    /// Returns the About panel's credits.
-    ///
-    /// - Parameter eggs: whether the easter eggs are on
-    /// - Returns: the roll and the attribution; the attribution alone with the eggs off
-    public static func credits(eggs: Bool) -> String {
-        guard eggs else {
-            return attribution
-        }
-        return [
-            "Directed by the butler",
-            "Flaky tests as themselves",
-            "The VPN as the VPN",
-            "\"Works on my machine\" as the machine",
-            "Catering: the coffee machine",
-            "Spellcheck: coming in the next demo",
-            "",
-            attribution,
-        ].joined(separator: "\n")
-    }
 }

@@ -85,13 +85,6 @@ extension MergeRequestsFixtures {
         return state
     }
 
-    /// !16 rebasing in GitLab
-    var mergeRebasing: MergeState {
-        var state = mergeBehind
-        state.isRebasing = true
-        return state
-    }
-
     /// !16 still a draft
     var mergeDraft: MergeState {
         var state = mergeReady
@@ -168,7 +161,6 @@ extension GalleryCatalog {
             card("merge-auto") { $0.mergeAuto },
             card("merge-conflicts") { $0.mergeConflicts },
             card("merge-behind") { $0.mergeBehind },
-            card("merge-rebasing", activity: .running(.rebase)) { $0.mergeRebasing },
             card("merge-draft") { $0.mergeDraft },
             card("merge-merged", height: 260) { $0.mergeMerged },
             card("merge-closed", height: 260) { $0.mergeClosed },

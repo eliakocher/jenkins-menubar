@@ -137,11 +137,14 @@ public struct PanelData: Sendable {
         public var hasLoaded: Bool
         public var isLoading: Bool
         public var problem: Problem?
+        /// the last Done, Restore or Snooze that GitLab refused and that was put back
+        public var actionProblem: Problem?
 
         public init(
             entries: [InboxEntry] = [], badgeCount: Int = 0, hasLoaded: Bool = true, isLoading: Bool = false,
-            problem: Problem? = nil
+            problem: Problem? = nil, actionProblem: Problem? = nil
         ) {
+            self.actionProblem = actionProblem
             self.entries = entries
             self.badgeCount = badgeCount
             self.hasLoaded = hasLoaded

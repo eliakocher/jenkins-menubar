@@ -58,7 +58,7 @@ final class NativeEffects: Effects {
         content.title = InboxBanner.title(of: event)
         content.subtitle = InboxBanner.subtitle(of: event)
         content.body = InboxBanner.body(of: event)
-        content.categoryIdentifier = InboxBanner.category
+        content.categoryIdentifier = InboxBanner.category(for: event)
         content.userInfo = InboxBanner.userInfo(for: event)
         content.threadIdentifier = "inbox-\(event.kind.rawValue)"
         content.sound = nil
@@ -188,16 +188,19 @@ final class NativeEffects: Effects {
                 hiddenPreviewsBodyPlaceholder: hiddenPreviewsPlaceholder,
                 options: [])
         }
-        UNUserNotificationCenter.current().setNotificationCategories(Set(categories + [inboxCategory()]))
+        UNUserNotificationCenter.current().setNotificationCategories(Set(categories + [inboxCategory(), inboxCategory(InboxBanner.coffeeCategory, actions: InboxBanner.coffeeActions)]))
     }
 
     /// The category of an Inbox event's banner: Show, Mark Done and Snooze 1 Hour.
-    private static func inboxCategory() -> UNNotificationCategory {
+    private static func inboxCategory(_ identifier: String = InboxBanner.category, actions: [InboxDeliveryAction] = InboxBanner.actions)
+        -> UNNotificationCategory
+    {
         UNNotificationCategory(
-            identifier: InboxBanner.category,
-            actions: InboxBanner.actions.map { action in
+            identifier: identifier,
+            actions: actions.map { action in
                 UNNotificationAction(
-                    identifier: InboxBanner.identifier(of: action), title: action.bannerTitle, options: [],
+                    identifier: InboxBanner.identifier(of: action),
+                    title: identifier == InboxBanner.coffeeCategory && action == .done ? "On My Way ☕" : action.bannerTitle, options: [],
                     icon: UNNotificationActionIcon(systemImageName: inboxIcon(of: action)))
             },
             intentIdentifiers: [],

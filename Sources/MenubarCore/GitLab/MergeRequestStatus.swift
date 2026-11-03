@@ -33,6 +33,8 @@ public struct MergeRequestStatus: Hashable, Sendable {
         case other
         /// in Review requested, around the status
         case reviewRequested
+        /// merged (MR-17), whoever looks at it
+        case merged
     }
 
     /// One of GitLab's colors, as hex text for the light and the dark appearance.
@@ -52,6 +54,8 @@ public struct MergeRequestStatus: Hashable, Sendable {
         public static let orange = Color(light: "#C17D10", dark: "#D99530")
         public static let red = Color(light: "#DD2B0E", dark: "#EC5941")
         public static let blue = Color(light: "#1F75CB", dark: "#428FDC")
+        /// GitLab's color of a merged MR
+        public static let purple = Color(light: "#6666C4", dark: "#9D9DE0")
     }
 
     /// Returns the badge of a merge request as it shows for me: in Review requested, "Review requested · <status>"
@@ -66,6 +70,9 @@ public struct MergeRequestStatus: Hashable, Sendable {
     ///     review state, "Missing 1 of 2 approvals".
     /// - Returns: the badge
     public static func of(_ mergeRequest: MergeRequest, me: String, saysPipeline: Bool = true) -> MergeRequestStatus {
+        if mergeRequest.mergedAt != nil {
+            return merged
+        }
         let status = rule(of: mergeRequest, saysPipeline: saysPipeline)
         guard mergeRequest.isReviewRequested(of: me) else {
             return status ?? reviewState(of: mergeRequest)
@@ -80,9 +87,15 @@ public struct MergeRequestStatus: Hashable, Sendable {
     /// - Parameter mergeRequest: the merge request
     /// - Returns: the badge, whoever looks at it
     public static func of(_ mergeRequest: MergeRequest) -> MergeRequestStatus {
+        if mergeRequest.mergedAt != nil {
+            return merged
+        }
         // Every rule may answer, so the fallback is never used.
-        rule(of: mergeRequest, saysPipeline: true) ?? reviewState(of: mergeRequest)
+        return rule(of: mergeRequest, saysPipeline: true) ?? reviewState(of: mergeRequest)
     }
+
+    /// the badge of a merged MR (MR-17)
+    public static let merged = MergeRequestStatus(kind: .merged, text: "Merged", symbol: "arrow.triangle.merge", color: .purple)
 
     /// Returns whether a badge's text is about the pipeline: "Pipeline failed", also behind "Review requested · ".
     ///

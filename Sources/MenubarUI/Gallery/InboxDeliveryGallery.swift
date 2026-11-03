@@ -81,7 +81,7 @@ extension GalleryCatalog {
         var reordered = picked
         reordered.setGroupOrder([.myToDos, .builds, .coffee, .claude, .mentions, .reviewRequests, .assigned, .other])
         return [
-            GalleryEntry(screen: "inbox-panel", state: "coffee", size: CGSize(width: 380, height: 330)) { f in
+            GalleryEntry(screen: "inbox-panel", state: "coffee", size: CGSize(width: 380, height: 290)) { f in
                 PanelGalleryView(events: [f.panelEvents["coffee"]!])
             },
             GalleryEntry(screen: "inbox-panel", state: "review-requested", size: CGSize(width: 380, height: 340)) { f in

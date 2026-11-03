@@ -101,7 +101,7 @@ enum MainWindowReload {
                 model.reloadList(.mergeRequests)
             case .mergeRequestDetails:
                 guard let id = selection.mergeRequests,
-                    let mergeRequest = model.mergeRequests.list?.mergeRequests.first(where: { $0.id == id })
+                    let mergeRequest = model.mergeRequests.list?.mergeRequest(id: id)
                 else {
                     continue
                 }

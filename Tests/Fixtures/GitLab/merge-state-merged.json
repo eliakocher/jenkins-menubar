@@ -1,7 +1,6 @@
 {
   "data": {
     "project": {
-      "removeSourceBranchAfterMerge": false,
       "mergeRequestsFfOnlyEnabled": true,
       "mergeRequest": {
         "state": "merged",
@@ -29,9 +28,8 @@
         "closedAt": null,
         "mergeError": null,
         "mergeOngoing": false,
-        "rebaseInProgress": false,
         "headPipeline": { "status": "SUCCESS" },
-        "userPermissions": { "canMerge": false, "pushToSourceBranch": false, "updateMergeRequest": false, "removeSourceBranch": false }
+        "userPermissions": { "canMerge": false, "updateMergeRequest": false, "removeSourceBranch": false }
       }
     }
   }

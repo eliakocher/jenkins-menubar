@@ -127,9 +127,9 @@ Nothing is rebuilt without that click.
     only the Inbox, and whether it counts for the badge.
   - **Merge Requests**: yours, review requested and reviewed, each with a status badge in GitLab's colors and its
     description. The details show the approvals and their rules, the unresolved threads, the code changes, and the GitLab pipeline
-    with its jobs. A **Merge** card lists what blocks the merge, with the way to fix each, and can merge, set or cancel
-    auto-merge, rebase, or mark a draft as ready, each only on your click; merging asks for a confirmation first, since it
-    can't be undone. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
+    with its jobs. A **Merge** card lists what blocks the merge, with the way to fix each, and merges the way GitLab's
+    own Merge button does: Merge, or Set to Auto-Merge while checks are pending, Cancel Auto-Merge, and Mark as Ready for
+    a draft, each only on your click; merging asks for a confirmation first, since it can't be undone. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
   - **Work Items**: committed and not committed, with filters and label filters, and their related merge requests.
     **New Work Item…** (⌘N) and **New Follow-Up Item** open GitLab's own new issue page, prefilled, in the
     browser.

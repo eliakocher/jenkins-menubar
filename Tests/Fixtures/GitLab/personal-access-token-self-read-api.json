@@ -1,0 +1,12 @@
+{
+  "id": 4711,
+  "name": "made-up-token",
+  "revoked": false,
+  "created_at": "2026-10-01T09:00:00.000Z",
+  "description": null,
+  "scopes": ["read_api", "read_user"],
+  "user_id": 42,
+  "last_used_at": "2026-11-03T08:00:00.000Z",
+  "active": true,
+  "expires_at": "2027-10-01"
+}

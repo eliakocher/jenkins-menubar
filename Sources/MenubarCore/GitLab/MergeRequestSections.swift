@@ -1,6 +1,6 @@
 import Foundation
 
-/// My open merge requests in the three sections of MR-01, each newest first.
+/// My open merge requests in the three sections of MR-01, each newest first, and the recently merged ones (MR-17).
 public struct MergeRequestSections: Hashable, Sendable {
     /// "My Merge Requests": authored and assigned, without those in Review Requested
     public var yours: [MergeRequest]
@@ -9,8 +9,18 @@ public struct MergeRequestSections: Hashable, Sendable {
     /// "Reviewed": the other MRs whose review was asked of me
     public var reviewed: [MergeRequest]
 
+    /// "Recently Merged": the MRs of mine merged within ``window``, the latest merge first, at most ``limit``; the
+    /// open sections never hold them, and ``sections`` and ``isEmpty`` leave them out
+    public var merged: [MergeRequest] = []
+
     /// the text when all three sections are empty
     public static let emptyText = "No open merge requests"
+    /// how far back Recently Merged looks (MR-17)
+    public static let window = GitLabOperation<MergeRequestList>.mergedWindow
+    /// how many MRs Recently Merged shows (MR-17)
+    public static let limit = 10
+    /// the title of the Recently Merged section
+    public static let mergedTitle = "Recently Merged"
 
     /// Sorts merge requests into the sections.
     ///
@@ -25,6 +35,32 @@ public struct MergeRequestSections: Hashable, Sendable {
         }
         let shown = Set((yours + reviewRequested).map(\.id))
         reviewed = newestFirst.filter { $0.roles.contains(.reviewRequested) && !shown.contains($0.id) }
+    }
+
+    /// Sorts the open merge requests into the sections, and picks the recently merged ones.
+    ///
+    /// - Parameters:
+    ///   - list: the loaded list, with its open and its merged MRs
+    ///   - now: the time the window counts back from
+    public init(_ list: MergeRequestList, now: Date) {
+        self.init(list.mergeRequests, me: list.username)
+        merged = Self.recentlyMerged(list.merged, now: now)
+    }
+
+    /// Returns the MRs merged within ``window`` of `now`, the latest merge first, at most ``limit``. An MR without a
+    /// merge time isn't merged as far as the list knows.
+    ///
+    /// - Parameters:
+    ///   - mergeRequests: the merged MRs of the list, in any order
+    ///   - now: the time the window counts back from
+    /// - Returns: the section's MRs
+    public static func recentlyMerged(_ mergeRequests: [MergeRequest], now: Date) -> [MergeRequest] {
+        let since = now.addingTimeInterval(-window)
+        let recent = mergeRequests.compactMap { mergeRequest -> (Date, MergeRequest)? in
+            guard let mergedAt = mergeRequest.mergedAt, mergedAt >= since else { return nil }
+            return (mergedAt, mergeRequest)
+        }
+        return recent.sorted { ($0.0, $0.1.iid) > ($1.0, $1.1.iid) }.prefix(limit).map(\.1)
     }
 
     /// One section, with its title.

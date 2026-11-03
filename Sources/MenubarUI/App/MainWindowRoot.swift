@@ -381,5 +381,8 @@ struct MainWindowSectionToolbar: ToolbarContent {
         if section == .slots {
             SlotsToolbarItems()
         }
+        if section == .inbox {
+            InboxToolbarItems()
+        }
     }
 }

@@ -134,6 +134,8 @@ struct InboxGalleryView: View {
     var filter = InboxViewFilter()
     var query = ""
     var seen: Set<String> = []
+    /// the rows shown as just put back after GitLab refused their change
+    var bounced: Set<String> = []
     var size = MainWindowGallerySize.standard
 
     var body: some View {
@@ -146,6 +148,7 @@ struct InboxGalleryView: View {
             InboxListContent(
                 model: InboxListModel(data, filter: filter, query: query), filter: .constant(filter), actions: .none, links: .none)
                 .environment(\.inboxIsSeen) { seen.contains($0) }
+                .environment(\.inboxIsBounced) { bounced.contains($0) }
         } detail: {
             EmptyView()
         }
@@ -196,6 +199,11 @@ extension GalleryCatalog {
                 InboxGalleryView(
                     data: f.inboxData(actionProblem: .unreachable(.gitLab)), panel: f.panel(), seen: f.inboxSeen)
             },
+            GalleryEntry(screen: "inbox", state: "action-read-only-token", size: size) { f in
+                InboxGalleryView(
+                    data: f.inboxData(actionProblem: .readOnlyToken(action: "Mark Done")), panel: f.panel(), seen: f.inboxSeen,
+                    bounced: ["gid://gitlab/Todo/1"])
+            },
             GalleryEntry(screen: "inbox", state: "no-token", size: size) { f in
                 InboxGalleryView(
                     data: f.inboxData(pending: [], snoozed: [], done: [], fetched: false, problem: .noToken(.gitLab)),
@@ -206,6 +214,12 @@ extension GalleryCatalog {
             },
             GalleryEntry(screen: "inbox", state: "pane-flyout", size: CGSize(width: 800, height: 640)) { f in
                 MenuPaneGalleryView(data: f.menuPaneData, open: .inbox, flyoutHighlight: 1)
+                    .environment(\.inboxIsSeen) { f.inboxSeen.contains($0) }
+            },
+            GalleryEntry(screen: "inbox", state: "pane-flyout-refused", size: CGSize(width: 800, height: 640)) { f in
+                var data = f.menuPaneData
+                data.inbox.actionProblem = .readOnlyToken(action: "Mark Done")
+                return MenuPaneGalleryView(data: data, open: .inbox, flyoutHighlight: 1)
                     .environment(\.inboxIsSeen) { f.inboxSeen.contains($0) }
             },
             GalleryEntry(screen: "inbox", state: "my-todos-empty", size: CGSize(width: size.width, height: 520)) { f in

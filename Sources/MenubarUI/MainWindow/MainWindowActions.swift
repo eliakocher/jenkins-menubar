@@ -78,7 +78,7 @@ enum MainWindowLinks {
             guard let id = selection.mergeRequests else {
                 return nil
             }
-            return model.mergeRequests.list?.mergeRequests.first { $0.id == id }?.webURL
+            return model.mergeRequests.list?.mergeRequest(id: id)?.webURL
         case .workItems:
             guard let id = selection.workItems else {
                 return nil

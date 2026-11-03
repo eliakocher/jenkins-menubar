@@ -227,6 +227,77 @@ struct OnDemandTests {
         #expect(await world.logEntries("Resolved: GitLab unreachable").count == 1)
     }
 
+    @Test("MR-17 GitLab's complexity error is its refusal with its words, not a rejected token, and the cached MRs stay")
+    func complexityErrorIsNotARejectedToken() async throws {
+        let world = try World()
+        let cached = try await world.cacheMergeRequests(fetchedAt: Self.start.addingTimeInterval(-600))
+        let words = "Query has complexity of 329, which exceeds max complexity of 250"
+        world.stub.answer(operation: "MergeRequests", body: try FixtureFiles.string("GitLab/merge-requests-complexity.json"))
+        let store = world.mergeRequestsStore()
+
+        await store.load()
+        #expect(store.problem == .graphQLErrors(messages: [words]) && store.problem != .rejectedToken(.gitLab))
+        #expect(store.problem?.message == words)
+        #expect(store.list == cached)
+
+        // The same for the other operations that need the signed-in user.
+        let client = GitLabClient(transport: world.stub, gitLab: Self.gitLab, token: "t")
+        world.stub.answer(operation: "CurrentUser", body: try FixtureFiles.string("GitLab/merge-requests-complexity.json"))
+        do {
+            _ = try await client.send(.currentUser)
+            Issue.record("a refused query has no value")
+        } catch let error as GitLabError {
+            #expect(error.problem == .graphQLErrors(messages: [words]))
+        }
+    }
+
+    @Test("MR-17 the main query has no merged lists, and the merged ones are asked apart, small and at most every 10 minutes")
+    func mergedAreAskedApart() async throws {
+        let main = GitLabOperation<MergeRequestList>.mergeRequests
+        #expect(!main.query.contains("merged") && !main.query.contains("mergeUser") && !main.query.contains("targetBranch"))
+        #expect(main.variables == "{}")
+
+        let world = try World()
+        let store = world.mergeRequestsStore()
+        world.stub.answer(operation: "RecentlyMerged", body: try FixtureFiles.string("GitLab/recently-merged.json"))
+        await store.load()
+        #expect(store.problem == nil && store.list?.mergeRequests.map(\.iid) == [12437])
+        #expect(store.list?.merged.map(\.iid) == [9002, 9001])
+        #expect(world.count("MergeRequests") == 1 && world.count("RecentlyMerged") == 1)
+        // The merged query is the small one: no reviewers, pipelines or diff stats.
+        let sent = String(decoding: try #require(world.stub.requests(operation: "RecentlyMerged").first?.body), as: UTF8.self)
+        #expect(sent.contains("MERGED_AT_DESC") && !sent.contains("reviewers") && !sent.contains("headPipeline") && !sent.contains("diffStatsSummary"))
+
+        // The next poll doesn't ask again; the merged MRs stay.
+        await store.load()
+        #expect(world.count("MergeRequests") == 2 && world.count("RecentlyMerged") == 1)
+        #expect(store.list?.merged.map(\.iid) == [9002, 9001])
+        // After 10 minutes it does.
+        world.clock.advance(by: .seconds(601))
+        await store.load()
+        #expect(world.count("RecentlyMerged") == 2)
+    }
+
+    @Test("MR-17 a failing merged query leaves the open MRs and the problem alone, and goes to the log", arguments: [
+        "GitLab/merge-requests-complexity.json", "GitLab/merge-requests-merged-refused.json",
+    ])
+    func failingMergedQueryIsQuiet(fixture: String) async throws {
+        let world = try World()
+        world.stub.answer(operation: "RecentlyMerged", body: try FixtureFiles.string(fixture))
+        let store = world.mergeRequestsStore()
+
+        await store.load()
+        #expect(store.problem == nil && store.list?.mergeRequests.map(\.iid) == [12437] && store.list?.merged.isEmpty == true)
+        let warnings = await world.log.entries().filter { $0.message.hasPrefix("Recently Merged couldn't be loaded") }
+        #expect(warnings.count == 1)
+
+        // A transport failure of the merged query is quiet too.
+        world.stub.fail(operation: "RecentlyMerged", with: .unknownHost)
+        world.clock.advance(by: .seconds(601))
+        await store.load()
+        #expect(store.problem == nil && store.list?.mergeRequests.map(\.iid) == [12437])
+    }
+
     @Test("MR-05 keeps the cached work items when their load fails")
     func failedWorkItemsKeepCached() async throws {
         let world = try World()
@@ -452,7 +523,8 @@ struct OnDemandTests {
         #expect(world.clock.sleeperCount == 1)
         world.clock.advance(by: .seconds(600))
         await world.clock.waitForSleepers()
-        #expect(world.stub.requests.count == 1)
+        // The open MRs once, and the merged ones asked once after them (MR-17).
+        #expect(world.count("MergeRequests") == 1 && world.stub.requests.count == 2)
     }
 
     @Test("OD-02 loads when shown and stale")

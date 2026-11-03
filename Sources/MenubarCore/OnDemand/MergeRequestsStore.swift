@@ -32,6 +32,11 @@ public final class MergeRequestsStore {
 
     @ObservationIgnored private let services: GitLabServices
     @ObservationIgnored private let project: ProjectID
+    /// when the recently merged MRs were last asked for, whether it worked or not (MR-17)
+    @ObservationIgnored private var mergedAskedAt: Date?
+    /// how long the recently merged MRs are kept before they are asked for again, in seconds: they change slowly, and
+    /// their query is a second request
+    nonisolated static let mergedInterval: TimeInterval = 600
 
     /// Creates the store with the cached MRs of the current project. Nothing is asked yet.
     ///
@@ -72,6 +77,8 @@ public final class MergeRequestsStore {
         isLoading = true
         defer { isLoading = false }
         let problem: Problem?
+        var leftOpenLists = false
+        var client: GitLabClient?
         switch await services.session() {
         case .failure(let refusal):
             if refusal.problem == .noToken(.gitLab) {
@@ -80,9 +87,15 @@ public final class MergeRequestsStore {
             problem = refusal.problem
         case .success(let session):
             do {
-                list = try await services.measure { try await session.client.send(.mergeRequests) }
+                let open = try await services.measure { try await session.client.send(.mergeRequests) }
+                // The merged MRs are asked for apart (MR-17): the last ones stay until the next answer.
+                let before = Set(list?.mergeRequests.map(\.id) ?? [])
+                list = MergeRequestList(username: open.username, mergeRequests: open.mergeRequests, merged: list?.merged ?? [])
                 fetchedAt = services.now()
                 problem = nil
+                // An MR that left the open lists may have been merged: ask for the merged ones now.
+                leftOpenLists = !before.isSubset(of: Set(open.mergeRequests.map(\.id)))
+                client = session.client
             } catch let error as GitLabError where !Task.isCancelled {
                 problem = error.problem
             } catch {
@@ -96,12 +109,41 @@ public final class MergeRequestsStore {
         save()
         await services.track(Self.problemKey, problem)
         onLoaded()
+        if let client {
+            await loadMerged(client, force: leftOpenLists)
+        }
+    }
+
+    /// Loads the recently merged MRs (MR-17), at most every ``mergedInterval`` seconds unless `force`. Its own query: when it
+    /// fails, whatever the reason, the merged MRs stay as they were, the open MRs and the problem are untouched, and the
+    /// reason goes to the log.
+    private func loadMerged(_ client: GitLabClient, force: Bool) async {
+        let now = services.now()
+        if !force, let asked = mergedAskedAt, now.timeIntervalSince(asked) < Self.mergedInterval {
+            return
+        }
+        mergedAskedAt = now
+        do {
+            let answer = try await client.send(.recentlyMerged(now: now))
+            guard var current = list else {
+                return
+            }
+            current.merged = answer.merged
+            list = current
+            save()
+        } catch let error as GitLabError where !Task.isCancelled {
+            await services.log.log(
+                .warning, .gitlab, "Recently Merged couldn't be loaded: \(error.problem.message)", outcome: .warning("MERGED"))
+        } catch {
+            // Cancelled: nothing to say.
+        }
     }
 
     /// Forgets the MRs, deletes their cache and shows the setup steps: the GitLab token was removed (MR-04). Settings
     /// calls it when it removes the token; a load that finds no token does it too.
     public func tokenRemoved() {
         list = nil
+        mergedAskedAt = nil
         fetchedAt = nil
         problem = .noToken(.gitLab)
         try? services.caches.delete(.mergeRequestList, for: project)

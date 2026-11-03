@@ -15,9 +15,12 @@ struct MergeRequestRowContent: View {
             Image(systemName: row.status.symbol)
                 .foregroundStyle(symbolStyle)
         } trailing: {
-            // The checkout the branch lives in (WS-07).
-            WorkspaceTag(subject: .mergeRequest(row.mergeRequest))
-            ListRowTime(text: row.age, help: "Updated \(row.age)")
+            // A merged row says when on line 2 and has no checkout to show.
+            if !row.isMerged {
+                // The checkout the branch lives in (WS-07).
+                WorkspaceTag(subject: .mergeRequest(row.mergeRequest))
+                ListRowTime(text: row.age, help: "Updated \(row.age)")
+            }
         } details: {
             DetailsLine(lead: row.lead, more: row.more, reference: row.shortReference, chip: true)
                 .help(row.details)

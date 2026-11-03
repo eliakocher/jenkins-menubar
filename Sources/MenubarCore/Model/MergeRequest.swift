@@ -26,6 +26,12 @@ public struct MergeRequest: Codable, Hashable, Identifiable, Sendable {
     /// the branch it merges, which leads a workspace's checkout to its MR (WS-04); `nil` in a cache from before it was
     /// asked for
     public var sourceBranch: String?
+    /// the branch it merges into; `nil` in a cache from before it was asked for
+    public var targetBranch: String?
+    /// when it was merged; `nil` for an open MR, and in a cache from before the Recently Merged section (MR-17)
+    public var mergedAt: Date?
+    /// who merged it, or set it to auto-merge; `nil` for an open MR or when GitLab names nobody
+    public var mergedBy: Person?
 
     public init(
         iid: Int,
@@ -40,9 +46,15 @@ public struct MergeRequest: Codable, Hashable, Identifiable, Sendable {
         diffStats: DiffStats? = nil,
         updatedAt: Date,
         roles: Set<Role>,
-        sourceBranch: String? = nil
+        sourceBranch: String? = nil,
+        targetBranch: String? = nil,
+        mergedAt: Date? = nil,
+        mergedBy: Person? = nil
     ) {
         self.sourceBranch = sourceBranch
+        self.targetBranch = targetBranch
+        self.mergedAt = mergedAt
+        self.mergedBy = mergedBy
         self.iid = iid
         self.title = title
         self.webURL = webURL

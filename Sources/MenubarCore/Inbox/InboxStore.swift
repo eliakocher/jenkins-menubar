@@ -44,6 +44,8 @@ public final class InboxStore {
     public private(set) var problem: Problem?
     /// the problem of the last Done, Restore or Snooze that failed and was put back; `nil` after one that worked
     public private(set) var actionProblem: Problem?
+    /// the rows GitLab refused a change of and that were put back, for a moment: the list shakes and tints them
+    public private(set) var bouncedIDs: Set<String> = []
     /// whether a load is under way
     public private(set) var isLoading = false
     /// whether the done to-dos were loaded at least once
@@ -524,6 +526,7 @@ public final class InboxStore {
         for (id, serial) in serials where overrides[id]?.serial == serial {
             if case .failure = outcome {
                 overrides[id] = before[id] ?? nil
+                bounce(id)
             } else if let todo = overrides[id]?.todo {
                 overrides[id]?.settledAfterLoad = loadsStarted
                 commit(todo, .done)
@@ -535,6 +538,9 @@ public final class InboxStore {
             }
         }
         rebuild()
+        if case .failure(let error) = outcome {
+            await explainRefusal(error, "Mark All Done")
+        }
     }
 
     /// Snoozes a to-do (INBOX-04): in GitLab when it can, otherwise on this Mac. It is in the Snoozed list until its
@@ -546,7 +552,7 @@ public final class InboxStore {
     public func snooze(_ entry: InboxEntry, _ choice: InboxSnoozeChoice) async {
         let now = services.now()
         let until = choice.wakeDate(from: now, calendar: calendar)
-        guard until > now else {
+        guard until > now, entry.canSnooze else {
             return
         }
         switch entry.source {
@@ -624,9 +630,13 @@ public final class InboxStore {
         case .success:
             overrides[todo.id]?.settledAfterLoad = loadsStarted
             commit(todo, destination)
-        case .failure:
+        case .failure(let error):
             overrides[todo.id] = before
+            if !error.namesMissingSnooze {
+                bounce(todo.id)
+            }
             rebuild()
+            await explainRefusal(error, name)
         }
         return outcome.map { _ in () }
     }
@@ -667,7 +677,38 @@ public final class InboxStore {
         return serial
     }
 
-    /// Sends a mutation. A failure sets ``actionProblem`` and is logged; a success clears it.
+    /// Marks a row as put back after a refusal, for 2 seconds on the injected clock.
+    private func bounce(_ id: String) {
+        bouncedIDs.insert(id)
+        let clock = services.clock
+        Task { [weak self] in
+            try? await clock.sleep(for: .seconds(2))
+            self?.bouncedIDs.remove(id)
+        }
+    }
+
+    /// Says why a write was refused: a refusal that can be a token without the `api` scope asks GitLab for the token's
+    /// scopes (once per token) and names the token when it is read-only or unknown; anything else keeps GitLab's words.
+    /// Logs it once. A GitLab without the snooze mutations isn't a refusal worth a line.
+    private func explainRefusal(_ error: GitLabError, _ name: String) async {
+        guard !error.namesMissingSnooze else {
+            return
+        }
+        let problem = await services.problem(for: error, action: name)
+        // A later action may have answered while GitLab was asked.
+        if actionProblem == error.problem {
+            actionProblem = problem
+        }
+        log(.warning, "Inbox: \(name) failed: \(problem.message)")
+    }
+
+    /// Forgets the note about the last refused write, once the user has read it.
+    public func dismissActionProblem() {
+        actionProblem = nil
+    }
+
+    /// Sends a mutation. A failure sets ``actionProblem`` at once (``explainRefusal(_:_:)`` words it better); a success
+    /// clears it.
     private func perform<Value>(_ operation: GitLabOperation<Value>, _ name: String) async -> Result<Value, GitLabError> {
         let outcome: Result<Value, GitLabError>
         switch await services.session() {
@@ -687,9 +728,6 @@ public final class InboxStore {
             actionProblem = nil
         case .failure(let error):
             actionProblem = error.problem
-            if !error.namesMissingSnooze {
-                log(.warning, "Inbox: \(name) failed: \(error.problem.message)")
-            }
         }
         return outcome
     }

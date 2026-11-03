@@ -16,6 +16,8 @@ struct InboxActions {
     var markAllDone: @MainActor () -> Void = {}
     /// asks GitLab for the Done list; called while the Done filter shows
     var loadDone: @MainActor () async -> Void = {}
+    /// clears the note about a refused write
+    var dismissNote: @MainActor () -> Void = {}
     /// loads the to-dos again, for Try Again
     var retry: @MainActor () -> Void = {}
     /// opens an entry's target in the app, ⌥ in the browser, and notes it as seen; a thing of this app (a Claude answer,
@@ -49,6 +51,7 @@ struct InboxActions {
             wake: { rows in for row in rows { Task { await store.unsnooze(row) } } },
             markAllDone: { Task { await store.markAllDone() } },
             loadDone: { await store.loadDone() },
+            dismissNote: { store.dismissActionProblem() },
             retry: { Task { await store.load() } },
             open: { entry in
                 InboxOpening.open(entry, store: store, links: links, router: router)

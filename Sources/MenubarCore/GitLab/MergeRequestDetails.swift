@@ -641,9 +641,6 @@ public final class MergeRequestDetailsStore {
     private let entries = ObservedEntries<String, Entry>()
     /// whether the stored token can write, as GitLab's answer to ``checkWriteAccess()`` says (MR-09)
     public private(set) var writeAccess: WriteAccess = .unknown
-    /// the fingerprint of the token ``writeAccess`` was asked with: a token's scopes never change, so it is asked once
-    /// per token (Task 7.06: it was asked each time the reviewers showed)
-    @ObservationIgnored private var writeAccessToken: String?
     /// the levels this GitLab answers: once the full query failed for a missing field, the basic one is asked first
     /// (Task 7.06: every selection asked the reviews twice). Reset at each launch, so a GitLab update is picked up.
     @ObservationIgnored private var levels = Levels()
@@ -789,29 +786,9 @@ public final class MergeRequestDetailsStore {
     /// Asks GitLab which scopes the stored token has, so the re-request buttons know before a click whether the token
     /// can write. Without a token, or when GitLab doesn't say, the access stays unknown and nothing is blocked.
     ///
-    /// GitLab is asked once per token: the answer is kept until the stored token changes.
+    /// GitLab is asked once per token, by the one ``WriteAccessProbe`` every write of the app shares.
     public func checkWriteAccess() async {
-        let services = services
-        let known = writeAccess == .unknown ? nil : writeAccessToken
-        let answer = await Task { () -> (WriteAccess, String?)? in
-            guard let token = try? await services.tokens.token(.gitlab), !token.isEmpty else {
-                return (.unknown, nil)
-            }
-            let fingerprint = GitLabUser.fingerprint(of: token)
-            if fingerprint == known {
-                return nil
-            }
-            guard let client = try? await services.session().get().client,
-                let scopes = try? await client.tokenScopes()
-            else {
-                return (.unknown, nil)
-            }
-            return (WriteAccess(scopes: scopes), fingerprint)
-        }.value
-        if let (access, fingerprint) = answer {
-            writeAccess = access
-            writeAccessToken = fingerprint
-        }
+        writeAccess = await services.writeAccessProbe.check(services)
     }
 
     /// Asks reviewers for a new review, after a click: one request each, then loads the merge request's details again.

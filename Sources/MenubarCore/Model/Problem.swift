@@ -12,6 +12,9 @@ public enum Problem: Codable, Hashable, Sendable, CustomStringConvertible {
     case rejectedToken(Server)
     /// GitLab refused the token for its scope (`insufficient_scope`), which needs `api` (MR-05)
     case missingScope
+    /// GitLab refused a write (Mark Done, Merge, …) the way it refuses a token that can only read: "does not exist or you
+    /// don't have permission", while the token may lack the `api` scope. Names the write, like "Mark Done".
+    case readOnlyToken(action: String)
     /// HTTP 404 for the job list: the job URL in Team is wrong (JERR-03)
     case unknownJob
     /// HTTP 404 for one job: Jenkins dropped it, as for a merged MR. Its build leaves the list, without a problem row
@@ -47,7 +50,7 @@ public enum Problem: Codable, Hashable, Sendable, CustomStringConvertible {
         case .noToken(let server), .rejectedToken(let server), .unreachable(let server), .httpStatus(let server, _):
             server
         case .unknownJob, .gone, .slow, .notJSON: .jenkins
-        case .missingScope, .graphQLErrors, .workItemsFailed: .gitLab
+        case .missingScope, .readOnlyToken, .graphQLErrors, .workItemsFailed: .gitLab
         case .teamValuesMissing, .offline: nil
         }
     }
@@ -66,6 +69,8 @@ public enum Problem: Codable, Hashable, Sendable, CustomStringConvertible {
         case .rejectedToken(.jenkins): "Jenkins rejected the token"
         case .rejectedToken(.gitLab): "GitLab rejected the token (expired, or without the api scope?)"
         case .missingScope: "GitLab rejected the token: it needs the api scope"
+        case .readOnlyToken(let action):
+            "GitLab refused: your token may only have read access. \(action) needs the api scope."
         case .unknownJob: "Jenkins does not know the job: check the job URL in Team"
         case .gone: "Jenkins no longer has the job"
         case .unreachable(.jenkins): "Jenkins unreachable (VPN?)"

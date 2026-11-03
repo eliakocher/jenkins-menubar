@@ -40,6 +40,29 @@ struct MergeRequestsFixtures {
             updatedAt: f.minutesAgo(updatedMinutesAgo), roles: roles)
     }
 
+    /// A merged MR for Recently Merged (MR-17).
+    func mergedMergeRequest(
+        _ iid: Int, _ title: String, hoursAgo: Double, into target: String = "develop", author: MergeRequest.Person? = nil,
+        mergedBy: MergeRequest.Person? = nil, roles: Set<MergeRequest.Role> = [.authored]
+    ) -> MergeRequest {
+        var merged = mergeRequest(iid, title, status: nil, pipeline: "SUCCESS", author: author, updatedMinutesAgo: hoursAgo * 60, roles: roles)
+        merged.targetBranch = target
+        merged.mergedAt = f.minutesAgo(hoursAgo * 60)
+        merged.mergedBy = mergedBy ?? author ?? me
+        return merged
+    }
+
+    /// four merged MRs: two of mine, one reviewed by me and merged by its author, one of mine merged by Sam Lee
+    var recentlyMerged: [MergeRequest] {
+        [
+            mergedMergeRequest(31, "Fix the filter menu flicker", hoursAgo: 2),
+            mergedMergeRequest(
+                27, "Add keyboard shortcuts to the sidebar", hoursAgo: 20, author: samLee, mergedBy: samLee, roles: [.reviewRequested]),
+            mergedMergeRequest(19, "Update the dependency pins", hoursAgo: 52, into: "release/2.4", mergedBy: samLee),
+            mergedMergeRequest(11, "Remove the unused color tokens", hoursAgo: 150),
+        ]
+    }
+
     // MARK: - The sections
 
     /// !21: mine, ready to merge, approved by Sam Lee and Alex Kim
@@ -260,9 +283,10 @@ struct MergeRequestsFixtures {
     ///   - builds: the builds Pipelines shows, besides ``otherBuilds``
     ///   - jenkinsProblem: offline, the team values or Jenkins' own
     ///   - team: the team values
+    ///   - merged: the recently merged MRs (MR-17)
     func panel(
         _ mergeRequests: [MergeRequest]? = nil, problem: Problem? = nil, isLoading: Bool = false, loaded: Bool = true,
-        builds: [Build] = [], jenkinsProblem: Problem? = nil, team: TeamValues? = nil
+        builds: [Build] = [], jenkinsProblem: Problem? = nil, team: TeamValues? = nil, merged: [MergeRequest] = []
     ) -> PanelData {
         let builds = otherBuilds + builds
         return PanelData(
@@ -271,7 +295,7 @@ struct MergeRequestsFixtures {
                 problem: jenkinsProblem, lastCheckedAt: f.now, mine: builds.filter { $0.kind == .mine },
                 watched: builds.filter { $0.kind == .watched }),
             mergeRequests: PanelData.MergeRequests(
-                list: (mergeRequests ?? (loaded ? sections : nil)).map { MergeRequestList(username: f.me, mergeRequests: $0) },
+                list: (mergeRequests ?? (loaded ? sections : nil)).map { MergeRequestList(username: f.me, mergeRequests: $0, merged: merged) },
                 problem: problem, isLoading: isLoading, lastLoadAt: loaded || problem != nil ? lastLoad : nil),
             // Without the GitLab token, neither section has data (MR-04).
             workItems: problem == .noToken(.gitLab)

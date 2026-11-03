@@ -43,7 +43,7 @@ already running as you, and a compromised GitLab or Jenkins.
 ### Writes and commands
 
 - The server writes: Rebuild and Cancel Rebuild on Jenkins; on GitLab, Re-request Review and the Merge card's Merge,
-  Set to Auto-Merge, Cancel Auto-Merge, Rebase and Mark as Ready. Each needs a click; no link, launch, timer,
+  Set to Auto-Merge, Cancel Auto-Merge and Mark as Ready (no rebase). Each needs a click; no link, launch, timer,
   notification arriving or Claude answer triggers one.
 - Merge asks for a confirmation in the app first, since it can't be undone. Merge and auto-merge send the head commit
   the card showed (`sha`), so GitLab refuses a merge that would take commits pushed since; the request carries the token

@@ -831,8 +831,7 @@ public final class SettingsStore {
             let client = GitLabClient(transport: transport, gitLab: gitLab, token: token, timeouts: timeouts)
             let username = try await client.send(.currentUser)
             // A token that can't say what it may do isn't blamed: only a known read-only one is noted (MR-09).
-            let access = (try? await client.tokenScopes()).map(WriteAccess.init(scopes:))
-            return .signedIn(as: username, readOnly: access == .readOnly)
+            return .signedIn(as: username, scopes: try? await client.tokenScopes())
         } catch let error as GitLabError {
             return AccountStatus(ok: false, message: error.problem.message)
         } catch {

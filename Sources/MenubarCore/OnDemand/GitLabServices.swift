@@ -26,6 +26,8 @@ public struct GitLabServices: Sendable {
     public var gitLabUsername: @Sendable () async -> String?
     /// where the opened details are kept on disk, so they show at once after a relaunch (OD-07); `nil` keeps none
     public var details: DetailCache?
+    /// what the stored token may do, asked once per token and kept in memory; the copies of these services share it
+    public let writeAccessProbe = WriteAccessProbe()
 
     public init(
         transport: any HTTPTransport,

@@ -68,6 +68,8 @@ struct AccountsFormModel {
     var jenkinsServer: String?
     /// what is wrong with the GitLab URL as typed
     var gitLabURLIssue: String?
+    /// GitLab's page of the user's tokens, where the scopes show; nil while the GitLab URL is missing
+    var gitLabTokensPage: URL?
 }
 
 /// What the Accounts pane's buttons do.
@@ -104,6 +106,7 @@ struct AccountsSettingsForm: View {
                     prompt: TeamValues.Key.gitLabURL.prompt, issue: model.gitLabURLIssue, width: 260, shared: true)
                     .settingsAnchor(.gitLabURL)
                 statusRow(.gitlab, source: model.gitLabSource)
+                gitLabScopeRows
                 LabeledContent {
                     SecureField("New token", text: $gitLabToken, prompt: Text("Paste a new token"))
                         .labelsHidden()
@@ -208,6 +211,38 @@ struct AccountsSettingsForm: View {
         }
     }
 
+    /// The GitLab token's scopes, and for a token that can only read the note that says what won't work, with the link to
+    /// GitLab's token page. Nothing while the check hasn't run, or GitLab didn't list the scopes.
+    @ViewBuilder
+    private var gitLabScopeRows: some View {
+        if !model.isChecking, let status = model.results[.gitlab], status.ok {
+            if let scopes = status.scopesText {
+                LabeledContent {
+                    Text(verbatim: scopes)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                } label: {
+                    SettingsRowLabel("Token scopes", "From GitLab")
+                }
+            }
+            if let note = WriteAccess.note(for: status.writeAccess) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Image(systemName: "key.fill")
+                        .foregroundStyle(MergeRequestStatus.Color.orange.swiftUI)
+                    Text(verbatim: note)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 8)
+                    if let page = model.gitLabTokensPage {
+                        Link("Open Token Page", destination: page)
+                    }
+                }
+                .font(.callout)
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
     /// "Saved in your keychain", "Imported from ~/.zshrc into your keychain", or nil without a token.
     private static func whereStored(_ source: TokenSource) -> String? {
         switch source {
@@ -284,7 +319,8 @@ struct AccountsPane: View {
             jenkinsLink: settings.tokenLink(.jenkins), gitLabLink: settings.tokenLink(.gitlab),
             errors: settings.tokenErrors, isChecking: settings.isCheckingAccounts, results: settings.accounts,
             jenkinsServer: settings.primaryTeam.jenkinsJob?.host(),
-            gitLabURLIssue: isTyping ? nil : settings.teamIssue(for: .gitLabURL))
+            gitLabURLIssue: isTyping ? nil : settings.teamIssue(for: .gitLabURL),
+            gitLabTokensPage: settings.primaryTeam.gitLab.map { GitLabLinks.tokensPage(gitLab: $0) })
     }
 
     private var actions: AccountsSettingsActions {

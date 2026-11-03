@@ -187,6 +187,9 @@ public struct MenuPaneView: View {
             actions.open(url)
         case .command(.settings(let pane)):
             actions.openSettings(pane)
+        case .command(.inboxSettings):
+            model.settings.reveal(.inboxNotifications)
+            actions.openSettings(SettingsField.inboxNotifications.pane)
         case .command(.watchBuild):
             actions.watchBuild()
         }

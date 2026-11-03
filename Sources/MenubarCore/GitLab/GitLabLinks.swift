@@ -35,6 +35,14 @@ public enum GitLabLinks {
         ])
     }
 
+    /// Returns GitLab's page of the user's personal access tokens, where a token's scopes show.
+    ///
+    /// - Parameter gitLab: the GitLab instance
+    /// - Returns: `<gitlab>/-/user_settings/personal_access_tokens`
+    public static func tokensPage(gitLab: URL) -> URL {
+        gitLab.appending(path: "-/user_settings/personal_access_tokens")
+    }
+
     /// Returns the page that creates a GitLab token named MegaMonitor with the `api` scope (MR-04, MR-09).
     ///
     /// - Parameter gitLab: the GitLab instance

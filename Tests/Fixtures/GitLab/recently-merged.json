@@ -1,0 +1,38 @@
+{
+  "data": {
+    "currentUser": {
+      "username": "alex.doe",
+      "mergedAuthored": {
+        "nodes": [
+          {
+            "iid": "9001",
+            "title": "Merged change one",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/9001",
+            "reference": "acme/main/server/server!9001",
+            "updatedAt": "2026-11-02T10:00:00Z",
+            "mergedAt": "2026-11-02T10:00:00Z",
+            "targetBranch": "develop",
+            "mergeUser": { "username": "alex.doe", "name": "Alex Doe" },
+            "author": { "username": "alex.doe", "name": "Alex Doe" }
+          }
+        ]
+      },
+      "mergedAssigned": { "nodes": [] },
+      "mergedReviewing": {
+        "nodes": [
+          {
+            "iid": "9002",
+            "title": "Merged change two",
+            "webUrl": "https://gitlab.example.com/acme/main/server/server/-/merge_requests/9002",
+            "reference": "acme/main/server/server!9002",
+            "updatedAt": "2026-11-03T08:00:00Z",
+            "mergedAt": "2026-11-03T08:00:00Z",
+            "targetBranch": "develop",
+            "mergeUser": { "username": "sam.lee", "name": "Sam Lee" },
+            "author": { "username": "sam.lee", "name": "Sam Lee" }
+          }
+        ]
+      }
+    }
+  }
+}

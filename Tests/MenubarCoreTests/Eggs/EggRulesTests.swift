@@ -53,9 +53,14 @@ struct EggRulesTests {
 
     @Test("EGG-21 the credits keep the butler's attribution with the eggs off")
     func credits() {
-        #expect(EggRules.credits(eggs: false) == EggRules.attribution)
         #expect(EggRules.attribution.contains("CC BY-SA 3.0"))
         #expect(EggRules.attribution.contains("jenkins.io"))
-        #expect(EggRules.credits(eggs: true).hasSuffix(EggRules.attribution))
+        // Off, the roll is the author's serious credit alone: no gags.
+        #expect(AboutCredits.groups(eggs: false) == [[AboutCredits.author]])
+        // On, the roll keeps the author's line and has the butler's.
+        let roll = AboutCredits.groups(eggs: true).flatMap { $0 }
+        #expect(roll.contains(CreditLine("Directed by", "the butler")))
+        #expect(roll.contains { $0.name == "Elia Kocher" })
+        #expect(AboutCredits.copyright == "© 2026 Elia Kocher")
     }
 }

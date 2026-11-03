@@ -4,7 +4,7 @@ import Testing
 @testable import MenubarCore
 
 /// Merging from the app (MR-16): GitLab's merge state and checks, the card's headline and actions per state, and the
-/// requests of merge, auto-merge, cancel, rebase and mark ready. Fixtures only, never a real GitLab.
+/// requests of merge, auto-merge, cancel and mark ready. Fixtures only, never a real GitLab.
 @Suite("Merge from the app")
 @MainActor
 struct MergeStateTests {
@@ -43,7 +43,7 @@ struct MergeStateTests {
         #expect(state.commitCount == 3 && state.isBehind && state.behindCount == nil && !state.hasConflicts)
         #expect(state.pipelineStatus == .running)
         #expect(state.squash == .optional(on: true))
-        // The merge request says nothing, so the project's default deletes the branch.
+        // The merge request's own setting, as GitLab's widget starts its checkbox.
         #expect(state.removesSourceBranch)
         #expect(state.defaultSquashMessage == "Add a retry to the export job")
         #expect(state.defaultMergeMessage?.hasPrefix("Merge branch 'feature/export-retry' into 'develop'") == true)
@@ -61,7 +61,8 @@ struct MergeStateTests {
 
         let basic = try Self.decode("merge-state-basic.json")
         #expect(basic.checks == nil && basic.isDraft && basic.status == .draftStatus)
-        #expect(basic.squash == .never && basic.removesSourceBranch == false)
+        // `shouldRemoveSourceBranch` false, `forceRemoveSourceBranch` true: GitLab's widget deletes it.
+        #expect(basic.squash == .never && basic.removesSourceBranch == true)
         #expect(basic.autoMerge == .init(strategy: "merge_when_checks_pass", setBy: .init(username: "slee", name: "Sam Lee")))
         #expect(basic.mergedBy == nil && basic.pipelineStatus == nil)
         // Without GitLab's checks, the status names the one that fails.
@@ -75,7 +76,7 @@ struct MergeStateTests {
     private nonisolated static func state(_ change: (inout MergeState) -> Void = { _ in }) -> MergeState {
         var state = MergeState(
             status: .mergeable, checks: checks(), headSHA: "4f2a9c1e", sourceBranch: "feature/export-retry",
-            targetBranch: "develop", commitCount: 1, pipelineStatus: .success, autoMergeStrategies: ["merge_when_checks_pass"])
+            targetBranch: "develop", commitCount: 1, pipelineStatus: .success)
         change(&state)
         return state
     }
@@ -85,12 +86,20 @@ struct MergeStateTests {
         ("blocked", state {
             $0.status = .notApproved
             $0.checks = checks(["NOT_APPROVED": "FAILED", "DISCUSSIONS_NOT_RESOLVED": "FAILED"])
+            $0.autoMergeStrategies = ["merge_when_checks_pass"]
         }, "Blocked: 2 checks", .blocked, [.setAutoMerge]),
+        ("blocked, no auto-merge offered", state {
+            $0.status = .notApproved
+            $0.checks = checks(["NOT_APPROVED": "FAILED"])
+        }, "Blocked: 1 check", .blocked, []),
         ("pipeline pending", state {
             $0.status = .ciStillRunning
             $0.checks = checks(["CI_MUST_PASS": "FAILED"])
             $0.pipelineStatus = .running
+            $0.autoMergeStrategies = ["merge_when_checks_pass"]
         }, "Waiting for the pipeline", .waiting, [.setAutoMerge]),
+        ("a merge train offered", state { $0.autoMergeStrategies = ["merge_when_checks_pass", "merge_train"] },
+         "Ready to Merge", .ready, [.setAutoMerge]),
         ("auto-merge on", state {
             $0.status = .ciStillRunning
             $0.checks = checks(["CI_MUST_PASS": "CHECKING"])
@@ -101,32 +110,25 @@ struct MergeStateTests {
             $0.checks = checks(["CONFLICT": "FAILED"])
             $0.hasConflicts = true
             $0.isBehind = true
-            $0.autoMergeStrategies = []
         }, "Blocked: 1 check", .blocked, []),
         ("behind, fast-forward only", state {
             $0.status = .needRebase
             $0.checks = checks(["NEED_REBASE": "FAILED"])
             $0.isBehind = true
             $0.fastForwardOnly = true
-            $0.autoMergeStrategies = []
-        }, "Blocked: 1 check", .blocked, [.rebase]),
-        ("behind, merge commits", state { $0.isBehind = true; $0.behindCount = 40 }, "Ready to Merge", .ready, [.merge, .rebase]),
-        ("rebasing", state {
-            $0.status = .needRebase
-            $0.checks = checks(["NEED_REBASE": "FAILED"])
-            $0.isBehind = true
-            $0.isRebasing = true
-            $0.autoMergeStrategies = []
-        }, "Rebasing…", .waiting, []),
+        }, "Blocked: 1 check", .blocked, []),
+        ("behind, merge commits", state { $0.isBehind = true; $0.behindCount = 40 }, "Ready to Merge", .ready, [.merge]),
+        ("merging", state { $0.isMerging = true }, "Merging…", .autoMerge, []),
         ("draft", state {
             $0.status = .draftStatus
             $0.isDraft = true
             $0.checks = checks(["DRAFT_STATUS": "FAILED"])
+            $0.autoMergeStrategies = ["merge_when_checks_pass"]
         }, "Blocked: 1 check", .blocked, [.setAutoMerge, .markReady]),
         ("draft, no right to edit", state {
             $0.status = .draftStatus
             $0.checks = checks(["DRAFT_STATUS": "FAILED"])
-            $0.permissions = .init(canMerge: false, canPushToSource: false, canUpdate: false, canRemoveSourceBranch: false)
+            $0.permissions = .init(canMerge: false, canUpdate: false, canRemoveSourceBranch: false)
         }, "Blocked: 1 check", .blocked, []),
         ("merged", state {
             $0.lifecycle = .merged
@@ -136,7 +138,7 @@ struct MergeStateTests {
         ("checking", state {
             $0.status = .checking
             $0.checks = checks(["CI_MUST_PASS": "CHECKING"])
-        }, "Checking…", .neutral, [.setAutoMerge]),
+        }, "Checking…", .neutral, []),
         ("no head commit", state { $0.headSHA = nil }, "Ready to Merge", .ready, []),
     ]
 
@@ -154,15 +156,15 @@ struct MergeStateTests {
         let state = try Self.decode("merge-state.json")
         let overview = MergeOverview(state, approvals: "1 of 2 approvals", openThreads: 0)
 
-        // Failed, then pending (the running pipeline), then the warnings: GitLab's and behind the target branch.
+        // Failed, then pending (the running pipeline), then GitLab's warning, then behind the target branch, for the record.
         #expect(overview.open.map(\.title) == [
             "1 of 2 approvals", "Pipeline running", "External status checks must pass", "Behind develop",
         ])
-        #expect(overview.open.map(\.status) == [.failed, .pending, .warning, .warning])
-        #expect(overview.open.map(\.fix) == [.assignReviewers, .showBuild, .openInGitLab, .rebase])
+        #expect(overview.open.map(\.status) == [.failed, .pending, .warning, .info])
+        #expect(overview.open.map(\.fix) == [.assignReviewers, .showBuild, .openInGitLab, nil])
         #expect(overview.passed.map(\.kind) == [.threads, .draft, .conflicts])
         #expect(overview.headline.title == "Blocked: 1 check" && overview.headline.detail == "Waiting for approvals")
-        #expect(MergeOverview(state, approvals: "1 of 2 approvals").actions == [.setAutoMerge, .rebase])
+        #expect(MergeOverview(state, approvals: "1 of 2 approvals").actions == [.setAutoMerge])
 
         var several = state
         several.checks = Self.checks(["NOT_APPROVED": "FAILED", "CI_MUST_PASS": "FAILED", "CONFLICT": "FAILED"])
@@ -172,6 +174,13 @@ struct MergeStateTests {
         #expect(blocked.headline.detail == "Approvals, the pipeline and conflicts")
         #expect(blocked.open.map(\.title).prefix(3) == ["Approvals required", "Pipeline failed", "Merge conflicts"])
         #expect(blocked.open.first { $0.kind == .conflicts }?.fix == .openConflicts)
+
+        // A rebase GitLab requires is said, and left to GitLab.
+        var fastForward = state
+        fastForward.checks = Self.checks(["NEED_REBASE": "FAILED"])
+        fastForward.behindCount = 40
+        let needsRebase = try #require(MergeOverview(fastForward).open.first { $0.kind == .behind })
+        #expect(needsRebase.title == "40 commits behind develop" && needsRebase.status == .failed && needsRebase.fix == .openInGitLab)
     }
 
     @Test("MR-16 the summary counts the commits, the squash and the merge commit", arguments: [
@@ -232,21 +241,18 @@ struct MergeStateTests {
         #expect(auto["commitMessage"] == nil && auto["squashCommitMessage"] == nil)
     }
 
-    @Test("MR-16 cancel and rebase are REST calls on the merge request; cancel falls back to cancel_auto_merge")
+    @Test("MR-16 cancel is a REST call on the merge request, and falls back to cancel_auto_merge")
     func restRequests() async throws {
         let stub = StubTransport()
         let base = "/api/v4/projects/group%2Fproject/merge_requests/16"
-        stub.answer("PUT", path: "\(base)/rebase", status: 202, body: #"{"rebase_in_progress":true}"#)
         stub.answer("POST", path: "\(base)/cancel_merge_when_pipeline_succeeds", status: 201, body: "{}")
         let client = GitLabClient(transport: stub, gitLab: Self.gitLab, token: "glpat-test")
 
-        try await client.rebase(Self.source)
         try await client.cancelAutoMerge(Self.source)
 
-        let rebase = try #require(stub.requests(path: "\(base)/rebase").first)
-        #expect(rebase.method == "PUT" && rebase.body == nil && rebase.headers["Authorization"] == "Bearer glpat-test")
-        #expect(rebase.url.absoluteString.contains("glpat") == false)
-        #expect(stub.requests(path: "\(base)/cancel_merge_when_pipeline_succeeds").map(\.method) == ["POST"])
+        let cancel = try #require(stub.requests(path: "\(base)/cancel_merge_when_pipeline_succeeds").first)
+        #expect(cancel.method == "POST" && cancel.body == nil && cancel.headers["Authorization"] == "Bearer glpat-test")
+        #expect(cancel.url.absoluteString.contains("glpat") == false)
         #expect(stub.requests(path: "\(base)/cancel_auto_merge").isEmpty)
 
         // A GitLab without the old endpoint takes its successor.
@@ -258,9 +264,11 @@ struct MergeStateTests {
 
         // GitLab's words come back.
         let refused = StubTransport()
-        refused.answer("PUT", path: "\(base)/rebase", status: 403, body: #"{"message":"Cannot push to source branch"}"#)
-        await #expect(throws: GitLabError(.graphQLErrors(messages: ["Cannot push to source branch"]))) {
-            try await GitLabClient(transport: refused, gitLab: Self.gitLab, token: "glpat-test").rebase(Self.source)
+        refused.answer(
+            "POST", path: "\(base)/cancel_merge_when_pipeline_succeeds", status: 403,
+            body: #"{"message":"You do not have permission to cancel the auto-merge"}"#)
+        await #expect(throws: GitLabError(.graphQLErrors(messages: ["You do not have permission to cancel the auto-merge"]))) {
+            try await GitLabClient(transport: refused, gitLab: Self.gitLab, token: "glpat-test").cancelAutoMerge(Self.source)
         }
     }
 
@@ -310,8 +318,8 @@ struct MergeStateTests {
         #expect((try Self.body(stub.requests(operation: "MergeRequestMergeState")[2])["query"] as? String)?.contains("mergeabilityChecks") == false)
     }
 
-    @Test("MR-16 a rebase is looked at until GitLab is done, then the details load again; a refusal shows GitLab's words")
-    func storeRebases() async throws {
+    @Test("MR-16 a merge GitLab runs in the background is looked at until done, then the details load again; a refusal shows GitLab's words")
+    func storeMerges() async throws {
         let folder = try TemporaryFolder()
         let stub = StubTransport()
         let open = try FixtureFiles.string("GitLab/merge-state.json")
@@ -323,23 +331,30 @@ struct MergeStateTests {
         store.pollInterval = .zero
         await store.load(Self.mergeRequest)
 
-        stub.answer("PUT", path: "/api/v4/projects/group%2Fproject/merge_requests/16/rebase", status: 202, body: #"{"rebase_in_progress":true}"#)
-        let rebasing = open.replacingOccurrences(of: #""rebaseInProgress": false"#, with: #""rebaseInProgress": true"#)
-        stub.answer(operation: "MergeRequestMergeState", times: 2, body: rebasing)
-        await store.perform(.rebase, on: Self.mergeRequest)
+        let ok = #"{"data":{"mergeRequestAccept":{"errors":[],"mergeRequest":{"state":"opened","autoMergeEnabled":false}}}}"#
+        stub.answer(operation: "MergeRequestAccept", times: 1, body: ok)
+        let merged = open.replacingOccurrences(of: #""state": "opened""#, with: #""state": "merged""#)
+        stub.answer(operation: "MergeRequestMergeState", body: merged)
+        let merging = open.replacingOccurrences(of: #""mergeOngoing": false"#, with: #""mergeOngoing": true"#)
+        stub.answer(operation: "MergeRequestMergeState", times: 2, body: merging)
+        await store.perform(.merge, on: Self.mergeRequest)
 
-        #expect(store.activity(of: Self.mergeRequest) == .succeeded(.rebase))
-        // The load right after the request and one more look while it rebased, then the done one.
+        #expect(store.activity(of: Self.mergeRequest) == .succeeded(.merge))
+        // The load right after the request and one more look while it merged, then the merged one.
         #expect(stub.requests(operation: "MergeRequestMergeState").count == 4)
-        #expect(store.load(of: Self.mergeRequest).state?.isRebasing == false)
+        #expect(store.load(of: Self.mergeRequest).state?.lifecycle == .merged)
         #expect(stub.requests(operation: "MergeRequestDetails").count == 1)
+        // GitLab's widget's defaults: the head sha, the merge request's branch choice and the project's squash, nothing else.
+        let first = try Self.input(try #require(stub.requests(operation: "MergeRequestAccept").first))
+        #expect(Set(first.keys) == ["projectPath", "iid", "sha", "squash", "shouldRemoveSourceBranch"])
+        #expect(first["squash"] as? Bool == true && first["shouldRemoveSourceBranch"] as? Bool == true)
 
         // A merge without GitLab's head commit sends nothing.
         let noHead = open.replacingOccurrences(of: #""diffHeadSha": "4f2a9c1e5b7d3a8f0c6e2b9d1a4f7c3e5b8d0a2f""#, with: #""diffHeadSha": null"#)
         stub.answer(operation: "MergeRequestMergeState", body: noHead)
         await store.load(Self.mergeRequest, force: true)
         await store.perform(.merge, on: Self.mergeRequest)
-        #expect(stub.requests(operation: "MergeRequestAccept").isEmpty)
+        #expect(stub.requests(operation: "MergeRequestAccept").count == 1)
         guard case .failed(.merge, _, needsToken: false) = store.activity(of: Self.mergeRequest) else {
             Issue.record("the merge didn't fail: \(store.activity(of: Self.mergeRequest))")
             return
@@ -351,7 +366,7 @@ struct MergeStateTests {
         stub.answer(operation: "MergeRequestAccept", body: #"{"data":{"mergeRequestAccept":{"errors":["SHA does not match HEAD of source branch"],"mergeRequest":null}}}"#)
         await store.perform(.merge, on: Self.mergeRequest, options: MergeOptions(squash: false, removeSourceBranch: true))
         #expect(store.activity(of: Self.mergeRequest) == .failed(.merge, message: "SHA does not match HEAD of source branch", needsToken: false))
-        let sent = try Self.input(try #require(stub.requests(operation: "MergeRequestAccept").first))
+        let sent = try Self.input(try #require(stub.requests(operation: "MergeRequestAccept").last))
         #expect(sent["sha"] as? String == "4f2a9c1e5b7d3a8f0c6e2b9d1a4f7c3e5b8d0a2f")
         store.dismiss(Self.mergeRequest)
         #expect(store.activity(of: Self.mergeRequest) == .idle)

@@ -6,10 +6,13 @@ public struct AccountStatus: Hashable, Sendable {
     public var ok: Bool
     /// "Signed in as jdoe", "No token yet", or the problem's text
     public var message: String
+    /// the scopes of a GitLab token, as `personal_access_tokens/self` says; `nil` when not asked, or GitLab didn't say
+    public var scopes: [String]?
 
-    public init(ok: Bool, message: String) {
+    public init(ok: Bool, message: String, scopes: [String]? = nil) {
         self.ok = ok
         self.message = message
+        self.scopes = scopes
     }
 
     /// "No token yet"
@@ -21,16 +24,30 @@ public struct AccountStatus: Hashable, Sendable {
 
     /// "Signed in as <user>"
     public static func signedIn(as user: String) -> AccountStatus {
-        signedIn(as: user, readOnly: false)
+        AccountStatus(ok: true, message: "Signed in as \(user)")
     }
 
-    /// "Signed in as <user>", and for a GitLab token that can only read, why Re-request Review won't work (MR-09)
-    public static func signedIn(as user: String, readOnly: Bool) -> AccountStatus {
-        AccountStatus(
-            ok: true,
-            message: readOnly
-                ? "Signed in as \(user). The token can only read: re-requesting a review needs the api scope"
-                : "Signed in as \(user)")
+    /// "Signed in as <user>" with the scopes GitLab says the token has (MR-09).
+    ///
+    /// - Parameters:
+    ///   - user: who is signed in
+    ///   - scopes: the scopes of `GET /api/v4/personal_access_tokens/self`; `nil` when GitLab didn't say
+    public static func signedIn(as user: String, scopes: [String]?) -> AccountStatus {
+        AccountStatus(ok: true, message: "Signed in as \(user)", scopes: scopes)
+    }
+
+    /// what the token's scopes allow, as far as GitLab said; ``WriteAccess/unknown`` for a token that isn't a GitLab one
+    /// or didn't say
+    public var writeAccess: WriteAccess {
+        scopes.map(WriteAccess.init(scopes:)) ?? .unknown
+    }
+
+    /// "api" or "read_api, read_user"; `nil` when GitLab didn't say
+    public var scopesText: String? {
+        guard let scopes, !scopes.isEmpty else {
+            return nil
+        }
+        return scopes.joined(separator: ", ")
     }
 }
 

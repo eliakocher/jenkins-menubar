@@ -34,7 +34,7 @@ enum MergeRequestWatching {
     ///   - router: the router, which holds the section and the selections
     static func request(model: AppModel, router: WindowRouter) -> WatchRequest {
         guard router.section == .mergeRequests, let id = router.selection.mergeRequests,
-            let mergeRequest = model.mergeRequests.list?.mergeRequests.first(where: { $0.id == id })
+            let mergeRequest = model.mergeRequests.list?.mergeRequest(id: id)
         else {
             return WatchRequest()
         }
