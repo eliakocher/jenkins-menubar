@@ -23,6 +23,8 @@ struct MenuPaneModel: Sendable {
         var lastChecked: String?
         /// the easter egg line that replaces the time for 5 s while Check Now is mashed (EGG-09)
         var eggLine: String?
+        /// the fun layer's line under Quit: the butler's tip, or the line of the moment; `nil` at Subtle and with the eggs off
+        var fun: FunFooterLine?
 
         /// Check Now's grey second line
         var subtitle: String? {

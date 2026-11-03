@@ -31,6 +31,7 @@ struct PreferencesStoreTests {
             .fillInCopiedLink: "yes",
             .globalShortcut: "⌘K",
             .easterEggs: "off",
+            .funLevel: "loud",
             .slotAlerts: "on",
             .appearance: "purple",
         ]
@@ -61,7 +62,7 @@ struct PreferencesStoreTests {
             workItemRows: WorkItemRowLabels(hidden: ["group:", "affects::"], showsScopedValueOnly: true),
             showInMenuBar: false, fillInCopiedLink: true,
             globalShortcut: HotkeyShortcut(keyCode: 40, modifiers: [.command], label: "K"), easterEggs: false,
-            slotAlerts: true, appearance: .dark)
+            funLevel: .subtle, slotAlerts: true, appearance: .dark)
 
         let changes = store.save(changed)
 

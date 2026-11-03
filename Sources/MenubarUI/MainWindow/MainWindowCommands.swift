@@ -54,7 +54,7 @@ public struct MainWindowCommands: Commands {
 
     /// Opens the About window, or brings it forward, with the credits as the easter eggs setting has them.
     private func showAbout() {
-        AboutWindow.show(eggs: model.pipelines.preferences.easterEggs)
+        AboutWindow.show(eggs: model.pipelines.preferences.easterEggs, model: model)
     }
 
     public var body: some Commands {

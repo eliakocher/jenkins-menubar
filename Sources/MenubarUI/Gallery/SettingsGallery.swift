@@ -21,11 +21,12 @@ private struct GeneralGalleryView: View {
     var preferences = Preferences()
     var login = LoginItemStatus.notRegistered
     var loginError: String?
+    var place = LoginItemPlace.installed
 
     var body: some View {
         GeneralSettingsForm(
             preferences: .constant(preferences), openAtLogin: .constant(login.isOn), loginStatus: login,
-            loginError: loginError, actions: .none,
+            loginError: loginError, loginPlace: place, actions: .none,
             linkRouting: LinkRoutingSwitch(isOn: .constant(false), browserName: "Safari", note: nil, isChanging: false))
     }
 }
@@ -256,7 +257,20 @@ extension GalleryCatalog {
                 SettingsPaneGalleryView(height: 430) { GeneralGalleryView(login: .requiresApproval) }
             },
             GalleryEntry(screen: "settings-general", state: "login-not-found", size: paneSize(420)) { _ in
-                SettingsPaneGalleryView(height: 420) { GeneralGalleryView(login: .notFound) }
+                SettingsPaneGalleryView(height: 420) {
+                    GeneralGalleryView(
+                        login: .notFound,
+                        place: LoginItemPlace(
+                            bundlePath: "/Users/me/Downloads/MegaMonitor.app", isQuarantined: false, home: "/Users/me"))
+                }
+            },
+            GalleryEntry(screen: "settings-general", state: "login-quarantined", size: paneSize(420)) { _ in
+                SettingsPaneGalleryView(height: 420) {
+                    GeneralGalleryView(
+                        login: .notFound,
+                        place: LoginItemPlace(
+                            bundlePath: "/private/var/folders/xy/T/AppTranslocation/ABC/d/MegaMonitor.app", isQuarantined: true))
+                }
             },
             GalleryEntry(screen: "settings-general", state: "login-error", size: paneSize(450)) { _ in
                 SettingsPaneGalleryView(height: 450) {

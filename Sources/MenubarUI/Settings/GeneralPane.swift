@@ -65,13 +65,17 @@ public struct GeneralSettingsActions {
     public var turnOnNotifications: @MainActor () -> Void
     /// shows the alert the current settings choose for a sample (ALERT-07)
     public var preview: @MainActor (BuildAlert.PreviewSample) -> Void
+    /// triggers a random easter egg now (Surprise Me); answers what it did, in a sentence
+    public var surprise: @MainActor () -> String
 
     public init(
         openLoginItemsSettings: @escaping @MainActor () -> Void,
         openNotificationSettings: @escaping @MainActor () -> Void,
         turnOnNotifications: @escaping @MainActor () -> Void,
-        preview: @escaping @MainActor (BuildAlert.PreviewSample) -> Void
+        preview: @escaping @MainActor (BuildAlert.PreviewSample) -> Void,
+        surprise: @escaping @MainActor () -> String = { "" }
     ) {
+        self.surprise = surprise
         self.openLoginItemsSettings = openLoginItemsSettings
         self.openNotificationSettings = openNotificationSettings
         self.turnOnNotifications = turnOnNotifications
@@ -84,11 +88,13 @@ public struct GeneralSettingsActions {
 }
 
 /// The "Open at login" switch and its status line (APP-02): waiting for approval with "Open System Settings…", not
-/// found with the switch disabled, or why a change was refused. The welcome flow can show the same rows.
+/// found with the likely cause and "Open Login Items Settings…" (the switch stays usable: turning it on tries to
+/// register), or why a change was refused. The welcome flow can show the same rows.
 public struct OpenAtLoginRows: View {
     private let isOn: Binding<Bool>
     private let status: LoginItemStatus
     private let error: String?
+    private let place: LoginItemPlace
     private let openSystemSettings: @MainActor () -> Void
     private let caption: String?
 
@@ -96,13 +102,15 @@ public struct OpenAtLoginRows: View {
     ///   - isOn: the switch; Settings binds it to the login item's status
     ///   - status: the login item's status
     ///   - error: why the last change was refused
+    ///   - place: where the app runs from, which explains a login item macOS can't find
     ///   - openSystemSettings: opens System Settings → General → Login Items
     ///   - caption: the line under the switch's name; nil for none, as in the welcome flow
     public init(
-        isOn: Binding<Bool>, status: LoginItemStatus, error: String?,
+        isOn: Binding<Bool>, status: LoginItemStatus, error: String?, place: LoginItemPlace = .installed,
         openSystemSettings: @escaping @MainActor () -> Void, caption: String? = nil
     ) {
         self.caption = caption
+        self.place = place
         self.isOn = isOn
         self.status = status
         self.error = error
@@ -115,13 +123,14 @@ public struct OpenAtLoginRows: View {
         }
         .settingsSwitch()
         .settingsAnchor(.openAtLogin)
-            .disabled(status == .notFound)
+        let help = LoginItemHelp.of(status: status, place: place, failed: error != nil)
         if let error {
             StatusLine(.problem, error)
-        } else if let message = status.message {
+        }
+        if let message = help.message {
             StatusLine(.note, message) {
-                if status.needsApproval {
-                    Button("Open System Settings…", action: openSystemSettings)
+                if help.opensLoginItems {
+                    Button(status.needsApproval ? "Open System Settings…" : "Open Login Items Settings…", action: openSystemSettings)
                 }
             }
         }
@@ -154,25 +163,30 @@ public struct GeneralSettingsForm: View {
     private let openAtLogin: Binding<Bool>
     private let loginStatus: LoginItemStatus
     private let loginError: String?
+    private let loginPlace: LoginItemPlace
     private let actions: GeneralSettingsActions
     private let linkRouting: LinkRoutingSwitch?
+    /// what the last Surprise Me did
+    @ViewState private var surpriseNote: String?
 
     /// - Parameters:
     ///   - preferences: the preferences; a change saves at once
     ///   - openAtLogin: the switch of the login item
     ///   - loginStatus: the login item's status
     ///   - loginError: why turning it on or off was refused
+    ///   - loginPlace: where the app runs from
     ///   - actions: what the buttons do
     ///   - linkRouting: the link router's switch; `nil` leaves it out
     public init(
         preferences: Binding<Preferences>, openAtLogin: Binding<Bool>, loginStatus: LoginItemStatus, loginError: String?,
-        actions: GeneralSettingsActions,
+        loginPlace: LoginItemPlace = .installed, actions: GeneralSettingsActions,
         linkRouting: LinkRoutingSwitch? = nil
     ) {
         _preferences = preferences
         self.openAtLogin = openAtLogin
         self.loginStatus = loginStatus
         self.loginError = loginError
+        self.loginPlace = loginPlace
         self.actions = actions
         self.linkRouting = linkRouting
     }
@@ -182,7 +196,7 @@ public struct GeneralSettingsForm: View {
             SettingsPaneHeader(pane: .general)
             Section {
                 OpenAtLoginRows(
-                    isOn: openAtLogin, status: loginStatus, error: loginError,
+                    isOn: openAtLogin, status: loginStatus, error: loginError, place: loginPlace,
                     openSystemSettings: actions.openLoginItemsSettings,
                     caption: nil)
             } header: {
@@ -218,6 +232,25 @@ public struct GeneralSettingsForm: View {
                     SettingsRowLabel("Easter eggs", "The butler sometimes has something to say")
                 }
                 .settingsSwitch()
+                LabeledContent {
+                    Picker("Fun level", selection: $preferences.funLevel) {
+                        ForEach(FunLevel.allCases, id: \.self) { level in
+                            Text(verbatim: level.title).tag(level)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(!preferences.easterEggs)
+                } label: {
+                    SettingsRowLabel("Fun level", preferences.funLevel.detail)
+                }
+                LabeledContent {
+                    Button("Surprise Me") { surpriseNote = actions.surprise() }
+                        .disabled(!preferences.easterEggs)
+                } label: {
+                    SettingsRowLabel("Surprise Me", surpriseNote ?? "Triggers a random surprise now, so you can see them")
+                }
             } header: {
                 SettingsSectionHeader("Fun")
             }
@@ -504,6 +537,7 @@ struct GeneralPane: View {
                 get: { settings.openAtLogin.isOn },
                 set: { on in Task { await settings.setOpenAtLogin(on) } }),
             loginStatus: settings.openAtLogin, loginError: settings.openAtLoginError,
+            loginPlace: settings.loginItemPlace,
             actions: GeneralSettingsActions.of(settings: settings, model: model, system: system, permission: nil),
             linkRouting: system.linkRouting.map(linkRoutingSwitch))
             .onAppear(perform: refresh)
@@ -612,7 +646,8 @@ extension GeneralSettingsActions {
                 Task {
                     await announcer.preview(sample, team: team, preferences: preferences)
                 }
-            })
+            },
+            surprise: { model.fun.surpriseMe() })
     }
 }
 

@@ -39,8 +39,10 @@ public struct OpenedItemDetailView: View {
                     WorkItemDetailContent(model: workItemDetail(workItem, at: context.date), actions: actions)
                 }
             } else if let build = store.builds[id] {
+                // Read here, not in the timeline's closure, so that Watch turns into Stop Watching at once.
+                let following = model.projects.following(build.id)
                 TimelineView(.periodic(from: .now, by: 10)) { context in
-                    BuildDetailContent(model: buildDetail(build, at: context.date), actions: panelActions)
+                    BuildDetailContent(model: buildDetail(build, following: following, at: context.date), actions: panelActions)
                 }
                 .workspaceTagsClickable()
             } else if case .failed(let problem)? = store.states[id] {
@@ -65,15 +67,16 @@ public struct OpenedItemDetailView: View {
         PanelActions.mainWindow(model, router: router, openURL: openURL)
     }
 
-    /// The build's detail as Pipelines shows a build, without what only a listed build has: Hide, Stop Watching and
-    /// Rebuild belong to the lists' jobs.
-    private func buildDetail(_ build: Build, at date: Date) -> BuildDetailModel? {
+    /// The build's detail as Pipelines shows a build, without what only a listed build has: Hide and Rebuild belong to the
+    /// lists' jobs. Watch shows for a job that nobody follows, Stop Watching for a watched one (WATCH-07).
+    private func buildDetail(_ build: Build, following: JobKind?, at date: Date) -> BuildDetailModel? {
         let jobURL = model.team.project(build.project)?.team.jenkinsJob
         var row = BuildRowModel(build: build, now: date, jobURL: jobURL)
         row.offersRebuild = false
         var detail = BuildDetailModel(row: row, now: date)
         detail.canHide = false
-        detail.canStopWatching = false
+        detail.canStopWatching = following == .watched
+        detail.canWatch = following == nil
         // Without it the Recent Builds tiles do nothing: a build opened from a tile couldn't open the next (the user,
         // 2026-11-03).
         detail.jobURL = jobURL

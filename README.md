@@ -93,6 +93,13 @@ It needs macOS 26 and the Xcode Command Line Tools (`xcode-select --install`); n
 
 `./install.sh --dry-run` prints what would change and changes nothing.
 
+**Getting it onto another Mac:**
+- `git clone` the repo and run `./install.sh` there. Don't copy the folder over from another Mac: its `.build` cache
+  holds that Mac's paths and the build fails. If you did copy it, `rm -rf .build build`, then run `./install.sh`
+  again.
+- Don't share a built `MegaMonitor.app`: it is signed only locally. On another Mac it runs as a quarantined copy, and
+  macOS won't offer open at login for it.
+
 For the team values, **Settings → Team** can import and export a file without tokens: see `team.example.json`. The
 tokens go into the login keychain, **Settings → Accounts** checks that Jenkins and GitLab take them. Jenkins needs your
 user and an API token, GitLab a token with the `api` scope (`read_api` is enough to read, but Re-request Review and the Merge card write).
@@ -189,7 +196,7 @@ and the SwiftPM product `megamonitor`; the module names stay `MenubarCore`, `Men
 (`IdentityMigration`) and leaves the originals for `./install.sh --retire-old`.
 
 ```
-./build.sh [--debug] [--install]   # builds build/MegaMonitor.app
+./build.sh [--debug] [--install]   # builds build/app.noindex/MegaMonitor.app
 ./test.sh [filter]                 # the Swift Testing tests
 scripts/smoke.sh                   # runs the built app once against a local stub server
 scripts/gallery-shots.sh all       # screenshots of the design gallery (not committed)

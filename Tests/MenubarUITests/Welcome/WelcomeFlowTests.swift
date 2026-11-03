@@ -145,6 +145,26 @@ struct WelcomeFlowTests {
         #expect(!again.openAtLogin)
     }
 
+    @Test("APP-02 the welcome flow still tries open at login when macOS can't find the app, and then lets the user go on")
+    func triesNotFoundLoginItem() async {
+        let harness = Harness()
+        harness.loginItem.status = .notFound
+        harness.loginItem.error = CocoaError(.featureUnsupported)
+        let flow = WelcomeFlow()
+        flow.page = .menuBarAndLogin
+
+        _ = await flow.next(settings: harness.settings, actions: Notifications(.allowed).actions)
+        #expect(harness.loginItem.calls == [.register])
+        #expect(flow.page == .menuBarAndLogin)
+        #expect(flow.data(settings: harness.settings).login.error != nil)
+        #expect(!flow.openAtLogin)
+
+        // The switch is off now, so the next Continue moves on without asking macOS again.
+        _ = await flow.next(settings: harness.settings, actions: Notifications(.allowed).actions)
+        #expect(harness.loginItem.calls == [.register])
+        #expect(flow.page == .done)
+    }
+
     @Test(
         "APP-04 the welcome flow asks for notifications on Continue, without waiting for the answer",
         arguments: [NotificationPermission.notAsked, .allowed, .off])

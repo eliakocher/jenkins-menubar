@@ -67,6 +67,8 @@ public struct MenuPaneView: View {
             let updates = model.updates
             Task { await updates.check() }
         }
+        // The peeking butler's panel beside the pane follows what the fun model plays.
+        .onChange(of: model.fun.playing) { _, _ in controller.refreshPeek(model.fun) }
         .onDisappear {
             controller.paneDisappeared()
             router.report([], shownBy: PanelView.host, to: model.scheduler)
@@ -79,6 +81,7 @@ public struct MenuPaneView: View {
         var pane = MenuPaneModel(PanelView.data(model, now: date, inbox: true), layout: model.pipelines.preferences.menuBarLayout)
         pane.easterEggs = model.pipelines.preferences.easterEggs
         pane.footer.eggLine = pane.easterEggs ? model.eggs.mashLine : nil
+        pane.footer.fun = model.fun.footerLine(at: date).map(FunFooterLine.init)
         return pane
     }
 
@@ -98,6 +101,7 @@ public struct MenuPaneView: View {
             hover: { controller.hover($0) },
             leave: { controller.leavePane() },
             activate: { activate($0) },
+            canPeek: { controller.canPeek() },
             anchor: { controller.register($0, view: $1) })
     }
 

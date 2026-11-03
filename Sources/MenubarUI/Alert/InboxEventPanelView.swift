@@ -251,6 +251,12 @@ struct InboxEventSymbol: View {
             Image(nsImage: butler)
                 .resizable()
                 .frame(width: Self.size, height: Self.size)
+                .overlay {
+                    // Steam rises from the cup at Normal and Party (the fun layer).
+                    if let level = FunModel.currentLevel, level.animates {
+                        CoffeeSteam(level: level)
+                    }
+                }
                 .accessibilityHidden(true)
         } else {
             disc

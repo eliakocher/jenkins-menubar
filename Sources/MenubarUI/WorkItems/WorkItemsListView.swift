@@ -159,6 +159,7 @@ struct WorkItemsListContent: View {
                         Label(WorkItemSections.emptyText, systemImage: "checklist")
                     } description: {
                         Text(verbatim: empty.summary)
+                        FunTipCaption()
                     } actions: {
                         Button("Filters…") {
                             settings?.reveal(.workItemFilters)

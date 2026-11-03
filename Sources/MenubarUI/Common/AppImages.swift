@@ -25,10 +25,18 @@ enum AppImages {
     ///   - hat: the hat, or `nil`
     ///   - bow: the bow frame, or `nil` for the butler standing
     static func butler(hat: ButlerHat?, bow: BowFrame?) -> NSImage {
+        if let bow, bow.isHop {
+            return hop(bow, hat: hat)
+        }
+        return standing(hat: hat, bow: bow)
+    }
+
+    private static func standing(hat: ButlerHat?, bow: BowFrame?) -> NSImage {
         let name: String? = switch (bow, hat) {
         case (.half?, _): "menubar-bow-1"
         case (.full?, _): "menubar-bow-2"
-        case (_, .party?): "menubar-party"
+        // New Year's Eve and the days after wear the party hat in the menu bar too: no variant of its own.
+        case (_, .party?), (_, .newYear?): "menubar-party"
         case (_, .santa?): "menubar-santa"
         default: nil
         }
@@ -36,6 +44,32 @@ enum AppImages {
             return butler
         }
         return cached
+    }
+
+    /// how far the hop lifts and drops the butler, in points; the hop's images are this much taller than 18 pt each side
+    static let hopHeight: CGFloat = 2
+
+    /// Returns a frame of the hop: `icons/menubar-wink.png` when the file is there, else the standing butler drawn
+    /// ``hopHeight`` points higher or lower in an image that is 2 × ``hopHeight`` points taller, so he stays in place at rest
+    /// (the menu bar centers an image) and the hop never clips.
+    private static func hop(_ frame: BowFrame, hat: ButlerHat?) -> NSImage {
+        if let wink = variants["menubar-wink"] ?? loadTemplate("menubar-wink") {
+            return wink
+        }
+        let base = standing(hat: hat, bow: nil)
+        let key = "hop-\(frame == .hopUp ? "up" : "down")-\(hat?.rawValue ?? "none")"
+        if let cached = variants[key] {
+            return cached
+        }
+        let size = NSSize(width: base.size.width, height: base.size.height + 2 * hopHeight)
+        let lift = frame == .hopUp ? 2 * hopHeight : 0
+        let image = NSImage(size: size, flipped: false) { _ in
+            base.draw(in: NSRect(x: 0, y: lift, width: base.size.width, height: base.size.height))
+            return true
+        }
+        image.isTemplate = true
+        variants[key] = image
+        return image
     }
 
     /// the template variants loaded so far; a file that is missing is looked for again each time, which costs nothing
@@ -72,14 +106,55 @@ enum AppImages {
         return image
     }()
 
-    /// Returns the image of an alert (ALERT-02), with the hat the alert's butler wears: `icons/happy-party.png`,
-    /// `happy-santa.png` or `sad-santa.png`. A file that isn't in the bundle changes nothing: the plain butler shows.
+    /// Returns the image of an alert (ALERT-02), with the hat the alert's butler wears. The art files are
+    /// `icons/<happy|sad>-<name>.png`, where the name is `party` (also New Year's), `santa`, `halloween`, `carnival` or `easter`.
+    /// A file that isn't in the bundle changes nothing: the plain butler shows. New Year's sad butler has no file
+    /// (`sad-party` doesn't exist) and stays plain.
     static func alert(_ icon: AlertContent.Icon, hat: ButlerHat? = nil) -> NSImage {
-        if let hat, let image = hatted("\(icon.rawValue)-\(hat == .party ? "party" : "santa")") {
+        if let hat, let image = hatted("\(icon.rawValue)-\(artName(of: hat))") {
             return image
         }
         return icon == .happy ? happy : sad
     }
+
+    private static func artName(of hat: ButlerHat) -> String {
+        switch hat {
+        case .party, .newYear: "party"
+        case .santa: "santa"
+        case .witch: "halloween"
+        case .carnival: "carnival"
+        case .easter: "easter"
+        }
+    }
+
+    /// Returns whether a butler wearing a hat has no art and gets the drawn hat over the plain butler instead: the
+    /// witch's hat and the New Year's hat, when their files are missing. The sad New Year's butler stays plain.
+    static func drawsFallbackHat(_ icon: AlertContent.Icon, hat: ButlerHat?) -> Bool {
+        guard let hat, hat == .witch || hat == .newYear, !(hat == .newYear && icon == .sad) else {
+            return false
+        }
+        return hatted("\(icon.rawValue)-\(artName(of: hat))") == nil
+    }
+
+    /// The size to show an alert's butler at, in a box of `box` points. The plain art is square and fills the box. The
+    /// seasonal art is taller than square, because the hat sits on top: it keeps the plain butler's scale (times
+    /// ``seasonalScale``), so his face and body read as big as the plain butler's, and the hat rises above the box.
+    static func alertSize(of image: NSImage, box: CGFloat) -> CGSize {
+        guard let rep = image.representations.first, rep.pixelsHigh > 0 else {
+            return CGSize(width: box, height: box)
+        }
+        let (width, height) = (CGFloat(rep.pixelsWide), CGFloat(rep.pixelsHigh))
+        if abs(width / height - 1) < 0.15 {
+            return CGSize(width: box, height: box)
+        }
+        let scale = box / plainButlerPixels * seasonalScale
+        return CGSize(width: width * scale, height: height * scale)
+    }
+
+    /// the plain butler's art is 238 px square
+    private static let plainButlerPixels: CGFloat = 238
+    /// the tall art's scale against the plain butler's, so that the faces match
+    static let seasonalScale: CGFloat = 0.72
 
     private static var hattedImages: [String: NSImage] = [:]
 
@@ -96,7 +171,15 @@ enum AppImages {
 
     /// Outside a bundle, as in the tests, the resources aren't there.
     private static func load(_ name: String) -> NSImage? {
-        Bundle.main.url(forResource: name, withExtension: "png").flatMap(NSImage.init(contentsOf:))
+        var url = Bundle.main.url(forResource: name, withExtension: "png")
+        #if DEBUG
+        // Outside a bundle, as in the renders, the repo's own icons stand in.
+        if url == nil {
+            let file = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appending(path: "icons/\(name).png")
+            url = FileManager.default.fileExists(atPath: file.path) ? file : nil
+        }
+        #endif
+        return url.flatMap(NSImage.init(contentsOf:))
     }
 
     private static func symbol(_ name: String) -> NSImage {

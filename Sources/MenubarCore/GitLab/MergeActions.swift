@@ -223,6 +223,8 @@ public enum MergeActivity: Hashable, Sendable {
 /// writes (MR-16). Every write runs on the user's click only; after it the state and the details are loaded again.
 @Observable @MainActor
 public final class MergeRequestMergeStore {
+    /// called when a merge started from the app went through, for the fun layer's celebration; ``AppModel`` sets it
+    @ObservationIgnored public var onMerged: (@MainActor (MergeRequest) -> Void)?
     private struct Entry {
         var state: MergeState?
         var updatedAt: Date?
@@ -381,6 +383,9 @@ public final class MergeRequestMergeStore {
             entry.activity = .failed(action, message: error, needsToken: false)
         } else {
             entry.activity = .succeeded(action)
+            if action == .merge {
+                onMerged?(mergeRequest)
+            }
         }
         entries[key] = entry
     }

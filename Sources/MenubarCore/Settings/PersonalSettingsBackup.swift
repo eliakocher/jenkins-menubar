@@ -72,7 +72,7 @@ public enum PersonalSettingsBackup {
             .bool
         case .workItemsWithLabels, .workItemsWithoutLabels, .workItemsHideOnRows: .strings
         case .hideSuccessfulAfter, .hideFailedAfter, .alertStyle, .iconStyle, .workItemsScope, .workItemsType,
-            .workItemsState, .workItemsSort, .workItemsLabelsMatch, .globalShortcut, .appearance:
+            .workItemsState, .workItemsSort, .workItemsLabelsMatch, .globalShortcut, .appearance, .funLevel:
             .string
         }
     }

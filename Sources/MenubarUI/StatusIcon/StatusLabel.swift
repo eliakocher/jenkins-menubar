@@ -170,7 +170,8 @@ enum StatusMarkersImage {
         .font(Font(NSFont.menuBarFont(ofSize: 0)))
         .monospacedDigit()
         .foregroundStyle(label)
-        .frame(height: height)
+        // The hop's images are taller than the butler, so the hop doesn't clip.
+        .frame(height: model.bow?.isHop == true ? height + 2 * AppImages.hopHeight : height)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 2
         return renderer.nsImage ?? AppImages.butler(hat: nil, bow: nil)

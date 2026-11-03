@@ -64,9 +64,21 @@ public struct AlertContent: Codable, Hashable, Sendable {
     public var eggLine: String?
     /// the hat the alert's butler wears (EGG-03, EGG-04); `nil` for none
     public var hat: ButlerHat?
+    /// the confetti or fireworks that play over the alert; `nil` for none (the fun layer, `docs/easter-eggs.md`)
+    public var celebration: FunCelebration?
+    /// the rain or storm over a failed build's butler; `nil` for none (the fun layer, `docs/easter-eggs.md`)
+    public var weather: SadWeather?
+    /// the fun level the alert was made under, which sets how much its butler moves; `nil` with the easter eggs off or at
+    /// Subtle
+    public var funLevel: FunLevel?
     /// the project's name, the banner's subtitle and the caption above the alert window's headline; only while there
     /// are several projects (plan Phase 13)
     public var project: String?
+    /// whose build it is: "Your build" or "Watching" in the alert window, "Watching · " in a banner's title; `nil` for
+    /// content made before the field existed
+    public var ownership: Ownership?
+    /// who the watched build belongs to, as Jenkins names its MR author; `nil` for my builds and when Jenkins has none
+    public var watchedAuthor: String?
 
     public init(
         result: ResultKind,
@@ -82,10 +94,20 @@ public struct AlertContent: Codable, Hashable, Sendable {
         rebuild: BuildID? = nil,
         hide: BuildID? = nil,
         eggLine: String? = nil,
-        hat: ButlerHat? = nil
+        hat: ButlerHat? = nil,
+        celebration: FunCelebration? = nil,
+        weather: SadWeather? = nil,
+        funLevel: FunLevel? = nil,
+        ownership: Ownership? = nil,
+        watchedAuthor: String? = nil
     ) {
+        self.ownership = ownership
+        self.watchedAuthor = watchedAuthor
         self.eggLine = eggLine
         self.hat = hat
+        self.celebration = celebration
+        self.weather = weather
+        self.funLevel = funLevel
         self.headlineParts = headlineParts
         self.rebuild = rebuild
         self.hide = hide
@@ -108,12 +130,22 @@ public struct AlertContent: Codable, Hashable, Sendable {
         return String(bannerBody.dropLast(eggLine.count + 1))
     }
 
+    /// whether the alert is about a build I only watch, which offers no write action (Rebuild)
+    public var isWatched: Bool {
+        ownership == .watched
+    }
+
+    /// whether the alert offers Rebuild: only for my own failed build, never for a watched one
+    public var offersRebuild: Bool {
+        rebuild != nil && !isWatched
+    }
+
     /// the alert window's buttons: the default action first, then the others of Open build, Rebuild (only with a build
     /// to rebuild, PIPE-09), Open MR (only with an MR link) and Dismiss
     public var buttons: [Action] {
         let others = [Action.openBuild, .rebuild, .openMergeRequest, .dismiss].filter {
             $0 != defaultAction && ($0 != .openMergeRequest || links.mergeRequest != nil)
-                && ($0 != .rebuild || rebuild != nil)
+                && ($0 != .rebuild || offersRebuild)
         }
         return [defaultAction] + others
     }
@@ -132,7 +164,7 @@ public struct AlertContent: Codable, Hashable, Sendable {
     /// `build-and-mr` with an MR link, otherwise `build`; with Rebuild for a build to rebuild (PIPE-09); with Open
     /// Console and Hide for a live alert
     public var bannerCategory: BannerCategory {
-        BannerCategory(mergeRequest: links.mergeRequest != nil, rebuild: rebuild != nil, live: isLive)
+        BannerCategory(mergeRequest: links.mergeRequest != nil, rebuild: offersRebuild, live: isLive)
     }
 
     /// the banner's actions, in the order of its category: Open MR and Open build, or Open build alone; then Rebuild
@@ -152,6 +184,21 @@ public struct AlertContent: Codable, Hashable, Sendable {
         case .openMergeRequest: links.mergeRequest
         case .openConsole: links.console
         case .rebuild, .hide, .dismiss: nil
+        }
+    }
+
+    /// Whose build an alert is about.
+    public enum Ownership: String, Codable, Hashable, Sendable, CaseIterable {
+        /// one of my MRs' jobs or my branches
+        case mine
+        /// a job I watch, which somebody else owns
+        case watched
+
+        /// Returns the ownership of a build.
+        ///
+        /// - Parameter kind: the build's kind
+        public init(_ kind: JobKind) {
+            self = kind == .watched ? .watched : .mine
         }
     }
 

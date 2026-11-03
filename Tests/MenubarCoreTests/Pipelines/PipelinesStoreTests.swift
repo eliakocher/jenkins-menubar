@@ -500,6 +500,47 @@ struct PipelinesStoreTests {
         #expect(harness.store.userState.watched.isEmpty)
     }
 
+    // MARK: WATCH-07
+
+    @Test("WATCH-07 watches a job opened from a link by its name, and tells mine, watched and unfollowed apart")
+    func watchesAnOpenedJob() async throws {
+        let harness = try Harness()
+        harness.answerJobs(["MR-1"])
+        harness.answer("MR-1", number: 7)
+        harness.answer("feature%252Ffoo", number: 4)
+        try await harness.check()
+        let store = harness.store
+
+        #expect(store.following(job: "MR-1") == .mine)
+        #expect(store.following(job: "feature%252Ffoo") == nil)
+
+        // A branch job's name, still URL-encoded, is not a link or a number: it is watched as it is.
+        let outcome = try await store.watch(job: "feature%252Ffoo").get()
+        #expect(outcome.watched == WatchedJob(job: "feature%252Ffoo", label: "feature/foo", added: Harness.start))
+        #expect(store.following(job: "feature%252Ffoo") == .watched)
+        #expect(store.userState.watched.map(\.job) == ["feature%252Ffoo"])
+
+        // Again: nothing added; mine: refused, nothing stored.
+        #expect(try await store.watch(job: "feature%252Ffoo").get() == .alreadyWatching(outcome.watched))
+        #expect(await store.watch(job: "MR-1") == .failure(.mine(job: "MR-1")))
+        #expect(store.userState.watched.count == 1)
+
+        store.unwatch("feature%252Ffoo")
+        #expect(store.following(job: "feature%252Ffoo") == nil)
+    }
+
+    @Test("WATCH-07 a job that can't be watched is logged as a warning, and stores nothing")
+    func opensAJobThatIsGone() async throws {
+        let harness = try Harness()
+        harness.answer("MR-9", status: 404)
+
+        await harness.store.watchOpened(job: "MR-9")
+
+        #expect(harness.store.userState.watched.isEmpty)
+        let messages = await harness.messages()
+        #expect(messages.contains { $0.hasPrefix("Couldn't watch !9") })
+    }
+
     // MARK: WATCH-04
 
     @Test("WATCH-04 watched build alerts like mine")

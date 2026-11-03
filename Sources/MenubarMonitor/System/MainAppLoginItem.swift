@@ -1,3 +1,4 @@
+import Foundation
 import MenubarCore
 import ServiceManagement
 
@@ -26,5 +27,11 @@ struct MainAppLoginItem: LoginItem {
 
     func openSystemSettings() {
         SMAppService.openSystemSettingsLoginItems()
+    }
+
+    var place: LoginItemPlace {
+        let path = Bundle.main.bundlePath
+        let quarantined = getxattr(path, "com.apple.quarantine", nil, 0, 0, XATTR_NOFOLLOW) >= 0
+        return LoginItemPlace(bundlePath: path, isQuarantined: quarantined)
     }
 }

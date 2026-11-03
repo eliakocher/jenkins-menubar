@@ -222,6 +222,8 @@ struct PipelinesListContent: View {
     private func emptyState(_ empty: PipelinesListModel.Empty) -> some View {
         ContentUnavailableView {
             Label(empty.title, systemImage: "hammer")
+        } description: {
+            FunTipCaption()
         } actions: {
             if empty.offersWatch {
                 Button("Watch a Build…") { actions.watchBuild() }

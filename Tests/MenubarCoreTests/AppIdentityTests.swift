@@ -18,7 +18,7 @@ struct AppIdentityTests {
         #expect(script.contains("<key>CFBundleExecutable</key><string>\(AppIdentity.displayName)</string>"))
         #expect(script.contains("<key>CFBundleName</key><string>\(AppIdentity.displayName)</string>"))
         #expect(script.contains("<key>CFBundleDisplayName</key><string>\(AppIdentity.displayName)</string>"))
-        #expect(script.contains("build/\(AppIdentity.bundleFileName)"))
+        #expect(script.contains("build/app.noindex/\(AppIdentity.bundleFileName)"))
         let schemes = AppIdentity.urlSchemes.map { "<string>\($0)</string>" }.joined()
         #expect(script.contains("<key>CFBundleURLSchemes</key><array>\(schemes)</array>"))
         #expect(script.contains("--product \(Self.packageProduct)") && script.contains("$bin/\(Self.packageProduct)"))

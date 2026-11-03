@@ -14,7 +14,7 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-app=$root/build/MegaMonitor.app
+app=$root/build/app.noindex/MegaMonitor.app
 manifest=$root/build/gallery/manifest.json
 shots=$root/docs/design/shots
 
@@ -78,7 +78,7 @@ trap '[[ -n $gallery ]] && kill "$gallery" 2>/dev/null; rm -rf "$lock"; true' EX
 
 "$root/build.sh" --debug >/dev/null
 # The run starts a copy of its own, so that a release build another lane starts meanwhile can't swap the app.
-gallery_app=$root/build/gallery/MegaMonitor.app
+gallery_app=$root/build/gallery.noindex/MegaMonitor.app
 rm -rf "$gallery_app"
 mkdir -p "$(dirname "$gallery_app")" "$shots"
 ditto "$app" "$gallery_app"

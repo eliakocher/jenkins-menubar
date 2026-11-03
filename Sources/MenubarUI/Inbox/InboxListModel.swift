@@ -120,6 +120,9 @@ struct InboxListModel: Sendable {
         var title: String { group.title }
     }
 
+    /// the title of the empty state of a Pending list with nothing in it: Inbox Zero, which the fun layer celebrates
+    static let zeroTitle = "Inbox Zero"
+
     /// The empty state: a title and a line.
     struct Empty: Hashable, Sendable {
         var title: String
@@ -240,7 +243,7 @@ struct InboxListModel: Sendable {
             return Empty(title: "Nothing Here", detail: "No \(filter.state.title.lowercased()) to-dos match the filter.", symbol: "line.3.horizontal.decrease.circle")
         }
         switch filter.state {
-        case .pending: return Empty(title: "Inbox Zero", detail: "Nothing needs you right now.", symbol: "tray")
+        case .pending: return Empty(title: zeroTitle, detail: "Nothing needs you right now.", symbol: "tray")
         case .snoozed: return Empty(title: "Nothing Snoozed", detail: "Snoozed to-dos wait here until their time comes.", symbol: "moon.zzz")
         case .done: return Empty(title: "Nothing Done Yet", detail: "The to-dos you finish show up here.", symbol: "checkmark.circle")
         }

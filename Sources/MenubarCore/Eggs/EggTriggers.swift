@@ -47,11 +47,36 @@ public struct KonamiMatcher: Sendable {
     }
 }
 
-/// One frame of the butler's bow in the status icon.
+/// One frame of the butler in the status icon while an egg plays: the Konami bow, or the surprise's hop.
 public enum BowFrame: Hashable, Sendable {
     case upright
     case half
     case full
+    /// the butler a little higher than he stands (the hop, or `icons/menubar-wink.png` when the file is there)
+    case hopUp
+    /// the butler a little lower than he stands
+    case hopDown
+
+    /// whether this is a frame of the hop
+    public var isHop: Bool { self == .hopUp || self == .hopDown }
+}
+
+/// The steps of the butler's hop in the menu bar, the surprise's "nod" (the user, 2026-11-03: the half bow was too short
+/// to notice): up, down, up, down, 0.3 s each, 1.2 s in all. Nothing moves under Reduce Motion.
+public enum HopSequence {
+    /// how long the whole hop takes
+    public static let duration = Duration.milliseconds(1200)
+
+    /// Returns the frames and how long each stays.
+    ///
+    /// - Parameter reduceMotion: whether Reduce Motion is on
+    /// - Returns: the steps, none under Reduce Motion
+    public static func steps(reduceMotion: Bool) -> [(frame: BowFrame, duration: Duration)] {
+        guard !reduceMotion else {
+            return []
+        }
+        return [BowFrame.hopUp, .hopDown, .hopUp, .hopDown].map { (frame: $0, duration: Duration.milliseconds(300)) }
+    }
 }
 
 /// The steps of the bow (EGG-02): upright, half bow, full bow, half bow, upright, 0.4 s each; under Reduce Motion the

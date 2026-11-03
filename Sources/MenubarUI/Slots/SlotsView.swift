@@ -153,6 +153,9 @@ struct SlotsContent<Detail: View>: View {
     var retry: (() -> Void)?
     @Environment(\.slotOpenInTab) private var openInTab
     @Environment(SettingsStore.self) private var settings: SettingsStore?
+    /// which header or row has the keys, and whether a key put it there (then the focus shows)
+    @FocusState private var focus: SlotFocus?
+    @ViewState private var keyboardUsed = false
     private let detail: (WorkItem.ID) -> Detail
 
     init(
@@ -225,7 +228,7 @@ struct SlotsContent<Detail: View>: View {
                         SlotCard(
                             slot: slot, today: today, project: model.project, statusPrefix: model.statusPrefix,
                             typePrefix: model.typePrefix, selection: selection,
-                            select: { selection = $0 }, actions: actions,
+                            select: { selection = $0 }, actions: actions, keys: keys(scroller),
                             isExpanded: isExpanded(slot), setExpanded: { setExpanded(slot, $0) }
                         )
                         .id(slot.name)
@@ -254,6 +257,21 @@ struct SlotsContent<Detail: View>: View {
                 setExpanded(slot, true)
             }
         }
+    }
+
+    /// What the rows and headers need for the keys: ↑ and ↓ select the row above or below, in the order they are on
+    /// screen, across the epics and the open cards.
+    private func keys(_ scroller: ScrollViewProxy) -> SlotKeys {
+        SlotKeys(
+            focus: $focus, isKeyboard: keyboardUsed, setKeyboard: { keyboardUsed = $0 },
+            neighbor: { id, delta in
+                SlotKeyboard.neighbor(of: id, by: delta, in: SlotKeyboard.visibleIDs(slots: model.slots, isExpanded: isExpanded))
+            },
+            go: { id in
+                selection = id
+                focus = .item(id)
+                scroller.scrollTo(id)
+            })
     }
 
     /// Whether a slot's card is open: the user's choice, else the default; every card while the search has a text, so the
@@ -376,14 +394,26 @@ struct SlotCard: View {
     var selection: WorkItem.ID?
     var select: (WorkItem.ID) -> Void = { _ in }
     let actions: GitLabSectionActions
+    let keys: SlotKeys
     /// whether the card is open (SLOT-15)
     var isExpanded = true
     /// opens or closes the card
     var setExpanded: (Bool) -> Void = { _ in }
 
+    /// the keys, with this card's own part: ← on a row closes it, ↓ on its header goes to its first row
+    private var cardKeys: SlotKeys {
+        var keys = keys
+        keys.fold = {
+            setExpanded(false)
+            self.keys.focus.wrappedValue = .header(slot.name)
+        }
+        keys.first = { isExpanded ? SlotKeyboard.order(of: slot).first : nil }
+        return keys
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SlotHeader(slot: slot, isExpanded: isExpanded, setExpanded: setExpanded)
+            SlotHeader(slot: slot, isExpanded: isExpanded, setExpanded: setExpanded, keys: cardKeys)
             if isExpanded {
                 content
                     .padding(.horizontal, 14)
@@ -441,7 +471,7 @@ struct SlotCard: View {
                 ForEach(commitment.groups) { group in
                     SlotEpicSection(
                         group: group, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
-                        selection: selection, select: select, actions: actions
+                        selection: selection, select: select, actions: actions, keys: cardKeys
                     )
                     .padding(.leading, 14)
                 }
@@ -456,7 +486,7 @@ struct SlotCard: View {
             ForEach(slot.otherGroups) { group in
                 SlotEpicSection(
                     group: group, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
-                    selection: selection, select: select, actions: actions)
+                    selection: selection, select: select, actions: actions, keys: cardKeys)
             }
         }
     }

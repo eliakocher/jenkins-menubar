@@ -130,6 +130,41 @@ extension MergeRequestsFixtures {
 }
 
 extension MergeRequestsFixtures {
+    /// The suggestions for !17 (MR-15), ranked by the real rules: two open approval rules name Taylor Green and Morgan
+    /// Chen (code owners of `*.swift` in Core), Lee Wu and Dana Brown (Backend Review); the squad adds Avery Singh.
+    var suggestions17: ReviewerSuggestionList {
+        typealias Facts = ReviewerSuggestionFacts
+        func person(_ username: String, _ name: String) -> Facts.Person { .init(username: username, name: name) }
+        let people = [
+            person("tgreen", "Taylor Green"), person("mchen", "Morgan Chen"), person("lwu", "Lee Wu"),
+            person("dbrown", "Dana Brown"), person("asingh", "Avery Singh"),
+        ]
+        let facts = Facts(
+            author: "jdoe", reviewers: ["slee", "akim", "rmeyer", "cnovak", "privera", "kweber"], approvedBy: ["akim"],
+            targetBranch: "develop", changedPaths: ["Sources/Export/ExportJob.swift"],
+            rules: [
+                .init(
+                    name: "*.swift", type: .codeOwner, section: "Core", approvalsRequired: 1,
+                    eligible: [person("tgreen", "Taylor Green"), person("mchen", "Morgan Chen")]),
+                .init(
+                    name: "Backend Review", type: .regular, approvalsRequired: 1,
+                    eligible: [person("lwu", "Lee Wu"), person("dbrown", "Dana Brown")]),
+            ])
+        return ReviewerSuggester.suggest(
+            facts: facts, people: people, peopleAreComplete: true, squads: SlotTeams("Alpha: jdoe, dbrown, asingh"))
+    }
+
+    /// !17 with nobody missing and a squad: only optional suggestions
+    var suggestions17Optional: ReviewerSuggestionList {
+        let facts = ReviewerSuggestionFacts(author: "jdoe", reviewers: ["slee"], targetBranch: "develop")
+        return ReviewerSuggester.suggest(
+            facts: facts,
+            people: [.init(username: "dbrown", name: "Dana Brown"), .init(username: "asingh", name: "Avery Singh")],
+            peopleAreComplete: true, squads: SlotTeams("Alpha: jdoe, dbrown, asingh"))
+    }
+}
+
+extension MergeRequestsFixtures {
     /// !16's changes (MR-11): a Swift file with two hunks and a line without a newline at its end, a new file, a rename,
     /// a deleted file, an image, a lockfile GitLab collapsed, and a big generated file that starts folded
     var changes16: MergeRequestChanges {
@@ -264,6 +299,21 @@ extension GalleryCatalog {
                             states: [m.mr17.reference: .loaded(m.details17)], writeAccess: access, reReviewPhase: phase))
             }
         }
+        /// !17 with the suggested reviewers (MR-15) in a state
+        func suggested(
+            _ state: String, access: WriteAccess = .allowed, phase: SuggestionAddPhase? = nil,
+            suggestions: @escaping @MainActor (MergeRequestsFixtures) -> ReviewerSuggestionState = { .loaded($0.suggestions17) }
+        ) -> GalleryEntry {
+            GalleryEntry(screen: "merge-requests", state: state, size: reviewersSize) { f in
+                let m = f.mergeRequestsScreen
+                return MergeRequestsGalleryView(panel: m.panel(m.sections + [m.mr17]), selection: m.mr17.id, size: reviewersSize)
+                    .environment(
+                        \.mergeRequestDetailsFixtures,
+                        MergeRequestDetailsFixtures(
+                            states: [m.mr17.reference: .loaded(m.details17)], writeAccess: access,
+                            suggestions: [m.mr17.reference: suggestions(m)], suggestionPhase: phase))
+            }
+        }
         /// The Changes card of !16 in a layout, from a defaults suite of its own, so the user's choice doesn't leak in.
         func changes(
             _ state: String, layout: DiffLayoutChoice, width: CGFloat, unfoldedFolders: Set<String> = [],
@@ -296,6 +346,11 @@ extension GalleryCatalog {
             reviewers("reviewers-confirm", phase: .confirming),
             reviewers("reviewers-token", access: .readOnly, phase: .needsToken),
             reviewers("reviewers-failed", phase: .done(failed)),
+            suggested("reviewers-suggested"),
+            suggested("reviewers-suggested-confirm", phase: .confirming),
+            suggested("reviewers-suggested-token", access: .readOnly, phase: .needsToken),
+            suggested("reviewers-suggested-loading") { _ in .loading },
+            suggested("reviewers-suggested-optional") { .loaded($0.suggestions17Optional) },
             entry("details", merge: { .init(state: $0.mergeBlocked) }) { ($0.mr16, .loaded($0.details16)) },
             // The Changes card alone, at the detail's width: it sits below the other cards. Inline, then side by side.
             changes("changes", layout: .inline, width: 640),

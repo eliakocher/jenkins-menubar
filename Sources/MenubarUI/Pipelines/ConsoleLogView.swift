@@ -39,6 +39,8 @@ enum ConsoleLogAppearance {
     static let warningBand = dynamic(light: 0xFF9F0A, dark: 0xFFB340, alpha: (0.08, 0.10))
     static let successBand = dynamic(light: 0x34C759, dark: 0x30D158, alpha: (0.07, 0.09))
     static let currentBand = dynamic(light: 0xFF3B30, dark: 0xFF453A, alpha: (0.18, 0.26))
+    /// the line a click on a stage jumped to: blue, since it is no error
+    static let stageBand = dynamic(light: 0x0A84FF, dark: 0x409CFF, alpha: (0.18, 0.28))
 
     /// The color of a light and a dark hex value, by the appearance it draws in.
     static func dynamic(light: UInt32, dark: UInt32, alpha: (CGFloat, CGFloat) = (1, 1)) -> NSColor {
@@ -185,7 +187,8 @@ final class ConsoleLogTextView: NSTextView {
         layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { fragment, _, _, range, _ in
             let line = controller.line(at: layoutManager.characterIndexForGlyph(at: range.location))
             let kind = controller.kinds[line]
-            let color = line == current ? ConsoleLogAppearance.currentBand : ConsoleLogAppearance.band(kind)
+            let marked = controller.currentIsStage ? ConsoleLogAppearance.stageBand : ConsoleLogAppearance.currentBand
+            let color = line == current ? marked : ConsoleLogAppearance.band(kind)
             guard let color else { return }
             color.setFill()
             NSRect(x: rect.minX, y: fragment.minY + origin.y, width: rect.width, height: fragment.height).fill(using: .sourceOver)
@@ -284,8 +287,16 @@ final class ConsoleLogController {
     @ObservationIgnored private(set) var lineStarts: [Int] = []
     @ObservationIgnored private(set) var kinds: [ConsoleLogLineKind] = []
     @ObservationIgnored private var errorLines: [Int] = []
+    /// the shown blocks' first lines, by block id, for a jump to a line of a block
+    @ObservationIgnored private var firstLines: [Int: Int] = [:]
+    /// a line to show once its block is in the text view
+    @ObservationIgnored private var pendingReveal: ConsoleLogLocation?
+    /// counts the jumps, so that the scroll to the end a first update schedules doesn't undo one
+    @ObservationIgnored private var revealGeneration = 0
     @ObservationIgnored private(set) var linesBefore: Int?
     @ObservationIgnored private(set) var currentErrorLine: Int?
+    /// whether the lit line is a stage's first line, not an error
+    @ObservationIgnored private(set) var currentIsStage = false
     @ObservationIgnored nonisolated(unsafe) private var observers: [any NSObjectProtocol] = []
     /// called when the reader scrolls to the top or the bottom, to load the next page
     @ObservationIgnored var reachedTop: () -> Void = {}
@@ -440,6 +451,7 @@ final class ConsoleLogController {
         storage.endEditing()
         shown = blocks.map { ($0.id, $0.slice.utf16Count) }
         rebuildLines(blocks)
+        defer { applyPendingReveal() }
         if removedAbove > 0 || addedAbove > 0 {
             // The lines above changed: the next jump starts from what shows.
             currentErrorLine = nil
@@ -462,7 +474,9 @@ final class ConsoleLogController {
         starts.reserveCapacity(count)
         kinds.reserveCapacity(count)
         var offset = 0
+        var firstLines: [Int: Int] = [:]
         for block in blocks {
+            firstLines[block.id] = starts.count
             for start in block.slice.lineStarts {
                 starts.append(offset + start)
             }
@@ -470,6 +484,7 @@ final class ConsoleLogController {
             offset += block.slice.utf16Count
         }
         lineStarts = starts
+        self.firstLines = firstLines
         self.kinds = kinds
         errorLines = kinds.indices.filter { kinds[$0] == .error }
     }
@@ -549,9 +564,14 @@ final class ConsoleLogController {
     func scrollToEnd() {
         guard let textView else { return }
         textView.scrollToEndOfDocument(nil)
-        // Again once the view has its size, as on the first update.
-        DispatchQueue.main.async { [weak textView] in
-            textView?.scrollToEndOfDocument(nil)
+        // Again once the view has its size, as on the first update, unless a jump to a line came meanwhile.
+        let generation = revealGeneration
+        DispatchQueue.main.async { [weak self, weak textView] in
+            MainActor.assumeIsolated {
+                if self?.revealGeneration == generation {
+                    textView?.scrollToEndOfDocument(nil)
+                }
+            }
         }
     }
 
@@ -597,19 +617,60 @@ final class ConsoleLogController {
         } else {
             index = errorLines.lastIndex { $0 < from } ?? (errorLines.count - 1)
         }
-        let line = errorLines[index]
+        show(line: errorLines[index], errorNumber: index + 1)
+    }
+
+    /// Shows a line of the log in the middle of the view, lit like the current error.
+    ///
+    /// Asked before the line's block is in the text view, as when its page was just loaded, it waits for the update that
+    /// brings it.
+    ///
+    /// - Parameter location: the line, by its block
+    func reveal(_ location: ConsoleLogLocation) {
+        pendingReveal = location
+        revealGeneration += 1
+        applyPendingReveal()
+    }
+
+    private func applyPendingReveal() {
+        guard let location = pendingReveal, let first = firstLines[location.blockID] else { return }
+        let line = first + location.line
+        guard line < lineStarts.count else { return }
+        pendingReveal = nil
+        show(line: line, errorNumber: nil)
+        // Again once the view has its size: a first layout may still move the text.
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                if let self, self.currentErrorLine == line {
+                    self.show(line: line, errorNumber: nil)
+                }
+            }
+        }
+    }
+
+    private func show(line: Int, errorNumber: Int?) {
+        guard let textView, let scrollView, let layoutManager = textView.layoutManager,
+            let container = textView.textContainer, line < lineStarts.count
+        else { return }
         currentErrorLine = line
-        currentError = index + 1
+        currentError = errorNumber
+        currentIsStage = errorNumber == nil
         let range = range(ofLine: line)
         layoutManager.ensureLayout(forCharacterRange: range)
         let glyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
         let rect = layoutManager.boundingRect(forGlyphRange: glyphs, in: container)
         let y = rect.midY + textView.textContainerOrigin.y - scrollView.contentView.bounds.height / 2
-        scrollView.contentView.scroll(to: NSPoint(x: 0, y: max(0, min(y, textView.frame.height - scrollView.contentView.bounds.height))))
+        let top = max(0, min(y, textView.frame.height - scrollView.contentView.bounds.height))
+        // Unscrolled sideways, the clip view's origin is minus the width of the line numbers beside it, not 0.
+        let left = -(scrollView.verticalRulerView?.ruleThickness ?? 0)
+        scrollView.contentView.scroll(to: NSPoint(x: left, y: top))
         scrollView.reflectScrolledClipView(scrollView.contentView)
         textView.needsDisplay = true
         ruler?.needsDisplay = true
         textView.showFindIndicator(for: range)
+        // The indicator may scroll sideways to its range; a line starts at the left edge.
+        scrollView.contentView.scroll(to: NSPoint(x: left, y: top))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     /// Opens the find bar over the log, for the loaded text.

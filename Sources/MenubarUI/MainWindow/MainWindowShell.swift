@@ -85,25 +85,30 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
         .navigationSubtitle(opened.selected?.reference ?? model.subtitle ?? "")
         .modifier(
             SectionSearch(
-                isOffered: opened.selected != nil || section.isSearchable, text: searchBinding, prompt: section.searchPrompt,
-                isFocused: $isSearchFocused))
+                isOffered: MainWindowSearch.isOffered(section: section, opened: opened.selected?.kind), text: searchBinding,
+                prompt: MainWindowSearch.prompt(section: section, opened: opened.selected?.kind), isFocused: $isSearchFocused))
         .onChange(of: searchFocusRequest) {
             isSearchFocused = true
         }
         .frame(minHeight: 480)
+        // The butler peeks out of the window's edges now and then (the fun layer).
+        .butlerPeek()
     }
 
-    /// The field's text. Over an opened item the field stays, reads "Search <the section you came from>" and has no list
-    /// to filter: typing takes the window back to that section's list with the query, the item staying under "Opened"
-    /// (``MainWindowSearch``, WIN-06). The two-column window gives way to the three-column one then, which makes the
-    /// system field again, so it takes the focus back once the change is through.
+    /// The field's text. Over an opened item the field belongs to the item's kind (a build searches Pipelines, a merge
+    /// request Merge Requests, a work item Work Items) and starts empty: typing takes the window to that section's list
+    /// with the query, the item staying under "Opened" (``MainWindowSearch``, WIN-06). The two-column window gives way to
+    /// the three-column one then, which makes the system field again, so it takes the focus back once the change is
+    /// through.
     private var searchBinding: Binding<String> {
         Binding(
-            get: { searchText },
+            // Never the query of the section left behind, not even for the frame before the window clears it.
+            get: { opened.selected == nil ? searchText : "" },
             set: { newValue in
-                let returns = MainWindowSearch.returnsToList(typed: newValue, isOpenedItemShown: opened.selected != nil)
+                let target = MainWindowSearch.destination(typed: newValue, opened: opened.selected?.kind)
                 searchText = newValue
-                if returns {
+                if let target {
+                    section = target
                     opened.selection.wrappedValue = nil
                     isSearchFocused = false
                     Task { @MainActor in
@@ -276,16 +281,57 @@ private struct SectionSearch: ViewModifier {
     }
 }
 
-/// What typing into the search field does while an opened item is shown (WIN-06).
+/// What the search field is, and does, while an opened item is shown (WIN-06).
 enum MainWindowSearch {
-    /// Returns whether typed text takes the window back to the section's list: over an opened item, which has no list,
-    /// any text does; clearing the field (or its ✕) leaves the item shown.
+    /// Returns the section an opened item's kind belongs to, whose list its search filters: a build's is Pipelines, a merge
+    /// request's Merge Requests, a work item's Work Items.
+    ///
+    /// - Parameter kind: the opened item's kind
+    /// - Returns: the section, or `nil` for a kind without one, whose field is hidden
+    static func section(for kind: OpenedItem.Kind) -> MainWindowSection? {
+        switch kind {
+        case .build: .pipelines
+        case .mergeRequest: .mergeRequests
+        case .workItem: .workItems
+        }
+    }
+
+    /// Returns whether the search field is there.
+    ///
+    /// - Parameters:
+    ///   - section: the shown section
+    ///   - opened: the kind of the opened item that takes the window, if one does
+    static func isOffered(section: MainWindowSection, opened: OpenedItem.Kind?) -> Bool {
+        guard let opened else {
+            return section.isSearchable
+        }
+        return Self.section(for: opened) != nil
+    }
+
+    /// Returns what the field's placeholder says: over an opened item what its kind searches, else the section's own.
+    ///
+    /// - Parameters:
+    ///   - section: the shown section
+    ///   - opened: the kind of the opened item that takes the window, if one does
+    static func prompt(section: MainWindowSection, opened: OpenedItem.Kind?) -> String {
+        guard let opened, let scope = Self.section(for: opened) else {
+            return section.searchPrompt
+        }
+        // The section's own wording everywhere ("Search builds"), so the field reads the same from Pipelines and from an opened build.
+        return scope.searchPrompt
+    }
+
+    /// Returns the section typed text takes the window to: over an opened item, which has no list, any text takes it to
+    /// the list of the item's kind; clearing the field (or its ✕) leaves the item shown.
     ///
     /// - Parameters:
     ///   - typed: the field's new text
-    ///   - isOpenedItemShown: whether an opened item takes the window
-    /// - Returns: whether the section's list shows again
-    static func returnsToList(typed: String, isOpenedItemShown: Bool) -> Bool {
-        isOpenedItemShown && !typed.isEmpty
+    ///   - opened: the kind of the opened item that takes the window, if one does
+    /// - Returns: the section whose list shows with the query, or `nil` to stay
+    static func destination(typed: String, opened: OpenedItem.Kind?) -> MainWindowSection? {
+        guard let opened, !typed.isEmpty else {
+            return nil
+        }
+        return section(for: opened)
     }
 }

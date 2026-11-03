@@ -150,6 +150,8 @@ public struct PipelinesCheck: Sendable {
         public var alertsArmed: Bool
         /// what the easter eggs remember (EGG-11)
         public var eggs: EggMemory
+        /// the fun layer's store: the green streak and the lines of the moments; `nil` leaves the moments out
+        public var fun: FunStore?
         /// the project to check; `nil` for the primary one (plan Phase 13)
         public var project: ProjectID?
 
@@ -164,8 +166,10 @@ public struct PipelinesCheck: Sendable {
             alertsArmed: Bool,
             eggs: EggMemory = EggMemory(),
             project: ProjectID? = nil,
-            notifications: NotificationPolicy = NotificationPolicy()
+            notifications: NotificationPolicy = NotificationPolicy(),
+            fun: FunStore? = nil
         ) {
+            self.fun = fun
             self.notifications = notifications
             self.project = project
             self.userState = userState
@@ -247,7 +251,9 @@ public struct PipelinesCheck: Sendable {
         let alertStates = AlertPolicy.states(after: result.builds, previous: input.alertStates)
         // The easter eggs add a line to the finished builds' alerts, and keep their streaks (EGG-11).
         var eggs = input.eggs
-        alerts = EggRules.annotate(alerts, memory: &eggs, now: startedAt, enabled: input.preferences.easterEggs)
+        alerts = EggRules.annotate(
+            alerts, memory: &eggs, now: startedAt, enabled: input.preferences.easterEggs, level: input.preferences.funLevel,
+            fun: input.fun)
         // With several projects, an alert names its project (plan Phase 13).
         let projects = services.team.projects()
         if projects.count > 1, let name = Project.names(of: projects)[project.id] {

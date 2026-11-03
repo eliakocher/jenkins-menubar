@@ -15,7 +15,10 @@ struct ConsoleLogCard: View {
 
     @Environment(AppModel.self) private var appModel: AppModel?
     @Environment(\.consoleLogFixture) private var fixture
+    @Environment(\.consoleLogStageJump) private var stageJump
     @ViewState private var isOpen = false
+    /// the stage jump under way: it opens the card, reads until the stage's first line, and scrolls there
+    @ViewState private var jumping: Task<Void, Never>?
     @ViewState private var loader: ConsoleLogLoader?
     @ViewState private var controller: ConsoleLogController?
 
@@ -23,8 +26,10 @@ struct ConsoleLogCard: View {
         DetailCard("Console Log", symbol: "terminal", width: .fullWidth) {
             if isOpen, let loader, let controller {
                 ConsoleLogPanel(
-                    loader: loader, controller: controller, height: 460, consoleURL: consoleURL,
-                    openFullLog: { ConsoleLogWindows.show(build: build, loader: loader, consoleURL: consoleURL, open: open) },
+                    loader: loader, controller: controller, height: 460, consoleURL: consoleURL, saveName: ConsoleLogSave.fileName(for: build),
+                    openFullLog: {
+                        ConsoleLogWindows.show(build: build, loader: loader, consoleURL: consoleURL, open: open)
+                    },
                     open: open)
             }
         } accessory: {
@@ -53,6 +58,25 @@ struct ConsoleLogCard: View {
                 toggle()
             }
         }
+        // A click on a stage in the Stages card: open, find the stage's first line, scroll to it.
+        .onChange(of: stageJump?.pending, initial: true) { _, pending in
+            guard pending != nil, let stage = stageJump?.take() else { return }
+            show(stage: stage)
+        }
+        .onDisappear { jumping?.cancel() }
+    }
+
+    private func show(stage: String) {
+        if !isOpen {
+            toggle()
+        }
+        guard let loader, let controller else { return }
+        jumping?.cancel()
+        jumping = Task {
+            if let location = await loader.locate(stage: stage) {
+                controller.reveal(location)
+            }
+        }
     }
 
     private func toggle() {
@@ -77,13 +101,19 @@ struct ConsoleLogPanel: View {
     /// the log's height; nil fills the room
     var height: CGFloat?
     let consoleURL: URL?
+    /// the file name "Save…" starts with
+    let saveName: String
     /// opens the Full Log window; nil in that window
     var openFullLog: (() -> Void)?
     let open: (URL) -> Void
 
+    @ViewState private var save = ConsoleLogSave()
+    @Environment(\.consoleLogFixture) private var fixture
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             toolbar
+            ConsoleLogSaveStatus(save: save)
             switch loader.phase {
             case .idle, .loading:
                 frame {
@@ -140,6 +170,13 @@ struct ConsoleLogPanel: View {
                     .foregroundStyle(.secondary)
             }
         }
+        #if DEBUG
+        .onAppear {
+            if let state = fixture?.saveState {
+                save.preview(state)
+            }
+        }
+        #endif
     }
 
     private func frame(@ViewBuilder content: () -> some View) -> some View {
@@ -186,6 +223,10 @@ struct ConsoleLogPanel: View {
                 controller.copy()
             }
             .disabled(loader.phase != .loaded)
+            button("Save…", "square.and.arrow.down", titled: titled, help: "Saves the whole log to a file, not only the loaded part") {
+                save.start(source: loader.source, name: saveName)
+            }
+            .disabled(save.isSaving)
             if let openFullLog {
                 button("Open Full Log", "arrow.up.left.and.arrow.down.right", titled: titled, help: "Opens the log in a window of its own") {
                     openFullLog()
@@ -359,7 +400,9 @@ enum ConsoleLogWindows {
             window.makeKeyAndOrderFront(nil)
             return
         }
-        let root = ConsoleLogWindowContent(loader: loader, controller: ConsoleLogController(), consoleURL: consoleURL, open: open)
+        let root = ConsoleLogWindowContent(
+            loader: loader, controller: ConsoleLogController(), consoleURL: consoleURL,
+            saveName: ConsoleLogSave.fileName(for: build), open: open)
         let window = NSWindow(contentViewController: NSHostingController(rootView: root))
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
         let name = build.job.removingPercentEncoding?.removingPercentEncoding ?? build.job
@@ -388,6 +431,7 @@ private struct ConsoleLogWindowContent: View {
     let loader: ConsoleLogLoader
     let controller: ConsoleLogController
     let consoleURL: URL?
+    let saveName: String
     let open: (URL) -> Void
 
     var body: some View {
@@ -398,7 +442,8 @@ private struct ConsoleLogWindowContent: View {
                     ConsoleLogStats(loader: loader)
                 }
             }
-            ConsoleLogPanel(loader: loader, controller: controller, height: nil, consoleURL: consoleURL, open: open)
+            ConsoleLogPanel(
+                loader: loader, controller: controller, height: nil, consoleURL: consoleURL, saveName: saveName, open: open)
         }
         .padding(16)
         .frame(minWidth: 520, minHeight: 320)
@@ -417,6 +462,8 @@ struct ConsoleLogFixture {
     var startsOpen = false
     /// fills the new loader at once, as the gallery's screenshots don't wait for the reads
     var prepare: (@MainActor (ConsoleLogLoader) -> Void)?
+    /// the state "Save…" shows, without saving
+    var saveState: ConsoleLogSave.State?
 }
 
 private struct ConsoleLogFixtureKey: EnvironmentKey {

@@ -11,7 +11,7 @@ extension GalleryCatalog {
         @MainActor func alertView(alert: BuildAlert, notificationsOff: Bool, perform: @escaping (AlertContent.Action) -> Void) -> BuildAlertView {
             BuildAlertView(
                 alert: alert, notificationsOff: notificationsOff,
-                rebuildWithChanges: alert.content.rebuild == nil ? nil : {}, perform: perform)
+                rebuildWithChanges: alert.content.offersRebuild ? {} : nil, perform: perform)
         }
         /// The window with several alerts, the newest first; `shown` is the page's place (0 is the newest).
         @MainActor func paged(_ alerts: [BuildAlert], shown: Int = 0) -> some View {
@@ -26,55 +26,55 @@ extension GalleryCatalog {
                 model: model, rebuildWithChanges: { _ in }, perform: { _, _ in }, dismissAll: {}, onSizeChange: { _ in })
         }
         return [
-            GalleryEntry(screen: "alert", state: "success-mr", size: size(350)) { f in
+            GalleryEntry(screen: "alert", state: "success-mr", size: size(369)) { f in
                 alertView(alert: f.mergeRequestAlert(.success, minutes: 30), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "success-no-mr", size: size(300)) { f in
+            GalleryEntry(screen: "alert", state: "success-no-mr", size: size(319)) { f in
                 alertView(alert: f.branchAlert(.success, minutes: 30), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "unstable-mr", size: size(416)) { f in
+            GalleryEntry(screen: "alert", state: "unstable-mr", size: size(435)) { f in
                 alertView(
                     alert: f.mergeRequestAlert(.unstable, minutes: 42, failedStages: ["tests"], tests: TestCounts(failed: 2, total: 1200)),
                     notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "unstable-no-mr", size: size(346)) { f in
+            GalleryEntry(screen: "alert", state: "unstable-no-mr", size: size(365)) { f in
                 alertView(alert: f.branchAlert(.unstable, minutes: 42, tests: TestCounts(failed: 2, total: 1200)),
                                notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "failure-mr", size: size(416)) { f in
+            GalleryEntry(screen: "alert", state: "failure-mr", size: size(435)) { f in
                 alertView(
                     alert: f.mergeRequestAlert(.failure, minutes: 12, failedStages: ["tests", "deploy"], tests: TestCounts(failed: 3, total: 1200)),
                     notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "failure-no-mr", size: size(346)) { f in
+            GalleryEntry(screen: "alert", state: "failure-no-mr", size: size(365)) { f in
                 alertView(alert: f.branchAlert(.failure, minutes: 12, failedStages: ["build"]), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "failure-no-details", size: size(386)) { f in
+            GalleryEntry(screen: "alert", state: "failure-no-details", size: size(405)) { f in
                 alertView(alert: f.mergeRequestAlert(.failure, minutes: 12), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "aborted-mr", size: size(386)) { f in
+            GalleryEntry(screen: "alert", state: "aborted-mr", size: size(405)) { f in
                 alertView(alert: f.mergeRequestAlert(.aborted, minutes: 5), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "aborted-no-mr", size: size(336)) { f in
+            GalleryEntry(screen: "alert", state: "aborted-no-mr", size: size(355)) { f in
                 alertView(alert: f.branchAlert(.aborted, minutes: 5), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "other-mr", size: size(350)) { f in
+            GalleryEntry(screen: "alert", state: "other-mr", size: size(369)) { f in
                 alertView(alert: f.mergeRequestAlert(.notBuilt, minutes: 0), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "other-no-mr", size: size(300)) { f in
+            GalleryEntry(screen: "alert", state: "other-no-mr", size: size(319)) { f in
                 alertView(alert: f.branchAlert(.notBuilt, minutes: 0), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "no-title", size: size(320)) { f in
+            GalleryEntry(screen: "alert", state: "no-title", size: size(339)) { f in
                 alertView(alert: f.mergeRequestAlert(.success, minutes: 30, title: "!1"), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "long-titles", size: size(416)) { f in
+            GalleryEntry(screen: "alert", state: "long-titles", size: size(435)) { f in
                 var build = f.finished(
                     "feature%252Fa-very-long-branch-name-for-the-report-export", 12, f.longTitle, .failure, durationMinutes: 65,
                     finishedMinutesAgo: 0, failedStages: ["tests"], tests: TestCounts(failed: 12, total: 4200))
                 build.gitLabURL = nil
                 return alertView(alert: f.alert(build), notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "long-stages", size: size(436)) { f in
+            GalleryEntry(screen: "alert", state: "long-stages", size: size(455)) { f in
                 let stages = [
                     "integration-tests-with-a-long-name", "deploy-to-staging", "end-to-end-tests-of-the-report-page",
                     "database-migration-check", "security-scan-of-the-dependencies", "performance-tests-under-load",
@@ -86,41 +86,58 @@ extension GalleryCatalog {
                     notificationsOff: false, perform: { _ in })
             },
             // The easter egg line under the facts, and the hat of the butler (`docs/easter-eggs.md`, rule 7).
-            GalleryEntry(screen: "alert", state: "success-egg-line", size: size(376)) { f in
+            GalleryEntry(screen: "alert", state: "success-egg-line", size: size(395)) { f in
                 var alert = f.mergeRequestAlert(.success, minutes: 30)
                 alert.content.eggLine = "Three for three today. The butler put on a party hat."
                 alert.content.hat = .party
                 return alertView(alert: alert, notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "failure-egg-line", size: size(436)) { f in
+            GalleryEntry(screen: "alert", state: "failure-egg-line", size: size(455)) { f in
                 var alert = f.mergeRequestAlert(
                     .failure, minutes: 12, failedStages: ["tests", "deploy"], tests: TestCounts(failed: 3, total: 1200))
                 alert.content.eggLine = "Third failure in a row. The butler is out of tissues."
                 return alertView(alert: alert, notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "preview-success", size: size(350)) { f in
+            GalleryEntry(screen: "alert", state: "preview-success", size: size(369)) { f in
                 alertView(alert: BuildAlert.preview(.success, team: f.team)!, notificationsOff: false, perform: { _ in })
             },
-            GalleryEntry(screen: "alert", state: "preview-failure", size: size(380)) { f in
+            GalleryEntry(screen: "alert", state: "preview-failure", size: size(399)) { f in
                 alertView(alert: BuildAlert.preview(.failure, team: f.team)!, notificationsOff: false, perform: { _ in })
             },
             // Several alerts in one window: the pager above the butler, Dismiss All next to Dismiss (ALERT-03).
-            GalleryEntry(screen: "alert", state: "paged-1", size: size(416)) { f in
+            GalleryEntry(screen: "alert", state: "paged-1", size: size(435)) { f in
                 paged([f.mergeRequestAlert(.failure, minutes: 12, failedStages: ["tests", "deploy"], tests: TestCounts(failed: 3, total: 1200))])
             },
-            GalleryEntry(screen: "alert", state: "paged-2", size: size(448)) { f in
+            GalleryEntry(screen: "alert", state: "paged-2", size: size(467)) { f in
                 paged(f.pagedAlerts.prefix(2).reversed())
             },
-            GalleryEntry(screen: "alert", state: "paged-2-last", size: size(384)) { f in
+            GalleryEntry(screen: "alert", state: "paged-2-last", size: size(403)) { f in
                 paged(f.pagedAlerts.prefix(2).reversed(), shown: 1)
             },
-            GalleryEntry(screen: "alert", state: "paged-5", size: size(448)) { f in
+            GalleryEntry(screen: "alert", state: "paged-5", size: size(467)) { f in
                 paged(f.pagedAlerts.reversed())
             },
-            GalleryEntry(screen: "alert", state: "paged-5-middle", size: size(448)) { f in
+            GalleryEntry(screen: "alert", state: "paged-5-middle", size: size(467)) { f in
                 paged(f.pagedAlerts.reversed(), shown: 2)
             },
-            GalleryEntry(screen: "alert", state: "notifications-off", size: size(390)) { f in
+            // A build I only watch: the "Watching" tag with the author, and no Rebuild.
+            GalleryEntry(screen: "alert", state: "failure-watched", size: size(386)) { f in
+                alertView(
+                    alert: f.watchedAlert(.failure, minutes: 12, failedStages: ["tests"], tests: TestCounts(failed: 3, total: 1200)),
+                    notificationsOff: false, perform: { _ in })
+            },
+            GalleryEntry(screen: "alert", state: "success-watched", size: size(356)) { f in
+                alertView(alert: f.watchedAlert(.success, minutes: 30), notificationsOff: false, perform: { _ in })
+            },
+            GalleryEntry(screen: "alert", state: "failure-watched-no-author", size: size(356)) { f in
+                alertView(alert: f.watchedAlert(.failure, minutes: 12, author: nil), notificationsOff: false, perform: { _ in })
+            },
+            GalleryEntry(screen: "alert", state: "failure-watched-long-author", size: size(356)) { f in
+                alertView(
+                    alert: f.watchedAlert(.failure, minutes: 12, author: "Alexandra Montgomery-Featherstonehaugh"),
+                    notificationsOff: false, perform: { _ in })
+            },
+            GalleryEntry(screen: "alert", state: "notifications-off", size: size(409)) { f in
                 alertView(alert: f.mergeRequestAlert(.success, minutes: 30), notificationsOff: true, perform: { _ in })
             },
         ]

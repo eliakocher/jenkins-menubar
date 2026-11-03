@@ -213,6 +213,20 @@ public enum ItemLinks {
         }
     }
 
+    /// Whether GitLab's looser links, the issues related to a merge request, can still matter: only when neither the title
+    /// nor GitLab's closing issues name a work item, and the merge request isn't one of the ignored ones. Without it the
+    /// request for them (82 KB, the slowest of the detail's) is left out.
+    ///
+    /// - Parameters:
+    ///   - title: the merge request's title
+    ///   - closes: the issues GitLab says it closes
+    ///   - ignoredPrefix: the title prefix of merge requests that don't count (Team); empty counts every one
+    /// - Returns: whether ``workItems(ofMergeRequest:title:evidence:ignoredPrefix:gitLab:titleOf:)`` would look at the related ones
+    public static func needsRelatedIssues(title: String, closes: [LinkedWorkItem], ignoredPrefix: String = "") -> Bool {
+        let ignored = !ignoredPrefix.isEmpty && title.hasPrefix(ignoredPrefix)
+        return closes.isEmpty && !ignored && WorkItemTitleReferences.parse(title).isEmpty
+    }
+
     /// Returns the merge request of a build: the `MR-<n>` job of a project, as its Jenkins link names it, else as the
     /// project's team values build its page.
     ///
@@ -349,14 +363,23 @@ extension GitLabClient {
     /// paged here: a merge request names a handful.
     ///
     /// The closing issues decide: when they fail the whole call fails. The related ones are the looser link, and a GitLab
-    /// without that endpoint just has none.
+    /// without that endpoint just has none. They are asked only when they can matter (``ItemLinks/needsRelatedIssues(title:closes:ignoredPrefix:)``):
+    /// a title that names the work item, or a closing issue, makes them useless, and their answer is the big one.
     ///
-    /// - Parameter source: the merge request
+    /// - Parameters:
+    ///   - source: the merge request
+    ///   - title: the merge request's title; `nil` when not known, which asks for the related issues
+    ///   - ignoredPrefix: the title prefix of merge requests that don't count (Team); empty counts every one
     /// - Returns: the links
     /// - Throws: ``GitLabError`` when GitLab didn't answer the closing issues
-    public func workItemLinks(of source: DescriptionSource) async throws -> GitLabWorkItemLinks {
+    public func workItemLinks(of source: DescriptionSource, title: String? = nil, ignoredPrefix: String = "") async throws -> GitLabWorkItemLinks {
         let closes = try await linkedIssues(of: source, endpoint: "closes_issues", origin: .closes)
-        let related = (try? await linkedIssues(of: source, endpoint: "related_issues", origin: .related)) ?? []
+        let related =
+            if title.map({ ItemLinks.needsRelatedIssues(title: $0, closes: closes, ignoredPrefix: ignoredPrefix) }) ?? true {
+                (try? await linkedIssues(of: source, endpoint: "related_issues", origin: .related)) ?? []
+            } else {
+                [LinkedWorkItem]()
+            }
         return GitLabWorkItemLinks(closes: closes, related: related)
     }
 
@@ -439,7 +462,9 @@ public final class LinkedWorkItemsStore {
     ///   - reference: the merge request's full reference
     ///   - webURL: the merge request's page
     ///   - updatedAt: when the merge request last changed; `nil` when only its build is known
-    public func load(reference: String, webURL: URL, updatedAt: Date? = nil) async {
+    ///   - title: the merge request's title, which decides whether the related issues are asked for; `nil` asks for them
+    ///   - ignoredPrefix: the title prefix of merge requests that don't count (Team)
+    public func load(reference: String, webURL: URL, updatedAt: Date? = nil, title: String? = nil, ignoredPrefix: String = "") async {
         let key = reference.lowercased()
         var entry = entries[key] ?? Entry()
         let now = services.now()
@@ -468,7 +493,7 @@ public final class LinkedWorkItemsStore {
             guard let client = try? await services.session().get().client else {
                 return nil
             }
-            return try? await client.workItemLinks(of: source)
+            return try? await client.workItemLinks(of: source, title: title, ignoredPrefix: ignoredPrefix)
         }.value
         entry = entries[key] ?? Entry()
         entry.isLoading = false

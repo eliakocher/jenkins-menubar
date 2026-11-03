@@ -10,10 +10,8 @@ struct SlotHeader: View {
     let isExpanded: Bool
     /// opens or closes the card; the arrow keys pass what they want
     let setExpanded: (Bool) -> Void
+    let keys: SlotKeys
     @ViewState private var isHovering = false
-    @FocusState private var isFocused: Bool
-    /// a key moved the card since the last click: only then the focus shows, as the chevron's color
-    @ViewState private var usedKeyboard = false
 
     /// how much of the right side fits
     private enum Detail {
@@ -32,25 +30,32 @@ struct SlotHeader: View {
         .contentShape(Rectangle())
         .onHover { isHovering = $0 }
         .onTapGesture {
-            usedKeyboard = false
+            keys.setKeyboard(false)
             setExpanded(!isExpanded)
         }
         .focusable()
         // no system focus ring (a square blue rectangle inside the rounded card); the chevron shows the focus instead
         .focusEffectDisabled()
-        .focused($isFocused)
+        .focused(keys.focus, equals: .header(slot.name))
         .onKeyPress(.leftArrow) {
-            usedKeyboard = true
+            keys.setKeyboard(true)
             setExpanded(false)
             return .handled
         }
         .onKeyPress(.rightArrow) {
-            usedKeyboard = true
+            keys.setKeyboard(true)
             setExpanded(true)
             return .handled
         }
+        // ↓ goes into the card's rows, the way back from them is ← on a row.
+        .onKeyPress(.downArrow) {
+            guard isExpanded, let first = keys.first() else { return .ignored }
+            keys.setKeyboard(true)
+            keys.go(first)
+            return .handled
+        }
         .onKeyPress(.space) {
-            usedKeyboard = true
+            keys.setKeyboard(true)
             setExpanded(!isExpanded)
             return .handled
         }
@@ -61,6 +66,10 @@ struct SlotHeader: View {
         // No "Collapse 2026.48" tooltip: the chevron says it, and it hid the counters' own tooltips (the user, 2026-11-03).
     }
 
+    private var isFocused: Bool {
+        keys.focus.wrappedValue == .header(slot.name)
+    }
+
     private func row(_ detail: Detail) -> some View {
         HStack(alignment: .center, spacing: 14) {
             identity
@@ -68,7 +77,7 @@ struct SlotHeader: View {
             stats(detail)
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(isFocused && usedKeyboard ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
+                .foregroundStyle(isFocused && keys.isKeyboard ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                 .rotationEffect(.degrees(isExpanded ? 90 : 0))
                 .frame(width: 14)
                 .accessibilityHidden(true)

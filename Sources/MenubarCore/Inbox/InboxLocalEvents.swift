@@ -80,14 +80,18 @@ extension InboxEvent {
     ///   - title: the build's title, like the merge request's
     ///   - url: the build in Jenkins; the app opens it in its own views
     ///   - date: when it finished
+    ///   - isWatched: whether it is a build I only watch: the line starts with "Watching · "
+    ///   - author: who a watched build belongs to; shown under the title as "by Sam Lee"
     /// - Returns: the local event
     public static func buildFailed(
-        jobKey: String, number: Int, label: String, isUnstable: Bool, title: String?, url: URL, at date: Date
+        jobKey: String, number: Int, label: String, isUnstable: Bool, title: String?, url: URL, at date: Date,
+        isWatched: Bool = false, author: String? = nil
     ) -> InboxEvent {
         InboxEvent(
             id: "\(buildIDPrefix(jobKey: jobKey))\(number)", kind: .buildFailed, source: .local,
             title: title ?? label, reference: label, targetURL: url, occurredAt: date,
-            headlineText: "Build \(label) \(isUnstable ? "went unstable" : "failed")")
+            headlineText: "\(isWatched ? "Watching · " : "")Build \(label) \(isUnstable ? "went unstable" : "failed")",
+            excerpt: isWatched ? author.map { "by \($0)" } : nil)
     }
 
     /// the start of the ids of a job's failed builds, for ``InboxStore/resolveLocal(kind:idPrefix:)``

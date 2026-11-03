@@ -127,6 +127,7 @@ extension AIUseCase {
         case .askAboutItem: "The developer's first question is at the end of the facts above."
         case .buildChat: "The developer's first question is at the end of the facts above."
         case .coffeeBreak: "The developer's team has its coffee break."
+        case .funBatch: "The fun lines of the day."
         }
     }
 }

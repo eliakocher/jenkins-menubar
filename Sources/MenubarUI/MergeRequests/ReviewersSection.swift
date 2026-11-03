@@ -19,6 +19,9 @@ enum ReReviewPhase: Equatable {
 /// other reviews and is in the chip's context menu; "Re-request (N)" in the card's headline for the stale ones, which
 /// confirms once (MR-09, MR-10).
 ///
+/// On my open merge requests the card also suggests reviewers, as chips under the reviewers (MR-15,
+/// ``SuggestedReviewersSection``).
+///
 /// The first write of the app: nothing is sent without a click, and nothing again after a failure. A token without the
 /// `api` scope gets the explanation, from what GitLab says of the token before the click, else from its refusal.
 struct ReviewersCard: View {
@@ -30,6 +33,8 @@ struct ReviewersCard: View {
     @ViewState private var phase: ReReviewPhase?
     /// what the check of the token asked for last, so a state change for the same merge request doesn't ask again
     @ViewState private var checked: Check?
+    /// the people added from the suggestions, who show among the reviewers before GitLab's list has them
+    @ViewState private var added: [SuggestedReviewerChip] = []
 
     private struct Check: Hashable {
         var id: MergeRequest.ID
@@ -47,22 +52,41 @@ struct ReviewersCard: View {
         fixtures?.writeAccess ?? appModel?.mergeRequestDetails.writeAccess ?? .unknown
     }
 
+    /// GitLab's reviewers, then the people just added from the suggestions
+    private var rows: [MergeRequestDetailModel.ReviewerRow] {
+        let (word, mark) = MergeRequestDetailModel.ReviewerRow.describe(state: .unreviewed, approved: false)
+        let known = Set(model.reviewers.map { $0.id.lowercased() })
+        return model.reviewers
+            + added.filter { !known.contains($0.username.lowercased()) }.map {
+                MergeRequestDetailModel.ReviewerRow(name: $0.name, word: word, mark: mark, id: $0.username)
+            }
+    }
+
+    /// Whether the suggestions show: my merge requests that are still open.
+    private var suggests: Bool {
+        let mergeRequest = model.mergeRequest
+        let me = appModel?.mergeRequests.list?.username
+        return mergeRequest.mergedAt == nil
+            && (mergeRequest.roles.contains(.authored) || (me != nil && mergeRequest.author.username == me))
+    }
+
     var body: some View {
         let reviews = reviews
         let toAsk = reviews?.reviewersToAsk ?? []
         let isBusy = if case .sending = currentPhase { true } else { false }
         let stale = reviews.map { reviews in reviews.reviewers.filter { reviews.nudge(for: $0) != nil } } ?? []
+        let rows = rows
         DetailCard("Reviewers", symbol: "person.2") {
             VStack(alignment: .leading, spacing: 10) {
                 if currentPhase == .confirming, toAsk.count >= 2 {
                     confirmation(toAsk)
                 }
-                if model.reviewers.isEmpty {
+                if rows.isEmpty {
                     Text(verbatim: MergeRequestDetailModel.noReviewers)
                         .foregroundStyle(.secondary)
                 } else {
                     PillFlowLayout(spacing: 6, lineSpacing: 6) {
-                        ForEach(model.reviewers) { row in
+                        ForEach(rows) { row in
                             let reviewer = reviews?.reviewers.first { $0.username == row.id }
                             ReviewerChip(
                                 row: row, reviewer: reviewer, nudge: reviewer.flatMap { reviews?.nudge(for: $0) },
@@ -85,6 +109,11 @@ struct ReviewersCard: View {
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 feedback
+                if suggests {
+                    SuggestedReviewersSection(
+                        model: model, actions: actions, writeAccess: writeAccess,
+                        current: Set(rows.map(\.id) + (reviews?.reviewers.map(\.username) ?? [])), added: $added)
+                }
             }
         } accessory: {
             if toAsk.count >= 2, currentPhase != .confirming {
@@ -323,9 +352,11 @@ private struct ReviewerChip: View {
 
 /// "Re-requesting a review needs a GitLab token with the api scope.", with the button that opens GitLab's new-token page
 /// with the name and scope filled in, and the way to Settings → Accounts, where the new token replaces the stored one.
-private struct TokenNote: View {
+struct TokenNote: View {
     let newTokenURL: URL?
     let actions: GitLabSectionActions
+    /// what the token is needed for; re-requesting a review by default
+    var text = WriteAccess.explanation
     let dismiss: () -> Void
 
     var body: some View {
@@ -333,7 +364,7 @@ private struct TokenNote: View {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: "key.fill")
                     .foregroundStyle(MergeRequestStatus.Color.orange.swiftUI)
-                Text(verbatim: WriteAccess.explanation)
+                Text(verbatim: text)
                     .textSelection(.enabled)
             }
             Text("Create one in GitLab, then paste it in Settings → Accounts: it replaces the stored token.")

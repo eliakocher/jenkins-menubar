@@ -14,6 +14,103 @@ public protocol LoginItem: Sendable {
     func unregister() throws
     /// Opens System Settings → General → Login Items, where the user approves or removes the item.
     func openSystemSettings()
+    /// where the app runs from, which explains a login item macOS can't find
+    var place: LoginItemPlace { get }
+}
+
+extension LoginItem {
+    public var place: LoginItemPlace { .installed }
+}
+
+/// Where the running app lives, as far as macOS finding it as a login item depends on it (APP-02).
+///
+/// A copy that was downloaded or copied around carries the quarantine flag, so macOS runs it from a read-only,
+/// randomized "AppTranslocation" path; and a login item is only found for an app in an Applications folder.
+public struct LoginItemPlace: Sendable, Hashable {
+    /// the app bundle's path
+    public var bundlePath: String
+    /// whether the bundle carries the `com.apple.quarantine` attribute
+    public var isQuarantined: Bool
+    /// the user's home folder, for `~/Applications`
+    public var home: String
+
+    public init(bundlePath: String, isQuarantined: Bool, home: String = NSHomeDirectory()) {
+        self.bundlePath = bundlePath
+        self.isQuarantined = isQuarantined
+        self.home = home
+    }
+
+    /// the place of an app that was installed properly
+    public static let installed = LoginItemPlace(
+        bundlePath: "/Applications/MegaMonitor.app", isQuarantined: false, home: "/Users/me")
+
+    /// whether macOS runs a quarantined copy from a randomized, read-only path
+    public var isTranslocated: Bool {
+        bundlePath.contains("/AppTranslocation/")
+    }
+
+    /// whether the app is in `/Applications` or `~/Applications`
+    public var isInApplications: Bool {
+        bundlePath.hasPrefix("/Applications/") || bundlePath.hasPrefix(home + "/Applications/")
+    }
+
+    /// the folder the app runs from, with `~` for the home folder
+    public var folderText: String {
+        let folder = (bundlePath as NSString).deletingLastPathComponent
+        return folder.hasPrefix(home) ? "~" + folder.dropFirst(home.count) : folder
+    }
+}
+
+/// What Settings and the welcome flow say under the "Open at login" switch, and whether they offer System Settings.
+public struct LoginItemHelp: Sendable, Hashable {
+    /// the explanation; nil when the switch says it all
+    public var message: String?
+    /// whether "Open Login Items Settings…" is offered
+    public var opensLoginItems: Bool
+
+    public init(message: String?, opensLoginItems: Bool) {
+        self.message = message
+        self.opensLoginItems = opensLoginItems
+    }
+
+    public static let quarantined =
+        "macOS is running a quarantined copy. Move MegaMonitor to ~/Applications (or install it with ./install.sh), then open it again."
+
+    public static let unknownCause =
+        "macOS doesn't know MegaMonitor as a login item yet. Open Login Items Settings and add it with the + button."
+
+    public static func outsideApplications(_ place: LoginItemPlace) -> String {
+        "MegaMonitor runs from \(place.folderText), not from an Applications folder. Move it to ~/Applications "
+            + "(or install it with ./install.sh), then open it again."
+    }
+
+    /// The help for the login item's state.
+    ///
+    /// - Parameters:
+    ///   - status: the login item's status
+    ///   - place: where the app runs from
+    ///   - failed: whether turning it on or off was refused; the reason is shown on its own line
+    public static func of(status: LoginItemStatus, place: LoginItemPlace, failed: Bool) -> LoginItemHelp {
+        switch status {
+        case .requiresApproval:
+            return LoginItemHelp(message: status.message, opensLoginItems: true)
+        case .enabled:
+            return LoginItemHelp(message: nil, opensLoginItems: false)
+        case .notFound, .notRegistered:
+            guard status == .notFound || failed else {
+                return LoginItemHelp(message: nil, opensLoginItems: false)
+            }
+            let message =
+                if place.isTranslocated || place.isQuarantined {
+                    quarantined
+                } else if !place.isInApplications {
+                    outsideApplications(place)
+                } else {
+                    unknownCause
+                }
+            return LoginItemHelp(message: message, opensLoginItems: true)
+        }
+    }
 }
 
 /// What macOS reports for the login item, as `SMAppService.Status` has it.
@@ -35,12 +132,12 @@ public enum LoginItemStatus: String, Sendable, Hashable, CaseIterable {
         self == .requiresApproval
     }
 
-    /// the line Settings → General shows under the switch; nil when the switch says it all (proposed copy)
+    /// the line under the switch when the place of the app is unknown; ``LoginItemHelp/of(status:place:failed:)`` knows more
     public var message: String? {
         switch self {
         case .enabled, .notRegistered: nil
         case .requiresApproval: "Waiting for your approval in System Settings → General → Login Items"
-        case .notFound: "Open at login needs the installed app: run ./build.sh --install"
+        case .notFound: LoginItemHelp.unknownCause
         }
     }
 }
@@ -84,6 +181,11 @@ public struct LaunchAtLogin {
         item.status
     }
 
+    /// where the app runs from
+    public var place: LoginItemPlace {
+        item.place
+    }
+
     /// Registers or unregisters the login item, unless it already is as asked.
     ///
     /// Logs info "openAtLogin: off → on" when the setting changed, or a warning with the reason when macOS refused.
@@ -104,7 +206,12 @@ public struct LaunchAtLogin {
         } catch {
             // A login item that already throws a `LoginItemError` has its text; wrapping it would repeat the prefix.
             let failure = (error as? LoginItemError) ?? LoginItemError(turningOn: on, reason: error.localizedDescription)
-            await log?.log(.warning, .settings, failure.message)
+            // The status and the place say why macOS refused, in one entry (paths hold no secrets).
+            let place = item.place
+            await log?.log(
+                .warning, .settings,
+                "\(failure.message) [status \(before.rawValue); runs from \(place.bundlePath); "
+                    + "quarantined \(place.isQuarantined || place.isTranslocated)]")
             throw failure
         }
         let after = item.status

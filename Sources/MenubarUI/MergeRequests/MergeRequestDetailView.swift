@@ -127,7 +127,7 @@ struct MergeRequestDetailContent: View {
                     .task(id: LinksAsk(id: model.mergeRequest.id, updatedAt: model.mergeRequest.updatedAt)) {
                         await appModel?.loadItemLinks(
                             ofMergeRequest: model.mergeRequest.reference, webURL: model.mergeRequest.webURL,
-                            updatedAt: model.mergeRequest.updatedAt)
+                            updatedAt: model.mergeRequest.updatedAt, title: model.mergeRequest.title)
                     }
                     // "Ask Claude" about lines, a file or the whole merge request sets the chat's scope chip; its card, with
                     // the field at the bottom, comes into view.

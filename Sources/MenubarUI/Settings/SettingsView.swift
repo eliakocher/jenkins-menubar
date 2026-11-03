@@ -67,6 +67,7 @@ public struct SettingsView: View {
             case .advanced: AdvancedPane(system: system)
             }
         }
+        .butlerPeek()
         .onDisappear {
             settings.saveTeamNow()
         }

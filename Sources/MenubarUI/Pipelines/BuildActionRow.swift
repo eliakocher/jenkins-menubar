@@ -23,6 +23,11 @@ struct BuildActionRow: View {
                     actions.hide(row.build)
                 }
             }
+            if model.canWatch, case .build(let row) = model.item {
+                button("Watch", "eye", help: "Watches every build of this job, so it shows under Pipelines and alerts you") {
+                    actions.watchJob(row.build.id)
+                }
+            }
             if model.canStopWatching {
                 button("Stop Watching", "eye.slash.circle", help: "Stops watching this job") { actions.stopWatching(model.item.id) }
             }

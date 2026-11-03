@@ -39,6 +39,11 @@ public final class ProjectsPipelines {
         didSet { stores.forEach { $0.onFinishedBuilds = onFinishedBuilds } }
     }
 
+    /// the fun layer's store: the green streak and the lines of the alerts' moments. ``AppModel`` sets it.
+    @ObservationIgnored public var funStore: FunStore? {
+        didSet { stores.forEach { $0.funStore = funStore } }
+    }
+
     @ObservationIgnored private let services: PipelinesServices
     @ObservationIgnored private var isOffline = false
 
@@ -80,6 +85,7 @@ public final class ProjectsPipelines {
                 let store = PipelinesStore(services: services, preferences: preferences, project: project.id)
                 store.requestCheck = requestCheck
                 store.onFinishedBuilds = onFinishedBuilds
+                store.funStore = funStore
                 store.notifications = notifications
                 store.setOffline(isOffline)
                 next.append(store)
@@ -225,6 +231,20 @@ public final class ProjectsPipelines {
         let chosen = chosen.flatMap(store(for:)) ?? primary
         let project = WatchTarget.project(of: text, among: stores.map(\.project), chosen: chosen.projectID)
         return await (store(for: project) ?? chosen).watch(text)
+    }
+
+    /// Watches the job of a build opened from a link or a tile, in the build's project (WATCH-07).
+    ///
+    /// - Parameter id: the build
+    public func watchOpened(_ id: BuildID) async {
+        await store(for: id.project)?.watchOpened(job: id.job)
+    }
+
+    /// Whether a build's job shows in Pipelines because it is mine or watched; `nil` for neither (WATCH-07).
+    ///
+    /// - Parameter id: the build
+    public func following(_ id: BuildID) -> JobKind? {
+        store(for: id.project)?.following(job: id.job)
     }
 
     /// Returns the store of the project a merge request belongs to, by the path of its reference, like

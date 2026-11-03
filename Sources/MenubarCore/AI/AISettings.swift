@@ -111,6 +111,8 @@ public enum AIUseCase: String, Codable, Hashable, Sendable, CaseIterable {
     case buildChat
     /// the daily coffee break's one line, written by Haiku (``CoffeeBreak``)
     case coffeeBreak
+    /// the fun layer's daily batch of fresh lines, written by Haiku (``FunBatch``)
+    case funBatch
 
     /// the use case's name in the log: "explain a failed build"
     public var logName: String {
@@ -123,6 +125,7 @@ public enum AIUseCase: String, Codable, Hashable, Sendable, CaseIterable {
         case .askAboutItem: "ask about a work item"
         case .buildChat: "ask about a build"
         case .coffeeBreak: "coffee break line"
+        case .funBatch: "fun lines"
         }
     }
 }

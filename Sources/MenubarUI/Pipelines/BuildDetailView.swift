@@ -67,6 +67,8 @@ struct BuildDetailContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.buildInfoFixtures) private var fixtures
     @Environment(AppModel.self) private var appModel: AppModel?
+    /// the stage clicks that the Console Log card answers (PIPE-12)
+    @ViewState private var stageJump = ConsoleLogStageJump()
 
     /// what the info and history are loaded for: the build, and whether it runs, since a finished build asks again
     private struct LoadKey: Hashable {
@@ -105,9 +107,11 @@ struct BuildDetailContent: View {
                             build: row.build.id, consoleURL: model.links.first { $0.kind == .console }?.url,
                             open: actions.open)
                         .id(row.build.id)
+                        .cardFocusTarget(.consoleLog)
                     }
                 }
             }
+            .environment(\.consoleLogStageJump, stageJump)
             // The info and the recent builds, once per build shown (and again when it finishes).
             .task(id: loadKey(model)) {
                 if fixtures == nil, case .build(let row) = model.item {

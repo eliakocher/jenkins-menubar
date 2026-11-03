@@ -13,6 +13,10 @@ struct AboutView: View {
     let versionLine: String
     /// whether the roll scrolls by itself; the gallery turns it off so a shot is the same every time
     var scrolls = true
+    /// the app, for the peeking butler and the count of the catches; `nil` in the gallery
+    var model: AppModel?
+    /// the catches the gallery shows when there is no model
+    var galleryCatches = 0
 
     /// The window's size: the roll needs room, the serious About without it doesn't.
     static func size(eggs: Bool) -> CGSize {
@@ -46,6 +50,13 @@ struct AboutView: View {
                     .padding(.top, 26)
                 Spacer(minLength: 20)
             }
+            if eggs, let caught = model?.fun.caughtLine ?? (galleryCatches > 0 ? "Butlers caught: \(galleryCatches)" : nil) {
+                // The count of the peeking butler's catches (the fun layer).
+                Text(verbatim: caught)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 8)
+            }
             VStack(spacing: 8) {
                 Text(verbatim: EggRules.attribution)
                     .multilineTextAlignment(.center)
@@ -59,6 +70,8 @@ struct AboutView: View {
         }
         .frame(width: Self.size(eggs: eggs).width, height: Self.size(eggs: eggs).height)
         .background(.background)
+        .butlerPeek()
+        .environment(model)
     }
 }
 

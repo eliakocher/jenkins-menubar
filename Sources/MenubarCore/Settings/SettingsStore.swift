@@ -860,6 +860,11 @@ public final class SettingsStore {
         }
     }
 
+    /// where the app runs from, which explains a login item macOS can't find
+    public var loginItemPlace: LoginItemPlace {
+        launchAtLogin.place
+    }
+
     /// Reads the login item's status again; System Settings can change it at any time.
     public func refreshOpenAtLogin() {
         openAtLogin = launchAtLogin.status

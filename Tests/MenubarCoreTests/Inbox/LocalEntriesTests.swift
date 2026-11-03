@@ -169,9 +169,11 @@ struct LocalEntriesTests {
 
     // MARK: - INBOX-11
 
-    private static func alert(_ result: BuildResult, job: String = "MR-12501", number: Int = 5) throws -> BuildAlert {
+    private static func alert(
+        _ result: BuildResult, job: String = "MR-12501", number: Int = 5, kind: JobKind = .mine, author: String? = nil
+    ) throws -> BuildAlert {
         let build = Build(
-            job: job, number: number, title: "Fix the login", kind: .mine, phase: .finished(result: result, duration: 600),
+            job: job, number: number, title: "Fix the login", author: author, kind: kind, phase: .finished(result: result, duration: 600),
             startedAt: start.addingTimeInterval(-600))
         let jobURL = try #require(URL(string: "https://jenkins.example.com/job/project"))
         let content = try #require(AlertContent.finished(build, failedStages: [], links: AlertContent.links(for: build, jobURL: jobURL)))
@@ -198,6 +200,22 @@ struct LocalEntriesTests {
         model.addToInbox(finished: [try Self.alert(.success, number: 8)])
         #expect(model.inbox.pending.map(\.headline) == ["Build !12502 #1 failed"])
         #expect(model.inbox.done.count == 2)
+    }
+
+    @Test("ALERT-11 the Inbox entry of a watched build's failure is marked")
+    func watchedFailedBuild() async throws {
+        let model = try ModelSetup().model
+        model.addToInbox(finished: [
+            try Self.alert(.failure, kind: .watched, author: "Sam Lee"),
+            try Self.alert(.unstable, job: "MR-12502", number: 1, kind: .watched),
+            try Self.alert(.failure, job: "MR-12503", number: 2),
+        ])
+        let rows = model.inbox.pending.sorted { $0.headline < $1.headline }
+        #expect(
+            rows.map(\.headline) == [
+                "Build !12503 #2 failed", "Watching · Build !12501 #5 failed", "Watching · Build !12502 #1 went unstable",
+            ])
+        #expect(rows.map(\.body) == ["", "by Sam Lee", ""])
     }
 
     /// An app model on fakes, with a claude that is never asked.

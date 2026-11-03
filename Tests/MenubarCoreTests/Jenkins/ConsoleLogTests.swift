@@ -366,4 +366,164 @@ struct ConsoleLogTests {
         // About half a second in a debug build (2026-11-03); generous for a busy machine.
         #expect(elapsed < .seconds(5))
     }
+
+    // MARK: Save
+
+    /// A stored log with notes and non-ASCII text, whose pages cut inside characters and notes.
+    private static func notesLog(lines: Int) -> Data {
+        var text = ""
+        for index in 0..<lines {
+            text += "\u{1B}[8mha:////QUJD\(index)\u{1B}[0mZeile \(index): Grüße aus Zürich 🚀 ✓ ünïcödé\n"
+        }
+        return Data(text.utf8)
+    }
+
+    private static func tinyLimits(page: Int) -> ConsoleLogLimits {
+        ConsoleLogLimits(probe: 100, page: page, block: 333, maxBytes: 1 << 30, maxLines: 1 << 20, overlap: 120, slack: 900)
+    }
+
+    @Test(
+        "PIPE-12 Save writes the whole log in order, read in pages that line up although the notes shorten the text",
+        arguments: [997, 1499, 2003, 5000])
+    func saveWholeLog(page: Int) async throws {
+        let folder = try TemporaryFolder()
+        let stored = Self.notesLog(lines: 300)
+        let fake = ConsoleLogFake(stored: stored)
+        let file = folder.file("MR-12-7.log")
+        let seen = ProgressSeen()
+
+        let result = try await ConsoleLogSaver.save(
+            source: fake.source, to: file, limits: Self.tinyLimits(page: page), progress: { seen.add($0) })
+
+        #expect(try Data(contentsOf: file) == ConsoleLogFake.stripNotes(stored))
+        #expect(result == ConsoleLogSaveResult(bytes: Int64(ConsoleLogFake.stripNotes(stored).count), isComplete: true))
+        // Probe, tail, then pages that stop at their own end; the progress only grows and ends at 1.
+        let reads = await fake.reads
+        #expect(reads[0].limit == 100)
+        #expect(reads[1].limit == nil)
+        #expect(reads.dropFirst(2).allSatisfy { $0.limit != nil })
+        let fractions = seen.values.map(\.fraction)
+        #expect(fractions == fractions.sorted())
+        #expect(fractions.last == 1)
+        // Nothing but the file is left beside it.
+        #expect(try FileManager.default.contentsOfDirectory(atPath: folder.url.path()) == ["MR-12-7.log"])
+    }
+
+    @Test("PIPE-12 Save of a pipeline log with ANSI colors and progress bars keeps every byte but the notes")
+    func savePipelineLog() async throws {
+        let folder = try TemporaryFolder()
+        let stored = ConsoleLogFake.pipelineLog(lines: 600)
+        let fake = ConsoleLogFake(stored: stored)
+        let file = folder.file("log.log")
+
+        _ = try await ConsoleLogSaver.save(source: fake.source, to: file, limits: Self.limits())
+
+        #expect(try Data(contentsOf: file) == ConsoleLogFake.stripNotes(stored))
+    }
+
+    @Test("PIPE-12 Save of a short log is one read, and of a running build says it is not complete")
+    func saveShortAndRunning() async throws {
+        let folder = try TemporaryFolder()
+        let stored = Data("[Pipeline] sh\nERROR: boom\n".utf8)
+        let fake = ConsoleLogFake(stored: stored)
+        let result = try await ConsoleLogSaver.save(source: fake.source, to: folder.file("a.log"), limits: Self.limits())
+        #expect(result == ConsoleLogSaveResult(bytes: Int64(stored.count), isComplete: true))
+        #expect(await fake.reads.count == 1)
+
+        let running = ConsoleLogFake(stored: Self.notesLog(lines: 100), isRunning: true)
+        let partial = try await ConsoleLogSaver.save(source: running.source, to: folder.file("b.log"), limits: Self.tinyLimits(page: 1500))
+        #expect(!partial.isComplete)
+        #expect(try Data(contentsOf: folder.file("b.log")) == ConsoleLogFake.stripNotes(Self.notesLog(lines: 100)))
+    }
+
+    @Test("PIPE-12 Save that is cancelled or fails leaves the old file and no half-written one")
+    func saveCancelledOrFailed() async throws {
+        let folder = try TemporaryFolder()
+        let file = folder.file("keep.log")
+        try Data("old".utf8).write(to: file)
+        let stored = Self.notesLog(lines: 300)
+
+        for failure in [CancellationError() as any Error, JenkinsError(.unreachable(.jenkins))] {
+            let fake = ConsoleLogFake(stored: stored)
+            let count = ReadCount()
+            let source = ConsoleLogSource { start, limit in
+                // The probe and the tail read, then the first earlier page fails.
+                if count.next() == 3 {
+                    throw failure
+                }
+                return try await fake.source.read(start, limit)
+            }
+            await #expect(throws: (any Error).self) {
+                _ = try await ConsoleLogSaver.save(source: source, to: file, limits: Self.tinyLimits(page: 1500))
+            }
+            #expect(try Data(contentsOf: file) == Data("old".utf8))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: folder.url.path()) == ["keep.log"])
+        }
+    }
+
+    // MARK: Stages
+
+    @Test(
+        "PIPE-12 finds the line that opens a stage, alone or after a branch's prefix, and nothing that only looks like it",
+        arguments: [
+            ("[Pipeline] stage\n[Pipeline] { (Build)\n[Pipeline] sh\n", "Build", 1 as Int?),
+            ("a\n[Build in parallel] [Pipeline] { (Build)\nb\n", "Build", 1),
+            ("[Pipeline] { (Build Docs)\n[Pipeline] { (Build)\n", "Build", 1),
+            ("echo [Pipeline] { (Build)\n", "Build", nil),
+            ("[Pipeline] { (Build)\n[Pipeline] { (Build)\n", "Build", 0),
+            ("x\r\n[Pipeline] { (Deploy)\r\nz", "Deploy", 1),
+            ("[Pipeline] { (Declarative: Post Actions)", "Declarative: Post Actions", 0),
+            ("[Pipeline] { (Tests (unit))\n", "Tests (unit)", 0),
+            ("[Pipeline] sh\n", "Build", nil),
+        ])
+    func stageLine(log: String, stage: String, line: Int?) {
+        #expect(ConsoleLogStage.firstLine(of: stage, in: ConsoleLogParser.parse(Data(log.utf8))) == line)
+    }
+
+    @Test("PIPE-12 locating a stage reads earlier pages until its first line is found, and says so when it isn't there")
+    @MainActor
+    func locateStage() async throws {
+        let stored = ConsoleLogFake.pipelineLog(lines: 600)
+        let fake = ConsoleLogFake(stored: stored)
+        let loader = ConsoleLogLoader(source: fake.source, limits: Self.limits())
+
+        // "Checkout" is in the log's first lines, the loader starts at its end.
+        let location = try #require(await loader.locate(stage: "Checkout"))
+        let block = try #require(loader.blocks.first { $0.id == location.blockID })
+        let starts = block.slice.lineStarts
+        let text = block.slice.text as NSString
+        let end = location.line + 1 < starts.count ? starts[location.line + 1] : text.length
+        #expect(text.substring(with: NSRange(location: starts[location.line], length: end - starts[location.line])) == "[Pipeline] { (Checkout)\n")
+        #expect(loader.pageProblem == nil)
+        #expect(loader.locateLoaded(stage: "Checkout") == location)
+
+        let missing = ConsoleLogLoader(source: ConsoleLogFake(stored: stored).source, limits: Self.limits())
+        #expect(await missing.locate(stage: "No Such Stage") == nil)
+        #expect(!missing.hasEarlier)
+        #expect(missing.pageProblem?.contains("No Such Stage") == true)
+    }
+}
+
+/// The progress a save reported, from its task.
+private final class ProgressSeen: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [ConsoleLogSaveProgress] = []
+
+    func add(_ progress: ConsoleLogSaveProgress) {
+        lock.withLock { items.append(progress) }
+    }
+
+    var values: [ConsoleLogSaveProgress] { lock.withLock { items } }
+}
+
+private final class ReadCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func next() -> Int {
+        lock.withLock {
+            count += 1
+            return count
+        }
+    }
 }

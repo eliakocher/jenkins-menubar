@@ -137,6 +137,9 @@ final class AppShell {
             effects: effects, systemEvents: WorkspaceSystemEvents(), loginItem: MainAppLoginItem(),
             hotkeys: CarbonHotkeys())
         let model = AppModel(dependencies: dependencies)
+        // The fun layer holds its surprises back while the user types or drags, and keeps still under Reduce Motion.
+        model.fun.isBusy = { FunQuiet.isBusy() }
+        model.fun.reduceMotion = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
         let shell = AppShell(model: model, legacySources: .standard(), identityMigration: IdentityMigrationLaunch.pending)
         shell.askNotificationPermission = {
             if await effects.notificationPermission() == .notAsked {

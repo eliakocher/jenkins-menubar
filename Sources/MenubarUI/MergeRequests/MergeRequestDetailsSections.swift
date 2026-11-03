@@ -612,6 +612,10 @@ struct MergeRequestDetailsFixtures: Sendable {
     var writeAccess: WriteAccess = .unknown
     /// what the Reviewers card shows of a re-request: the bulk question, the token explanation
     var reReviewPhase: ReReviewPhase?
+    /// the suggested reviewers, by merge request reference (MR-15)
+    var suggestions: [String: ReviewerSuggestionState] = [:]
+    /// what the suggestions part shows of an add: the question, the token explanation, the outcome
+    var suggestionPhase: SuggestionAddPhase?
     /// the code changes, by merge request reference (MR-11)
     var changes: [String: MergeRequestChangesState] = [:]
     /// the lines picked in the Changes card, as the gallery shows a click on their numbers (AI-07)

@@ -187,7 +187,8 @@ final class WelcomeFlow {
             notifications: notifications,
             preferences: settings.preferences,
             claude: WelcomeData.Claude(isFound: offersClaude, isMissing: claude == .missing),
-            login: WelcomeData.Login(status: settings.openAtLogin, error: settings.openAtLoginError),
+            login: WelcomeData.Login(
+                status: settings.openAtLogin, error: settings.openAtLoginError, place: settings.loginItemPlace),
             summary: WelcomeSummary.make(
                 report: settings.importReport, storedTokens: settings.storedTokens,
                 accounts: settings.isCheckingAccounts ? [:] : settings.accounts, notifications: notifications,
@@ -357,13 +358,13 @@ final class WelcomeFlow {
             // What the step showed is kept as chosen, defaults included.
             ai?.persistSettings()
         case .menuBarAndLogin:
-            if settings.openAtLogin != .notFound {
-                await settings.setOpenAtLogin(openAtLogin)
-                guard settings.openAtLoginError == nil else {
-                    // The switch shows what the login item really is, with the problem line under it.
-                    openAtLogin = settings.openAtLogin.isOn
-                    return false
-                }
+            // A login item macOS can't find is still tried: only its refusal says why, and the page then shows the
+            // reason and the way forward (the switch goes off, so the next Continue moves on).
+            await settings.setOpenAtLogin(openAtLogin)
+            guard settings.openAtLoginError == nil else {
+                // The switch shows what the login item really is, with the problem line under it.
+                openAtLogin = settings.openAtLogin.isOn
+                return false
             }
         case .done:
             settings.completeWelcomeFlow()

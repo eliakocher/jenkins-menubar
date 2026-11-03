@@ -8,7 +8,8 @@ import SwiftUI
 ///
 /// - The section and each section's selection live on the ``WindowRouter``, so a route can pick the section before
 ///   the window opens and a detail's "Show in …" can switch to a row of another section; the router keeps them in
-///   UserDefaults (WIN-05). The search belongs to the window: a section change clears it, and it isn't kept.
+///   UserDefaults (WIN-05). The search belongs to the window: a section change clears it, and it isn't kept. Over an
+///   opened item it belongs to the item's kind: typing there takes the window to that kind's section with the query.
 /// - It tells the scheduler what it shows (OD-02): the selected section while it is open, and Merge Requests and Work
 ///   Items for their badges while it can be seen.
 public struct MainWindowRoot: View {
@@ -23,6 +24,9 @@ public struct MainWindowRoot: View {
     /// whether "Clear all activity?" shows; Activity's toolbar and File › Clear Activity… share the section's one alert
     @ViewState private var isConfirmingClearActivity = false
     @ViewState private var searchText = ""
+    /// set while typing over an opened item takes the window to the item's section: that query belongs to the new section,
+    /// so the section change doesn't clear it
+    @ViewState private var carriesSearch = false
     /// changes on each reveal, so that a list in the shown section loads afresh and scrolls to the selection
     @ViewState private var revealedList = 0
     @ViewState private var isOnScreen = true
@@ -47,12 +51,16 @@ public struct MainWindowRoot: View {
         }
         .onChange(of: router.section) {
             // A leftover filter would hide rows of the new section.
-            searchText = ""
+            if !carriesSearch {
+                searchText = ""
+            }
+            carriesSearch = false
             reportSurfaces()
         }
         .onChange(of: router.opened) {
-            // Showing an opened item is like changing the section: the old query belongs to the list it filtered. Typing
-            // over an item returns to the list (opened turns nil) and keeps the query.
+            // Showing an opened item is like changing the section: the old query belongs to the list it filtered, and the
+            // field starts empty for the item's kind. Typing over an item takes the window to that kind's section (opened
+            // turns nil) and keeps the query.
             if router.opened != nil {
                 searchText = ""
             }
@@ -117,7 +125,7 @@ public struct MainWindowRoot: View {
         let actions: PanelActions = PanelActions.mainWindow(self.model, router: router, openURL: openURL)
         let ai = self.model.ai
         return MainWindowShell(
-            model: model, section: $router.section, searchText: $searchText, columnVisibility: columnVisibility,
+            model: model, section: $router.section, searchText: searchBinding, columnVisibility: columnVisibility,
             actions: actions, reload: { [model = self.model, router] in
                 MainWindowReload.run(router.section, selection: router.selection, opened: router.opened, model: model)
             }, searchFocusRequest: router.searchFocusRequest, searchNote: eggNote, opened: openedSidebar,
@@ -136,6 +144,21 @@ public struct MainWindowRoot: View {
                 section: router.section, watchBuild: actions.watchBuild, activityInspectorShown: $activityInspectorShown,
                 isConfirmingClearActivity: $isConfirmingClearActivity)
         }
+    }
+
+    /// The search field's text for the shell. Typing over an opened item changes the section; the query typed goes with it.
+    private var searchBinding: Binding<String> {
+        Binding(
+            get: { searchText },
+            set: { newValue in
+                if let target = MainWindowSearch.destination(
+                    typed: newValue, opened: router.opened.flatMap { model.opened.item($0)?.kind }),
+                    target != router.section
+                {
+                    carriesSearch = true
+                }
+                searchText = newValue
+            })
     }
 
     /// What the Inbox adds to the shell: the badge and the problem always, since the sidebar shows them; the subtitle and the

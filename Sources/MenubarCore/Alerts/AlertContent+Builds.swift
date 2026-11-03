@@ -14,6 +14,8 @@ extension AlertContent {
         }
         let kind = ResultKind(result)
         let title = displayTitle(of: build)
+        let ownership = Ownership(build.kind)
+        let author = watchedAuthor(of: build)
         var facts = ["Duration: \(durationText(duration))"]
         if let counts = build.testCounts, counts.failed > 0 {
             facts.append("\(counts.failed) failed \(counts.failed == 1 ? "test" : "tests")")
@@ -24,16 +26,19 @@ extension AlertContent {
         return AlertContent(
             result: kind,
             icon: kind.icon,
-            headline: "\(kind.symbol) \(build.label) #\(build.number) \(result)",
+            headline: watchingPrefix(ownership) + "\(kind.symbol) \(build.label) #\(build.number) \(result)",
             title: title,
             facts: facts,
-            bannerBody: ([title].compactMap { $0 } + facts).joined(separator: "\n"),
+            bannerBody: ([title, author.map { "by \($0)" }].compactMap { $0 } + facts).joined(separator: "\n"),
             sound: kind.sound,
             defaultAction: kind == .success && links.mergeRequest != nil ? .openMergeRequest : .openBuild,
             links: links,
             headlineParts: HeadlineParts(label: build.label, number: build.number, result: result.rawValue),
-            rebuild: [.failure, .unstable, .aborted].contains(kind) ? build.id : nil,
-            hide: build.id
+            // A watched build is somebody else's: no Rebuild, however it ended.
+            rebuild: ownership == .mine && [.failure, .unstable, .aborted].contains(kind) ? build.id : nil,
+            hide: build.id,
+            ownership: ownership,
+            watchedAuthor: author
         )
     }
 
@@ -49,17 +54,21 @@ extension AlertContent {
     public static func stageFailed(_ build: Build, failedStages: [String], buildURL: URL) -> AlertContent {
         let title = displayTitle(of: build)
         let stages = failedStages.joined(separator: ", ")
+        let ownership = Ownership(build.kind)
+        let author = watchedAuthor(of: build)
         return AlertContent(
             result: .failure,
             icon: .sad,
-            headline: "💥 \(build.label) #\(build.number): stage failed",
+            headline: watchingPrefix(ownership) + "💥 \(build.label) #\(build.number): stage failed",
             title: title,
             facts: ["Failed stages: \(stages)"],
-            bannerBody: ([stages] + [title].compactMap { $0 }).joined(separator: "\n"),
+            bannerBody: ([stages] + [title, author.map { "by \($0)" }].compactMap { $0 }).joined(separator: "\n"),
             sound: .basso,
             defaultAction: .openBuild,
             links: Links(build: buildURL, console: buildURL.appending(path: "console")),
-            hide: build.id
+            hide: build.id,
+            ownership: ownership,
+            watchedAuthor: author
         )
     }
 
@@ -100,6 +109,20 @@ extension AlertContent {
         let total = max(0, Int(seconds))
         let minutes = total % 3600 / 60
         return "\(total / 3600)h\(minutes < 10 ? "0" : "")\(minutes)m"
+    }
+
+    /// "Watching · " for a watched build, which leads a banner's title so a glance tells it from my own; nothing for mine.
+    static func watchingPrefix(_ ownership: Ownership) -> String {
+        ownership == .watched ? "Watching · " : ""
+    }
+
+    /// The name of the person a watched build belongs to, as Jenkins gives it (the MR's author); `nil` for my builds
+    /// and when Jenkins has none.
+    static func watchedAuthor(of build: Build) -> String? {
+        guard build.kind == .watched, let author = build.author?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !author.isEmpty
+        else { return nil }
+        return author
     }
 
     /// The build's title, unless it is missing or only repeats the job's name.

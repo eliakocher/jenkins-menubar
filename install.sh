@@ -140,10 +140,10 @@ old_tool_present() {
 	is_old_tool_file "$HOME/bin/jenkins-watch"
 }
 
-# wait_for_exit <process>: waits up to 5 seconds for a process to end.
+# wait_for_exit <executable path>: waits up to 5 seconds for the app at that path to end.
 wait_for_exit() {
 	local tries=0
-	while pgrep -x "$1" >/dev/null; do
+	while pgrep -f "^$1" >/dev/null; do
 		if ((tries == 50)); then
 			echo "✗ $1 did not quit; quit it from its menu and run this again" >&2
 			exit 1
@@ -182,16 +182,32 @@ install_app() {
 	# A running copy keeps running the old code, and open would only bring it forward. The executable was called
 	# menubar-monitor before the rename, so a copy that still runs under that name is quit as well; a copy under the
 	# former bundle id runs as MegaMonitor, so it quits with the first.
+	# Only the installed copies quit, matched by their path: the lanes' gallery runs from the checkout's build folder
+	# have the same process name and keep running (the user, 2026-11-02).
 	local running
-	for running in MegaMonitor menubar-monitor; do
-		if pgrep -x "$running" >/dev/null; then
-			change pkill -x "$running" || true
+	for running in "$app/Contents/MacOS/MegaMonitor" "$HOME/Applications/menubar-monitor.app/Contents/MacOS/menubar-monitor"; do
+		if pgrep -f "^$running" >/dev/null; then
+			change pkill -f "^$running" || true
 			if ! $dry_run; then
 				wait_for_exit "$running"
 			fi
 		fi
 	done
 	change open "$app"
+	# open can return before the app is up, or not start it at all after a quit (seen 2026-11-02): check, once more.
+	if ! $dry_run; then
+		local tries=0
+		until pgrep -f "^$app/Contents/MacOS/MegaMonitor" >/dev/null; do
+			if ((tries == 30)); then
+				open "$app" || true
+				sleep 2
+				pgrep -f "^$app/Contents/MacOS/MegaMonitor" >/dev/null || echo "✗ MegaMonitor didn't start: open it from ~/Applications" >&2
+				break
+			fi
+			sleep 0.2
+			tries=$((tries + 1))
+		done
+	fi
 	echo '✓ The welcome flow takes it from here: what it imported, the team values, the tokens and the notifications.'
 	if old_tool_present; then
 		echo

@@ -30,7 +30,7 @@ extension PanelActions {
             },
             quit: { NSApp.terminate(nil) },
             hide: { model.projects.hide($0) },
-            stopWatching: { model.pipelines.unwatch($0) },
+            stopWatching: { model.projects.unwatch(jobKey: $0) },
             copy: { MainWindowLinks.copy($0) },
             close: {},
             rebuildBuild: { model.projects.rebuild($0) },
@@ -41,6 +41,10 @@ extension PanelActions {
                 Task { await projects.cancelRebuild(jobKey: job) }
             },
             watchBuilds: { MergeRequestWatching.watch($0, model: model, router: router) },
+            watchJob: { id in
+                let projects = model.projects
+                Task { await projects.watchOpened(id) }
+            },
             newWorkItem: NewWorkItemLauncher.action(model: model) { router.browse($0, fallback: openURL) },
             followLink: { router.follow($0, model: model, fallback: openURL) },
             setJobNotifications: { model.setNotifications($1, forJob: $0) },

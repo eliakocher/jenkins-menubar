@@ -100,6 +100,8 @@ public final class PipelinesStore {
     @ObservationIgnored public var requestCheck: @MainActor () -> Void = {}
     /// called after a check with the alerts of the builds that finished, those of muted jobs left out
     @ObservationIgnored public var onFinishedBuilds: @MainActor ([BuildAlert]) -> Void = { _ in }
+    /// the fun layer's store, which the check reads for the streak and draws the moments' lines from
+    @ObservationIgnored public var funStore: FunStore?
 
     @ObservationIgnored private let services: PipelinesServices
     @ObservationIgnored private let round: PipelinesCheck
@@ -321,6 +323,19 @@ public final class PipelinesStore {
         case .success(let parsed): job = parsed
         case .failure(let refusal): return .failure(refusal)
         }
+        return await watch(job: job)
+    }
+
+    /// Watches a job by its name, once Jenkins confirms it: what Watch a Build… does after it has read the text, and
+    /// what the build detail's Watch does for a job it opened from a link or a tile (WATCH-01, WATCH-07).
+    ///
+    /// A job watched already adds nothing and logs nothing; a job of mine is refused, as it shows with my builds
+    /// anyway.
+    ///
+    /// - Parameter job: the job's name as in Jenkins URLs
+    /// - Returns: what was watched, or why nothing was
+    public func watch(job: String) async -> Result<WatchOutcome, WatchRefusal> {
+        let project = currentProject()
         if let watched = userState.watched.first(where: { $0.job == job }) {
             return .success(.alreadyWatching(watched))
         }
@@ -348,6 +363,28 @@ public final class PipelinesStore {
         log(.info, .jenkins, "Watching \(watched.label)", detail: confirmed.title)
         requestCheck()
         return .success(.watching(watched, title: confirmed.title))
+    }
+
+    /// Watches a job the build detail opened from a link or a tile: ``watch(job:)``, with a refusal logged as a warning,
+    /// since the button that asked has no place for its reason (WATCH-07).
+    ///
+    /// - Parameter job: the job's name as in Jenkins URLs
+    public func watchOpened(job: String) async {
+        if case .failure(let refusal) = await watch(job: job) {
+            log(.warning, .jenkins, "Couldn't watch \(Build.label(forJob: job)): \(refusal.message)")
+        }
+    }
+
+    /// Whether a job shows in Pipelines because it is mine or because it is watched; `nil` for neither, like a job
+    /// opened from a link (WATCH-07).
+    ///
+    /// - Parameter job: the job's name as in Jenkins URLs
+    /// - Returns: the kind of following
+    public func following(job: String) -> JobKind? {
+        if userState.watched.contains(where: { $0.job == job }) {
+            return .watched
+        }
+        return state.myJobs?.contains(job) == true ? .mine : nil
     }
 
     /// Stops watching a job by hand (WATCH-05). A job that isn't watched changes nothing and logs nothing.
@@ -561,7 +598,7 @@ public final class PipelinesStore {
     /// the hat the butler wears now: the party hat during a green streak, the Santa hat all of December, none with
     /// the eggs off (EGG-03, EGG-04)
     public var butlerHat: ButlerHat? {
-        preferences.easterEggs ? EggRules.hat(memory: eggMemory, now: now) : nil
+        preferences.easterEggs ? EggRules.hat(memory: eggMemory, now: now, level: preferences.funLevel) : nil
     }
 
     /// Counts one showing of the spellcheck demo note, and keeps the count (EGG-07).
@@ -642,7 +679,7 @@ public final class PipelinesStore {
         let input = PipelinesCheck.Input(
             userState: userState, state: state, alertStates: alertStates, merged: merged, gitLabUser: shared ?? gitLabUser,
             preferences: preferences, lookUpJobs: reason == .checkNow || jobLookupRequested, alertsArmed: alertsArmed, eggs: eggMemory,
-            project: projectID, notifications: notifications)
+            project: projectID, notifications: notifications, fun: funStore)
         let output = try await round.run(input)
         jobLookupRequested = false
         apply(output)

@@ -38,6 +38,7 @@ extension AIUseCase {
         case .askAboutItem: "Question About a Work Item"
         case .buildChat: "Question About a Build"
         case .coffeeBreak: "Coffee Break"
+        case .funBatch: "Fun Lines"
         }
     }
 }
@@ -77,6 +78,10 @@ extension AppModel {
         }
         projects.onFinishedBuilds = { [weak self] alerts in
             self?.addToInbox(finished: alerts)
+            if !alerts.isEmpty {
+                // Nothing surprising happens for a minute and a half after an alert.
+                self?.fun.alertShown()
+            }
         }
     }
 
@@ -108,7 +113,8 @@ extension AppModel {
                     .buildFailed(
                         jobKey: build.id.jobKey, number: build.id.number, label: build.id.label,
                         isUnstable: alert.content.result == .unstable, title: build.title, url: alert.content.links.build,
-                        at: build.finishedAt ?? dependencies.now()))
+                        at: build.finishedAt ?? dependencies.now(), isWatched: alert.content.isWatched,
+                        author: alert.content.watchedAuthor))
             case .success:
                 inbox.resolveLocal(kind: .buildFailed, idPrefix: InboxEvent.buildIDPrefix(jobKey: build.id.jobKey))
             case .aborted, .other:

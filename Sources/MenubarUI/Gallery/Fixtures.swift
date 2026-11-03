@@ -191,6 +191,13 @@ public struct Fixtures: Sendable {
         return alert(build)
     }
 
+    /// `MR-9 #4` of a colleague, which I only watch: the alert says so and has no Rebuild
+    func watchedAlert(_ result: BuildResult, minutes: Double, author: String? = "Sam Lee", failedStages: [String] = [],
+                      tests: TestCounts? = nil) -> BuildAlert {
+        alert(finished("MR-9", 4, "Speed up the report export", result, durationMinutes: minutes, finishedMinutesAgo: 0,
+                       failedStages: failedStages, tests: tests, kind: .watched, author: author))
+    }
+
     /// Five alerts of different shapes, the oldest first: an MR job's failure with stages and tests, a branch's success,
     /// an unstable one, an aborted one and a branch's failure.
     var pagedAlerts: [BuildAlert] {

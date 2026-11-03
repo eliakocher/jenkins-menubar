@@ -81,6 +81,7 @@ struct WelcomeData {
     struct Login {
         var status: LoginItemStatus = .notRegistered
         var error: String?
+        var place = LoginItemPlace.installed
     }
 
     /// whether the page's button is enabled
@@ -349,8 +350,8 @@ struct WelcomeContent: View {
             }
             .settingsSwitch()
             OpenAtLoginRows(
-                isOn: data.login.status == .notFound ? .constant(false) : $input.openAtLogin,
-                status: data.login.status, error: data.login.error, openSystemSettings: actions.openLoginItemsSettings,
+                isOn: $input.openAtLogin,
+                status: data.login.status, error: data.login.error, place: data.login.place, openSystemSettings: actions.openLoginItemsSettings,
                 caption: "Starts MegaMonitor when you log in")
         }
     }

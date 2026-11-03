@@ -3,7 +3,7 @@
 #
 #   scripts/smoke.sh [--no-build]
 #
-#   --no-build  uses build/MegaMonitor.app as it is, instead of running ./build.sh first
+#   --no-build  uses build/app.noindex/MegaMonitor.app as it is, instead of running ./build.sh first
 #
 # 1. It builds the bundle and starts a python3 stub server on 127.0.0.1, which answers with the fixtures that
 #    Tests/Fixtures/Smoke/routes.json names, and records each request.
@@ -31,7 +31,7 @@ cd "$root"
 if $build; then
 	./build.sh
 fi
-app=$root/build/MegaMonitor.app
+app=$root/build/app.noindex/MegaMonitor.app
 if [[ ! -x $app/Contents/MacOS/MegaMonitor ]]; then
 	echo "no app at $app: run ./build.sh first" >&2
 	exit 2

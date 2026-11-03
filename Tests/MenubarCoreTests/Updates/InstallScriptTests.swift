@@ -23,10 +23,11 @@ struct InstallScriptTests {
         let run = try await world.run([])
 
         #expect(run.status == 0, "\(run.output)")
-        let quit = try #require(run.output.range(of: "would run: pkill -x menubar-monitor"))
+        // Matched by the installed copy's path, so the gallery runs from the checkout keep running.
+        let quit = try #require(run.output.range(of: "would run: pkill -f '^\(world.home.path)/Applications/menubar-monitor.app/Contents/MacOS/menubar-monitor'"))
         let open = try #require(run.output.range(of: "would run: open \(world.home.path)/Applications/MegaMonitor.app"))
         #expect(quit.upperBound < open.lowerBound, "the running copy quits before the new one opens")
-        #expect(!run.output.contains("would run: pkill -x MegaMonitor"))
+        #expect(!run.output.contains("Applications/MegaMonitor.app/Contents/MacOS/MegaMonitor'"))
         #expect(run.output.contains("found the old menubar-monitor.app"))
         #expect(run.output.contains("asks for the notification permission once more"))
         #expect(run.changes.isEmpty, "\(run.changes)")
@@ -332,6 +333,7 @@ struct InstallScriptTests {
             "security find-generic-password -s "*) [[ " ${FAKE_KEYCHAIN:-} " == *" $3/$5 "* ]] || exit 44 ;;
             "osascript -e tell application \"System Events\" to get the name of every login item") echo "${FAKE_LOGIN_ITEMS:-}" ;;
             "pgrep -x "*) [[ " ${FAKE_RUNNING:-} " == *" $2 "* ]] ;;
+            "pgrep -f "*) name=${2##*/}; [[ " ${FAKE_RUNNING:-} " == *" $name "* ]] ;;
             "xcode-select -p")
                 [[ -z ${FAKE_NO_CLT:-} ]] || exit 2
                 echo /Library/Developer/CommandLineTools
@@ -354,7 +356,7 @@ struct InstallScriptTests {
         var changes: [String] {
             let questions = [
                 "defaults read ", "security find-generic-password ", "osascript -e tell application \"System Events\" to get ",
-                "pgrep -x ", "xcode-select -p", "xcrun --find swift", "sw_vers -productVersion",
+                "pgrep -x ", "pgrep -f ", "xcode-select -p", "xcrun --find swift", "sw_vers -productVersion",
             ]
             return calls.filter { call in !questions.contains { call.hasPrefix($0) } }
         }

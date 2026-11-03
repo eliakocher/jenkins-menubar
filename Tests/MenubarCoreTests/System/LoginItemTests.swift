@@ -62,4 +62,49 @@ struct LoginItemTests {
         #expect(launchAtLogin.status == .notRegistered)
         #expect(await log.entries().map(\.level) == [.warning])
     }
+
+    @Test("APP-02 the status line names the likely cause when macOS can't find the app", arguments: [
+        (LoginItemPlace(bundlePath: "/private/var/folders/x/T/AppTranslocation/A/d/MegaMonitor.app", isQuarantined: false, home: "/Users/me"),
+         LoginItemHelp.quarantined),
+        (LoginItemPlace(bundlePath: "/Users/me/Applications/MegaMonitor.app", isQuarantined: true, home: "/Users/me"),
+         LoginItemHelp.quarantined),
+        (LoginItemPlace(bundlePath: "/Users/me/Downloads/MegaMonitor.app", isQuarantined: false, home: "/Users/me"),
+         "MegaMonitor runs from ~/Downloads, not from an Applications folder. Move it to ~/Applications "
+            + "(or install it with ./install.sh), then open it again."),
+        (LoginItemPlace(bundlePath: "/Users/me/Applications/MegaMonitor.app", isQuarantined: false, home: "/Users/me"),
+         LoginItemHelp.unknownCause),
+    ])
+    func namesTheCause(place: LoginItemPlace, text: String) {
+        let help = LoginItemHelp.of(status: .notFound, place: place, failed: false)
+        #expect(help.message == text)
+        #expect(help.opensLoginItems)
+        // A refusal that leaves the item not registered gets the same help.
+        #expect(LoginItemHelp.of(status: .notRegistered, place: place, failed: true).message == text)
+        // Nothing to say while it is just off, and the approval line keeps its button.
+        #expect(LoginItemHelp.of(status: .notRegistered, place: place, failed: false).message == nil)
+        #expect(LoginItemHelp.of(status: .enabled, place: place, failed: false).message == nil)
+        #expect(LoginItemHelp.of(status: .requiresApproval, place: place, failed: false).opensLoginItems)
+    }
+
+    @Test("APP-02 a login item macOS can't find is still registered, and a refusal logs status and place once")
+    func notFoundIsTried() async throws {
+        let folder = try TemporaryFolder()
+        let log = ActivityLog(folder: folder.url)
+        let item = FakeLoginItem(status: .notFound)
+        item.place = LoginItemPlace(bundlePath: "/Users/me/Downloads/MegaMonitor.app", isQuarantined: true, home: "/Users/me")
+        item.error = NSError(domain: "SMAppServiceErrorDomain", code: 1, userInfo: [NSLocalizedDescriptionKey: "Operation not permitted"])
+        let launchAtLogin = LaunchAtLogin(item: item, log: log)
+
+        await #expect(throws: LoginItemError.self) { try await launchAtLogin.setOn(true) }
+
+        #expect(item.calls == [.register])
+        let entries = await log.entries()
+        #expect(entries.count == 1)
+        #expect(entries[0].message.contains("status notFound"))
+        #expect(entries[0].message.contains("/Users/me/Downloads/MegaMonitor.app"))
+
+        // Once registering works, the status afterwards is the truth.
+        item.error = nil
+        #expect(try await launchAtLogin.setOn(true) == .enabled)
+    }
 }

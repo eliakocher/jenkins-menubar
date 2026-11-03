@@ -32,6 +32,9 @@ public struct Preferences: Codable, Hashable, Sendable {
     public var globalShortcut: HotkeyShortcut?
     /// whether the easter eggs show; off, the app behaves as FEATURES.md describes (EGG-01)
     public var easterEggs: Bool
+    /// how much fun the easter eggs have: Subtle, Normal or Party (Settings → General → Fun level); only read while
+    /// ``easterEggs`` is on
+    public var funLevel: FunLevel
     /// whether a banner warns before a slot's code freeze while committed work items have no merged MR; off by default
     /// and never with a sound (SLOT-04)
     public var slotAlerts: Bool
@@ -61,6 +64,7 @@ public struct Preferences: Codable, Hashable, Sendable {
         fillInCopiedLink: Bool = false,
         globalShortcut: HotkeyShortcut? = nil,
         easterEggs: Bool = true,
+        funLevel: FunLevel = .party,
         slotAlerts: Bool = false,
         inboxNotifications: InboxNotificationRules = InboxNotificationRules(),
         menuBarLayout: MenuBarLayout = MenuBarLayout(),
@@ -84,6 +88,7 @@ public struct Preferences: Codable, Hashable, Sendable {
         self.fillInCopiedLink = fillInCopiedLink
         self.globalShortcut = globalShortcut
         self.easterEggs = easterEggs
+        self.funLevel = funLevel
         self.slotAlerts = slotAlerts
         self.inboxNotifications = inboxNotifications
     }
@@ -91,7 +96,7 @@ public struct Preferences: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds, alertStyle
         case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
-        case globalShortcut, easterEggs, slotAlerts, inboxNotifications, menuBarLayout, appearance, shortcuts
+        case globalShortcut, easterEggs, funLevel, slotAlerts, inboxNotifications, menuBarLayout, appearance, shortcuts
     }
 
     // A value encoded before a field existed decodes with that field's default. One encoded with the dropped
@@ -117,6 +122,7 @@ public struct Preferences: Codable, Hashable, Sendable {
             fillInCopiedLink: try value(.fillInCopiedLink, defaults.fillInCopiedLink),
             globalShortcut: try? container.decodeIfPresent(HotkeyShortcut.self, forKey: .globalShortcut),
             easterEggs: try value(.easterEggs, defaults.easterEggs),
+            funLevel: (try? container.decodeIfPresent(FunLevel.self, forKey: .funLevel)) ?? defaults.funLevel,
             slotAlerts: try value(.slotAlerts, defaults.slotAlerts),
             inboxNotifications: (try? container.decodeIfPresent(InboxNotificationRules.self, forKey: .inboxNotifications))
                 ?? defaults.inboxNotifications,

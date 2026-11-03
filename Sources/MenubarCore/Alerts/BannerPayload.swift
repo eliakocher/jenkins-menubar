@@ -46,7 +46,7 @@ public struct BannerPayload: Hashable, Sendable {
     public init(content: AlertContent) {
         self.init(
             category: content.bannerCategory, defaultAction: content.defaultAction, links: content.links,
-            rebuild: content.rebuild, hide: content.hide)
+            rebuild: content.offersRebuild ? content.rebuild : nil, hide: content.hide)
     }
 
     /// Returns the actions of a category, in the order the banner shows them.

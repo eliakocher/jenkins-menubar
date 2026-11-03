@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds build/MegaMonitor.app with only the Command Line Tools (or with Xcode, if it is the active developer
+# Builds build/app.noindex/MegaMonitor.app with only the Command Line Tools (or with Xcode, if it is the active developer
 # directory).
 #
 #   ./build.sh [--debug] [--install]
@@ -51,13 +51,15 @@ scripts/check-names.sh
 swift build -c "$config" --product megamonitor
 bin=$(swift build -c "$config" --show-bin-path)
 
-app=$root/build/MegaMonitor.app
+# In a folder Spotlight skips (`.noindex`), so search shows only the installed app (the user, 2026-11-03).
+app=$root/build/app.noindex/MegaMonitor.app
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 # The build folder's bundles of the old name leave Launch Services too, so only one app answers to the bundle id.
-for stale in "$root/build/menubar-monitor.app" "$root/build/gallery/menubar-monitor.app"; do
+for stale in "$root/build/menubar-monitor.app" "$root/build/gallery/menubar-monitor.app" \
+	"$root/build/MegaMonitor.app" "$root/build/gallery/MegaMonitor.app"; do
 	if [[ -d $stale ]]; then
 		"$lsregister" -u "$stale" 2>/dev/null || true
 		rm -rf "$stale"
@@ -68,7 +70,9 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/megamonitor" "$app/Contents/MacOS/MegaMonitor"
 cp icons/menubar.png icons/happy.png icons/sad.png icons/gitlab.png "$app/Contents/Resources/"
 # The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
-for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa coffee; do
+for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa coffee \
+	peek-side peek-bottom peek-top caught happy-halloween sad-halloween happy-carnival sad-carnival happy-easter sad-easter menubar-wink \
+	peek-side-party peek-side-santa peek-side-witch inbox-zero; do
 	if [[ -f icons/$egg.png ]]; then
 		cp "icons/$egg.png" "$app/Contents/Resources/"
 	fi
@@ -108,8 +112,8 @@ cat >"$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleExecutable</key><string>MegaMonitor</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0.2</string>
-	<key>CFBundleVersion</key><string>3</string>
+	<key>CFBundleShortVersionString</key><string>1.0.3</string>
+	<key>CFBundleVersion</key><string>4</string>
 	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>LSUIElement</key><true/>
 	<key>CFBundleURLTypes</key>

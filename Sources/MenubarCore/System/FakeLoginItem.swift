@@ -17,6 +17,8 @@ public final class FakeLoginItem: LoginItem {
     /// when set, `register()` and `unregister()` throw it and leave the status as it was
     public var error: (any Error)?
     public private(set) var calls: [Call] = []
+    /// where the app runs from
+    public var place = LoginItemPlace.installed
 
     public init(status: LoginItemStatus = .notRegistered) {
         self.status = status

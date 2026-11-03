@@ -11,6 +11,8 @@ struct MenuPaneEvents {
     var leave: @MainActor () -> Void = {}
     /// a click on a row
     var activate: @MainActor (MenuNavigation.PaneRow) -> Void = { _ in }
+    /// whether the peeking butler can come out beside the pane now
+    var canPeek: @MainActor () -> Bool = { true }
     /// an area row's AppKit view, whose frame places the flyout
     var anchor: @MainActor (MainWindowSection, NSView) -> Void = { _, _ in }
 
@@ -50,6 +52,11 @@ struct MenuPaneContent: View {
                 .keyboardShortcut(",")
             footerRow(.quit, isOptionHeld && model.easterEggs ? EggRules.optionQuit : "Quit", symbol: "power", shortcut: "⌘Q")
                 .keyboardShortcut("q")
+            if let fun = model.footer.fun {
+                // The butler's tip of the day, or the line of the moment (the fun layer).
+                MenuSeparator()
+                FunFooterRow(line: fun)
+            }
         }
         .padding(.vertical, MenuMetrics.edge)
         .frame(width: MenuMetrics.paneWidth(model.width))
@@ -64,6 +71,10 @@ struct MenuPaneContent: View {
         .onModifierKeysChanged(mask: .option) { _, keys in
             isOptionHeld = !keys.isEmpty
         }
+        // The butler peeks out of the pane's edge now and then; a click on him is a catch (the fun layer).
+        // The butler leans out from behind the pane's edge in a panel of his own beside it (``MenuPeekPanelController``); the
+        // overlay only claims him and shows the catch.
+        .butlerPeek(surface: .menuPane, edges: [.right], drawsFigure: false, isBlocked: { !events.canPeek() })
     }
 
     /// The red row on top: the problem in the label color, and the pane that fixes it as its grey line.

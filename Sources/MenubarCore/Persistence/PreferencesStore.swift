@@ -91,6 +91,7 @@ public struct PreferencesStore: @unchecked Sendable {
         case fillInCopiedLink
         case globalShortcut
         case easterEggs
+        case funLevel
         case slotAlerts
         case appearance
     }
@@ -148,6 +149,7 @@ public struct PreferencesStore: @unchecked Sendable {
         read(.showInMenuBar, into: \.showInMenuBar)
         read(.fillInCopiedLink, into: \.fillInCopiedLink)
         read(.easterEggs, into: \.easterEggs)
+        readRaw(.funLevel, into: \.funLevel)
         read(.slotAlerts, into: \.slotAlerts)
         readRaw(.appearance, into: \.appearance)
         // Text that isn't a shortcut, or one without ⌘, ⌃ or ⌥, reads as none.
@@ -301,6 +303,7 @@ public struct PreferencesStore: @unchecked Sendable {
         case .fillInCopiedLink: .bool(preferences.fillInCopiedLink)
         case .globalShortcut: .shortcut(preferences.globalShortcut?.rawValue ?? "")
         case .easterEggs: .bool(preferences.easterEggs)
+        case .funLevel: .string(preferences.funLevel.rawValue)
         case .slotAlerts: .bool(preferences.slotAlerts)
         case .appearance: .string(preferences.appearance.rawValue)
         }

@@ -13,6 +13,18 @@ struct StagesCard: View {
     @ViewState private var hovered: Int?
     /// the stage last clicked in the strip, lit in the full list
     @ViewState private var picked: Int?
+    /// where a click on a stage's line goes: the Console Log card, scrolled to the stage's first line (PIPE-12)
+    @Environment(\.consoleLogStageJump) private var stageJump
+    @Environment(WindowRouter.self) private var router: WindowRouter?
+
+    /// Shows a stage in the console log: the card opens and scrolls to where the stage starts.
+    private func showLog(of stage: BuildDetailModel.StageRow) -> (() -> Void)? {
+        guard let stageJump, stage.kind != .notRun else { return nil }
+        return {
+            stageJump.ask(stage: stage.name)
+            router?.requestCardFocus(.consoleLog)
+        }
+    }
 
     var body: some View {
         let attention = stages.filter(\.needsAttention)
@@ -47,7 +59,7 @@ struct StagesCard: View {
                 if !attention.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(attention) { stage in
-                            StageLine(stage: stage, dense: false)
+                            StageLine(stage: stage, dense: false, showLog: showLog(of: stage), hasLogHints: stageJump != nil)
                         }
                     }
                 }
@@ -62,7 +74,7 @@ struct StagesCard: View {
                     if showsAll {
                         VStack(alignment: .leading, spacing: 0) {
                             ForEach(stages) { stage in
-                                StageLine(stage: stage, dense: true, isPicked: stage.index == picked)
+                                StageLine(stage: stage, dense: true, isPicked: stage.index == picked, showLog: showLog(of: stage), hasLogHints: stageJump != nil)
                             }
                         }
                     }
@@ -109,20 +121,45 @@ private struct StageLine: View {
     let dense: Bool
     /// whether the stage was clicked in the strip: lit in its color
     var isPicked = false
+    /// opens the stage in the console log; `nil` for a stage that never ran, or on a page without a log
+    var showLog: (() -> Void)?
+    /// whether the page can show a stage's log at all, so that every line keeps room for the hint at its end
+    var hasLogHints = false
     @ViewState private var isHovered = false
 
     var body: some View {
+        if let showLog {
+            Button(action: showLog) { line }
+                .buttonStyle(.plain)
+                .help("Shows where \(stage.name) starts in the console log")
+        } else {
+            line
+        }
+    }
+
+    private var name: some View {
+        let text = Text(verbatim: stage.name)
+            .font(dense ? .callout : .body)
+            .foregroundStyle(stage.kind == .notRun ? .secondary : .primary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        // Selectable text would take the click that opens the log.
+        return Group {
+            if showLog == nil {
+                text.textSelection(.enabled)
+            } else {
+                text
+            }
+        }
+    }
+
+    private var line: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: stage.symbol)
                 .foregroundStyle(stage.kind == .notRun ? Color.secondary : stage.kind.tint)
                 .font(dense ? .callout : .body)
                 .frame(width: 16)
-            Text(verbatim: stage.name)
-                .font(dense ? .callout : .body)
-                .foregroundStyle(stage.kind == .notRun ? .secondary : .primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
+            name
             Spacer(minLength: 8)
             if !dense {
                 Text(verbatim: stage.word)
@@ -136,11 +173,18 @@ private struct StageLine: View {
                 .monospacedDigit()
                 .frame(minWidth: 44, alignment: .trailing)
                 .fixedSize()
+            if hasLogHints {
+                Image(systemName: "terminal")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovered && showLog != nil ? 1 : 0)
+                    .frame(width: 14)
+            }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, dense ? 3 : 5)
         .background(
-            isPicked ? AnyShapeStyle(stage.kind.tint.opacity(0.18)) : AnyShapeStyle(.fill.quaternary.opacity(isHovered ? 1 : 0)),
+            isPicked ? AnyShapeStyle(stage.kind.tint.opacity(0.18)) : AnyShapeStyle(.fill.quaternary.opacity(isHovered && showLog != nil ? 1 : 0)),
             in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .onHover { isHovered = $0 }
         .accessibilityElement(children: .combine)

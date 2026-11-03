@@ -110,6 +110,7 @@ struct SlotEpicSection: View {
     let selection: WorkItem.ID?
     let select: (WorkItem.ID) -> Void
     let actions: GitLabSectionActions
+    let keys: SlotKeys
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -117,7 +118,7 @@ struct SlotEpicSection: View {
             ForEach(group.items) { item in
                 SlotItemRow(
                     item: item, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
-                    isSelected: selection == item.id, select: { select(item.id) }, actions: actions)
+                    isSelected: selection == item.id, select: { select(item.id) }, actions: actions, keys: keys)
             }
         }
     }
@@ -262,6 +263,12 @@ struct SlotCommitmentSection: View {
 
 // MARK: - A work item
 
+/// How a row shows the keyboard focus.
+enum SlotRowFocus {
+    static let strokeOpacity = 0.85
+    static let lineWidth: CGFloat = 1.5
+}
+
 /// One work item of a slot: its title with the blue number, type and merge requests under it, flags, and its facts in
 /// columns, or folded under the title when narrow. A click selects it, so its detail shows beside the list; a double
 /// click opens it in a tab; ⌥-click opens it in GitLab (SLOT-09).
@@ -274,6 +281,9 @@ struct SlotItemRow: View {
     let isSelected: Bool
     let select: () -> Void
     let actions: GitLabSectionActions
+    let keys: SlotKeys
+    /// shows the keyboard focus whatever the focus is, for the gallery's picture of it
+    var showsFocusAlways = false
     @ViewState private var isHovered = false
     @Environment(\.slotOpenInTab) private var openInTab
 
@@ -284,9 +294,23 @@ struct SlotItemRow: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(background, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                // The keyboard focus: an accent outline on the selection's tint, as the current slot's card has its
+                // outline. The system's square ring is off, as in the header.
+                if showsFocus {
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.accentColor.opacity(SlotRowFocus.strokeOpacity), lineWidth: SlotRowFocus.lineWidth)
+                }
+            }
             .contentShape(RoundedRectangle(cornerRadius: 8))
             .onHover { isHovered = $0 }
+            .focusable()
+            .focusEffectDisabled()
+            .focused(keys.focus, equals: .item(item.id))
+            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .return], action: handle)
             .onTapGesture {
+                keys.setKeyboard(false)
+                keys.focus.wrappedValue = .item(item.id)
                 if NSEvent.modifierFlags.contains(.option) {
                     actions.open(item.workItem.webURL)
                 } else if let openInTab, !item.workItem.isEpic, NSApp.currentEvent?.clickCount == 2 {
@@ -307,6 +331,37 @@ struct SlotItemRow: View {
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
             .accessibilityAction(named: "Show Details", select)
+    }
+
+    private var showsFocus: Bool {
+        showsFocusAlways || (keys.isKeyboard && keys.focus.wrappedValue == .item(item.id))
+    }
+
+    /// ↑ and ↓ select the row above or below, across the epics and the cards; Return opens the item as a double click
+    /// does (an epic in GitLab's page, which the app can't show); ← closes the card and puts the focus on its header.
+    private func handle(_ press: SwiftUI.KeyPress) -> SwiftUI.KeyPress.Result {
+        guard press.modifiers.isDisjoint(with: [.command, .option, .control, .shift]) else { return .ignored }
+        switch press.key {
+        case .upArrow, .downArrow:
+            keys.setKeyboard(true)
+            if let next = keys.neighbor(item.id, press.key == .upArrow ? -1 : 1) {
+                keys.go(next)
+            }
+            return .handled
+        case .leftArrow:
+            keys.setKeyboard(true)
+            keys.fold()
+            return .handled
+        case .return:
+            if let openInTab, !item.workItem.isEpic {
+                openInTab(item.id)
+            } else {
+                actions.follow(item.workItem.webURL)
+            }
+            return .handled
+        default:
+            return .ignored
+        }
     }
 
     private var background: Color {

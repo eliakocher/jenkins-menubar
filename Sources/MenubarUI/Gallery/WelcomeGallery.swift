@@ -111,6 +111,23 @@ extension GalleryCatalog {
             GalleryEntry(screen: "welcome", state: "login-approval", size: size) { _ in
                 WelcomeGalleryView(data: WelcomeData(page: .menuBarAndLogin, login: WelcomeData.Login(status: .requiresApproval)))
             },
+            GalleryEntry(screen: "welcome", state: "login-not-found", size: size) { _ in
+                WelcomeGalleryView(data: WelcomeData(
+                    page: .menuBarAndLogin,
+                    login: WelcomeData.Login(
+                        status: .notFound,
+                        place: LoginItemPlace(
+                            bundlePath: "/private/var/folders/xy/T/AppTranslocation/ABC/d/MegaMonitor.app", isQuarantined: true))))
+            },
+            GalleryEntry(screen: "welcome", state: "login-not-found-elsewhere", size: size) { _ in
+                WelcomeGalleryView(data: WelcomeData(
+                    page: .menuBarAndLogin,
+                    login: WelcomeData.Login(
+                        status: .notFound,
+                        error: "Open at login couldn't be turned on: Operation not permitted",
+                        place: LoginItemPlace(
+                            bundlePath: "/Users/me/Downloads/MegaMonitor.app", isQuarantined: false, home: "/Users/me"))))
+            },
             // Page 6
             GalleryEntry(screen: "welcome", state: "done", size: size) { fixtures in
                 WelcomeGalleryView(data: fixtures.welcomeDone(

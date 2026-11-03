@@ -233,11 +233,7 @@ struct InboxListContent: View {
             if model.findsNothing {
                 ContentUnavailableView.search(text: model.query)
             } else {
-                ContentUnavailableView {
-                    Label(empty.title, systemImage: empty.symbol)
-                } description: {
-                    Text(verbatim: empty.detail)
-                }
+                InboxEmptyState(empty: empty)
             }
         }
     }

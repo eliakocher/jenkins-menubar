@@ -56,6 +56,8 @@ struct BuildDetailModel: Hashable, Sendable {
     var canHide: Bool
     /// whether "Stop Watching" shows: for watched builds and waiting jobs
     var canStopWatching: Bool
+    /// whether "Watch" shows: for a build opened from a link or a tile, whose job is neither mine nor watched (WATCH-07)
+    var canWatch = false
     /// whether "Rebuild" shows: for finished builds (PIPE-09)
     var canRebuild: Bool
     /// whether Why Did It Fail? shows: for finished failed or unstable builds (AI-02)

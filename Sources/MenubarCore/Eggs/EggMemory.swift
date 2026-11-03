@@ -70,8 +70,15 @@ extension CacheFile where Value == EggMemory {
     public static var eggs: CacheFile { CacheFile("eggs") }
 }
 
-/// A hat the butler wears: a party hat during a green streak, a Santa hat all of December.
+/// A hat the butler wears: a party hat during a green streak, or the hat of a season (``ButlerSeason``): the jester's cap
+/// of Carnival, the Easter butler, the witch's hat of Halloween, the New Year's party hat and the Santa hat of December.
 public enum ButlerHat: String, Codable, Hashable, Sendable, CaseIterable {
     case party
     case santa
+    /// the hat of Halloween
+    case witch
+    case newYear
+    case carnival
+    /// the hat of Easter, from Palm Sunday to Easter Monday
+    case easter
 }

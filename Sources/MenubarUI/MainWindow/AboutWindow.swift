@@ -10,11 +10,13 @@ enum AboutWindow {
 
     /// Opens the window, or brings the open one to the front, with the credits as the easter eggs setting has them.
     ///
-    /// - Parameter eggs: whether the easter eggs are on
-    static func show(eggs: Bool) {
+    /// - Parameters:
+    ///   - eggs: whether the easter eggs are on
+    ///   - model: the app, for the peeking butler and the count of the catches
+    static func show(eggs: Bool, model: AppModel? = nil) {
         let root = AboutView(
             eggs: eggs, icon: NSApp.applicationIconImage,
-            versionLine: AboutCredits.versionLine(info: Bundle.main.infoDictionary))
+            versionLine: AboutCredits.versionLine(info: Bundle.main.infoDictionary), model: model)
         if let window {
             if let host = window.contentViewController as? NSHostingController<AboutView>, host.rootView.eggs != eggs {
                 host.rootView = root

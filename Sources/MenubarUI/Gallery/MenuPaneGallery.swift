@@ -15,11 +15,19 @@ struct MenuPaneGalleryView: View {
     var flyoutHighlight: Int?
     /// Settings → Menu Bar's layout (APP-11)
     var layout = MenuBarLayout()
+    /// the fun layer's footer line (the butler's tip, a timer line); `nil` leaves it out
+    var fun: FunFooterLine?
     @Environment(\.colorScheme) private var colorScheme
+
+    private var paneModel: MenuPaneModel {
+        var model = MenuPaneModel(data, layout: layout)
+        model.footer.fun = fun
+        return model
+    }
 
     var body: some View {
         HStack(alignment: .menuFlyoutTop, spacing: MenuFlyoutPlacement.gap) {
-            MenuPaneContent(model: MenuPaneModel(data, layout: layout), navigation: navigation)
+            MenuPaneContent(model: paneModel, navigation: navigation)
                 .containerShape(.rect(cornerRadius: 16))
                 .glassEffect(.regular, in: .rect(cornerRadius: 16))
             if let open {

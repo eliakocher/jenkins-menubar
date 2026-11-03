@@ -116,6 +116,18 @@ struct MergeCard: View {
                 actionRow(state, overview: overview)
             }
         }
+        .overlay {
+            // A merge from the app gets confetti over the card (the fun layer; Normal small, Party full).
+            if let celebration = mergeCelebration {
+                ConfettiBurst(level: celebration.level, origin: UnitPoint(x: 0.5, y: 0.45), seed: celebration.id)
+                    .id(celebration.id)
+            }
+        }
+    }
+
+    /// the celebration of a merge made from the app, while its outcome shows
+    private var mergeCelebration: FunModel.MergeCelebration? {
+        activity == .succeeded(.merge) ? appModel?.fun.merges[mergeRequest.reference] : nil
     }
 
     // MARK: The checks
@@ -396,6 +408,12 @@ struct MergeCard: View {
             OutcomeLine(
                 symbol: "checkmark.circle.fill", tint: MergeRequestStatus.Color.green.swiftUI,
                 text: Self.doneText(action, state: state), dismiss: dismiss)
+            if action == .merge, let celebration = mergeCelebration {
+                Text(verbatim: celebration.line)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         case .failed(let action, let message, let needsToken):
             OutcomeLine(
                 symbol: "exclamationmark.triangle.fill", tint: MergeRequestStatus.Color.red.swiftUI,

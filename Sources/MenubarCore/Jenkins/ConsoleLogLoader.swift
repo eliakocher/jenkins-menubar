@@ -99,7 +99,8 @@ public final class ConsoleLogLoader {
     /// the loaded text's size, in bytes
     public private(set) var loadedBytes = 0
 
-    @ObservationIgnored private let source: ConsoleLogSource
+    /// where the log is read, which Save reads again in pages of its own
+    @ObservationIgnored public let source: ConsoleLogSource
     @ObservationIgnored private let limits: ConsoleLogLimits
     @ObservationIgnored private let clock: any Clock<Duration>
     @ObservationIgnored private var pages: [Page] = []
@@ -139,6 +140,16 @@ public final class ConsoleLogLoader {
         self.source = source
         self.limits = limits
         self.clock = clock
+    }
+
+    /// how much a page reads, in bytes
+    public var pageSize: Int { limits.page }
+
+    /// Shows a problem of the card's own under the log, as a page's failure does; the next page that loads clears it.
+    ///
+    /// - Parameter problem: the text
+    public func report(_ problem: String) {
+        pageProblem = problem
     }
 
     // MARK: Reading
@@ -536,7 +547,7 @@ public final class ConsoleLogLoader {
         }
     }
 
-    nonisolated static func message(of error: any Error) -> String {
+    public nonisolated static func message(of error: any Error) -> String {
         if let problem = error as? ConsoleLogProblem {
             return problem.message
         }

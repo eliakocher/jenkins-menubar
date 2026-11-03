@@ -52,7 +52,7 @@ final class AlertPanels: NSObject, NSWindowDelegate {
         let view = BuildAlertPanelView(
             model: model,
             rebuildWithChanges: { [weak self] alert in
-                if let build = alert.content.rebuild {
+                if alert.content.offersRebuild, let build = alert.content.rebuild {
                     self?.effects?.rebuildWithChanges(build)
                 }
                 self?.dismiss(alert)
@@ -83,7 +83,7 @@ final class AlertPanels: NSObject, NSWindowDelegate {
 
     /// Runs a button of a page, then dismisses the page.
     private func perform(_ action: AlertContent.Action, for alert: BuildAlert) {
-        if action == .rebuild, let build = alert.content.rebuild {
+        if action == .rebuild, alert.content.offersRebuild, let build = alert.content.rebuild {
             effects?.rebuild(build)
         } else if action == .hide, let build = alert.content.hide {
             effects?.hide(build)

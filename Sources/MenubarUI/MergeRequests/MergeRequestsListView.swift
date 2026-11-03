@@ -170,6 +170,8 @@ struct MergeRequestsListContent: View {
                 if model.showsEmpty {
                     ContentUnavailableView {
                         Label(MergeRequestSections.emptyText, systemImage: "arrow.triangle.pull")
+                    } description: {
+                        FunTipCaption()
                     } actions: {
                         if let link = model.emptyLink {
                             Link("All Merge Requests in GitLab", destination: link)

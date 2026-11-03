@@ -675,7 +675,7 @@ public final class AIStore {
             let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines)
             answer.text = text?.isEmpty == false ? text : nil
             guard answer.text != nil || run.structured != nil else { return nil }
-        case .openInClaudeCode, .askAboutCode, .askAboutItem, .buildChat, .coffeeBreak:
+        case .openInClaudeCode, .askAboutCode, .askAboutItem, .buildChat, .coffeeBreak, .funBatch:
             guard let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             answer.text = text
         }

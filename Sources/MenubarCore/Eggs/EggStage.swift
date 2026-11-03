@@ -73,6 +73,28 @@ public final class EggStage {
         }
     }
 
+    /// Makes the butler of the status icon hop twice, for 1.2 s: a surprise of the fun layer (``HopSequence``; the wink art
+    /// `icons/menubar-wink.png` replaces the hop when the file is there). Under Reduce Motion nothing moves.
+    ///
+    /// - Parameter reduceMotion: whether Reduce Motion is on
+    public func nod(reduceMotion: Bool) {
+        let steps = HopSequence.steps(reduceMotion: reduceMotion)
+        guard !steps.isEmpty, bowing == nil else {
+            return
+        }
+        bowing = Task { [clock] in
+            for step in steps {
+                bow = step.frame
+                try? await clock.sleep(for: step.duration)
+                if Task.isCancelled {
+                    break
+                }
+            }
+            bow = nil
+            bowing = nil
+        }
+    }
+
     /// Ends what plays, as the app stops.
     public func stop() {
         bowing?.cancel()

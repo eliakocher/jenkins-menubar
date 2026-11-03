@@ -17,9 +17,12 @@ extension EggRules {
     ///   - now: the time of the check
     ///   - calendar: the calendar
     ///   - enabled: whether the eggs are on (EGG-01)
+    ///   - level: the fun level; at Subtle only the first catalog's eggs play
+    ///   - fun: the fun layer's store, which keeps the green streak and draws the lines; `nil` leaves the new moments out
     /// - Returns: the alerts, with their egg lines
     public static func annotate(
-        _ alerts: [BuildAlert], memory: inout EggMemory, now: Date, calendar: Calendar = .current, enabled: Bool
+        _ alerts: [BuildAlert], memory: inout EggMemory, now: Date, calendar: Calendar = .current, enabled: Bool,
+        level: FunLevel = .subtle, fun: FunStore? = nil
     ) -> [BuildAlert] {
         var annotated = alerts
         for (index, alert) in alerts.enumerated() where alert.kind == .finished {
@@ -29,10 +32,20 @@ extension EggRules {
             let build = alert.build
             let facts = BuildFacts(build: build, result: result, duration: duration)
             let history = record(facts, in: &memory, now: now, calendar: calendar)
+            // The counters move on with the eggs off too, so switching them on finds the streak as it is.
+            let noted = fun?.noteFinished(result, now: now)
             let earlier = alerts[..<index].filter { $0.kind == .finished }.map(\.build)
-            let line = enabled
-                ? firstLine(of: facts, history: history, earlier: earlier, memory: &memory, now: now, calendar: calendar)
-                : nil
+            var moment: FunMoment?
+            var line: String?
+            if enabled {
+                line = buildNumberLine(facts)
+                if line == nil, level.showsMoments, let fun, let noted {
+                    moment = FunMoments.detect(facts, history: history, streak: noted.streak, now: now, calendar: calendar, fun: fun)
+                    line = moment.map { FunMoments.line($0, build: build, fun: fun, now: now) }
+                }
+                line = line
+                    ?? firstLine(of: facts, history: history, earlier: earlier, memory: &memory, now: now, calendar: calendar)
+            }
             memory.lastAlertYear = calendar.component(.year, from: now)
             guard enabled else {
                 continue
@@ -41,13 +54,50 @@ extension EggRules {
                 annotated[index].content.eggLine = line
                 annotated[index].content.bannerBody += "\n" + line
             }
-            if let hat = hat(memory: memory, now: now, calendar: calendar),
-                hat == .santa || alert.content.result == .success
+            if let hat = hat(memory: memory, now: now, calendar: calendar, level: level),
+                hat != .party || alert.content.result == .success
             {
                 annotated[index].content.hat = hat
             }
+            if level.showsMoments {
+                annotated[index].content.weather = weather(facts, history: history, level: level, now: now, calendar: calendar)
+                annotated[index].content.funLevel = level
+                annotated[index].content.celebration = celebration(
+                    moment: moment, build: build, level: level, now: now, calendar: calendar, fun: fun)
+            }
         }
         return annotated
+    }
+
+    /// Returns the weather over a failed build's butler: a drizzle for an unstable build, rain for a failed one, and at
+    /// Party a storm for the third failure in a row of the job or a failure on a Friday after 16:00. Nothing for any other
+    /// result and below Normal.
+    static func weather(_ facts: BuildFacts, history: History, level: FunLevel, now: Date, calendar: Calendar) -> SadWeather? {
+        guard level.showsMoments, facts.isRed else {
+            return nil
+        }
+        let parts = calendar.dateComponents([.weekday, .hour], from: now)
+        let friday = parts.weekday == 6 && (parts.hour ?? 0) >= 16
+        if level.isParty, history.redRun == 3 || friday {
+            return .storm
+        }
+        return facts.result == .unstable ? .drizzle : .rain
+    }
+
+    /// Returns what plays over an alert: the fireworks on a New Year's day and the app's anniversary at Party, once a day,
+    /// else the confetti of a redemption, a streak of 10 or more, or a thousandth build.
+    private static func celebration(
+        moment: FunMoment?, build: Build, level: FunLevel, now: Date, calendar: Calendar, fun: FunStore?
+    ) -> FunCelebration? {
+        if level.isParty, let fun, FunTimers.isFireworksDay(now: now, calendar: calendar, firstUse: fun.snapshot.firstUse),
+            fun.mark("fireworks", now: now)
+        {
+            return .fireworks
+        }
+        if let moment, let celebration = moment.celebration {
+            return celebration
+        }
+        return build.number % 1000 == 0 ? .confetti : nil
     }
 
     /// what the rules read of a finished build

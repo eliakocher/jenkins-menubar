@@ -28,6 +28,8 @@ public struct PanelActions {
     public var hide: @MainActor (Build) -> Void
     /// stops watching a job (WATCH-05)
     public var stopWatching: @MainActor (String) -> Void
+    /// watches the job of a build opened from a link or a tile, which isn't followed yet (WATCH-07)
+    public var watchJob: @MainActor (BuildID) -> Void
     /// puts a link on the clipboard
     public var copy: @MainActor (URL) -> Void
     /// closes the panel, as Esc in an empty search field does
@@ -59,6 +61,7 @@ public struct PanelActions {
         rebuildBuildWithChanges: @escaping @MainActor (BuildID) -> Void = { _ in },
         cancelRebuild: @escaping @MainActor (String) -> Void = { _ in },
         watchBuilds: @escaping @MainActor (MergeRequest) -> Void = { _ in },
+        watchJob: @escaping @MainActor (BuildID) -> Void = { _ in },
         openSection: @escaping @MainActor (MainWindowSection) -> Void = { _ in },
         newWorkItem: (@MainActor (NewWorkItemSource) -> Void)? = nil,
         followLink: (@MainActor (URL) -> Void)? = nil,
@@ -84,6 +87,7 @@ public struct PanelActions {
         self.rebuildBuildWithChanges = rebuildBuildWithChanges
         self.cancelRebuild = cancelRebuild
         self.watchBuilds = watchBuilds
+        self.watchJob = watchJob
         self.openSection = openSection
         self.newWorkItem = newWorkItem
     }

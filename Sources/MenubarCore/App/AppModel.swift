@@ -60,6 +60,8 @@ public final class AppModel {
     public let mergeRequestDetails: MergeRequestDetailsStore
     /// the code changes of the selected merge requests, loaded on selection (MR-11)
     public let mergeRequestChanges: MergeRequestChangesStore
+    /// the suggested reviewers of my merge requests, loaded when the Reviewers card shows (MR-15)
+    public let reviewerSuggestions: ReviewerSuggestionStore
     /// GitLab's links from merge requests to work items, loaded when a merge request or one of its builds shows
     public let itemLinks: LinkedWorkItemsStore
     /// the failed tests of the selected finished builds, loaded on selection (PIPE-03)
@@ -86,6 +88,11 @@ public final class AppModel {
     public let inbox: InboxStore
     /// the daily coffee break's entry in the Inbox, at 08:59 on weekdays by default (Settings → Notifications)
     public let coffeeBreak: CoffeeBreak
+
+    /// the fun layer: the butler's tip, the surprises, the peeking butler and Haiku's daily lines (`docs/easter-eggs.md`)
+    public let fun: FunModel
+    /// what the fun layer keeps: the green streak, the pool of lines, the catches
+    @ObservationIgnored public let funStore: FunStore
 
     /// whether ``start()`` ran and ``stop()`` didn't since
     public private(set) var isStarted = false
@@ -171,6 +178,7 @@ public final class AppModel {
         itemDiscussions = ItemDiscussionsStore(services: gitLabServices)
         mergeRequestDetails = MergeRequestDetailsStore(services: gitLabServices)
         mergeRequestChanges = MergeRequestChangesStore(services: gitLabServices)
+        reviewerSuggestions = ReviewerSuggestionStore(services: gitLabServices)
         itemLinks = LinkedWorkItemsStore(services: gitLabServices)
         workItemFilters = preferences.workItems
 
@@ -216,6 +224,12 @@ public final class AppModel {
 
         coffeeBreak = CoffeeBreak(
             inbox: inbox, clock: dependencies.clock, now: dependencies.now, line: { [ai] date in await ai.coffeeLine(on: date) })
+
+        let funStore = FunStore(file: dependencies.fileLocations.applicationSupport.appending(path: "fun.json"))
+        self.funStore = funStore
+        fun = FunModel(store: funStore, now: dependencies.now, clock: dependencies.clock)
+        projects.funStore = funStore
+        connectFun()
 
         connectAI()
         connectInboxLocal()
@@ -277,6 +291,8 @@ public final class AppModel {
         ]
         onScheduler { await $0.start() }
         coffeeBreak.apply(settings.preferences.inboxNotifications)
+        fun.apply(settings.preferences)
+        fun.start()
     }
 
     /// Stops the background loop and cancels the check under way. ``start()`` starts it again.
@@ -289,6 +305,7 @@ public final class AppModel {
         watchers = []
         onScheduler { await $0.stop() }
         coffeeBreak.stop()
+        fun.stop()
     }
 
     /// Removes the global hotkey, as the app quits (APP-08).
@@ -387,6 +404,7 @@ public final class AppModel {
     private func apply(_ preferences: Preferences) {
         projects.preferences = preferences
         hotkey.apply(preferences.globalShortcut)
+        fun.apply(preferences)
         if inbox.rules != preferences.inboxNotifications {
             inbox.rules = preferences.inboxNotifications
         }

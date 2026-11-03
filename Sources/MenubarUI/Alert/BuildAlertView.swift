@@ -19,6 +19,10 @@ public struct BuildAlertView: View {
     let pager: AlertPager?
     let rebuildWithChanges: (() -> Void)?
     let perform: (AlertContent.Action) -> Void
+    /// freezes the celebration at one frame, for the gallery's shots; `nil` plays it
+    var frozenCelebrationAt: Double?
+    /// freezes the cloud and the rain at one frame, for the gallery's shots; `nil` plays them
+    var frozenWeatherAt: Double?
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.colorScheme) private var colorScheme
 
@@ -53,21 +57,24 @@ public struct BuildAlertView: View {
                 AlertPagerBar(pager: pager)
                     .padding(.bottom, 4)
             }
-            Image(nsImage: AppImages.alert(content.icon, hat: content.hat))
-                .resizable()
-                .frame(width: 96, height: 96)
+            butler(content)
+            if let ownership = content.ownership {
+                // Whose build it is, before anything else: "Watching · by Sam Lee" or "Your build".
+                AlertOwnershipTag(ownership: ownership, author: content.watchedAuthor)
+                    .padding(.top, 10)
+            }
             if let project = content.project {
                 // With several projects, which one the build is of (plan Phase 13).
                 Text(verbatim: project)
                     .font(.callout)
                     .foregroundStyle(.alertGrey)
-                    .padding(.top, 12)
+                    .padding(.top, content.ownership == nil ? 12 : 6)
             }
             headline(content)
                 .font(.title3)
                 .bold()
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, content.project == nil ? 12 : 2)
+                .padding(.top, content.project != nil ? 2 : content.ownership != nil ? 8 : 12)
             if let title = content.title {
                 Text(verbatim: title)
                     .lineLimit(lineLimit)
@@ -131,6 +138,19 @@ public struct BuildAlertView: View {
         .padding(.top, 20)
         .frame(width: Self.width)
         .fixedSize(horizontal: false, vertical: true)
+        .overlay {
+            // The storm's lightning: a white flash over the panel, in its corners.
+            if let weather = content.weather {
+                SadWeatherFlash(weather: weather, seed: alert.build.number, frozenAt: frozenWeatherAt)
+                    .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
+            }
+        }
+        .overlay {
+            // Confetti or fireworks over the alert, for a redemption, a streak, a merge or New Year (the fun layer).
+            if let celebration = content.celebration, let level = content.funLevel {
+                FunCelebrationOverlay(celebration: celebration, level: level, seed: alert.build.number, frozenAt: frozenCelebrationAt)
+            }
+        }
         .background {
             // A tint over the glass, so the white title and buttons stand out over a light window; the glass still
             // shows through. The corners match the panel's glass.
@@ -145,6 +165,34 @@ public struct BuildAlertView: View {
                 }
             }
         }
+    }
+
+    /// The butler, with the hat of the season and the weather of a failed build behind him. The plain art fills the 96 pt
+    /// box; the seasonal art is taller than square, shown at the plain butler's scale (see
+    /// ``AppImages/alertSize(of:box:)``): his face reads as big as ever and the hat rises above the box.
+    private func butler(_ content: AlertContent) -> some View {
+        let art = AppImages.alert(content.icon, hat: content.hat)
+        let size = AppImages.alertSize(of: art, box: 96)
+        return Image(nsImage: art)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size.width, height: size.height)
+            .overlay {
+                // The witch's and New Year's hats are drawn in code only when their art is missing (the fallback).
+                if let hat = content.hat, AppImages.drawsFallbackHat(content.icon, hat: hat) {
+                    SeasonalHatOverlay(hat: hat)
+                }
+            }
+            // The butler bounces on a green build and shakes on a red one, once (Normal and Party).
+            .funButlerMotion(isHappy: content.icon == .happy, level: content.funLevel)
+            .background(alignment: .top) {
+                // A cloud and rain behind a failed build's butler (Normal and Party).
+                if let weather = content.weather {
+                    SadWeatherSky(weather: weather, seed: alert.build.number, frozenAt: frozenWeatherAt)
+                        .frame(width: 300, height: size.height + 44 + SadWeatherSky.headroom)
+                        .offset(y: -SadWeatherSky.headroom)
+                }
+            }
     }
 
     private func button(_ action: AlertContent.Action, content: AlertContent) -> some View {
@@ -203,6 +251,46 @@ public struct BuildAlertView: View {
             return .defaultAction
         }
         return action == .dismiss ? .cancelAction : nil
+    }
+}
+
+/// The tag under the butler that tells whose build the alert is about (the user, 2026-11-03: "it should be obvious").
+///
+/// A watched build gets a filled capsule with an eye, "Watching", and "by Sam Lee" next to it, in neutral grey so it
+/// stays apart from the result's colors; my own build gets a quiet, lighter "Your build".
+struct AlertOwnershipTag: View {
+    let ownership: AlertContent.Ownership
+    let author: String?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch ownership {
+            case .watched:
+                Label("Watching", systemImage: "eye.fill")
+                    .font(.callout.weight(.semibold))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.primary.opacity(0.18)))
+                    .fixedSize()
+                if let author {
+                    Text(verbatim: "by \(author)")
+                        .font(.callout)
+                        .foregroundStyle(.alertGrey)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(author)
+                }
+            case .mine:
+                Label("Your build", systemImage: "person.fill")
+                    .font(.caption)
+                    .foregroundStyle(.alertGrey)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.primary.opacity(0.07)))
+                    .fixedSize()
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

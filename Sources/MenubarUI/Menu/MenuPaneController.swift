@@ -59,6 +59,9 @@ final class MenuPaneController {
 
     /// the pane's window whose material was set active
     @ObservationIgnored private weak var styledWindow: NSWindow?
+    /// the panel beside the pane that the peeking butler leans out of (the fun layer)
+    @ObservationIgnored private let peekPanel = MenuPeekPanelController()
+    @ObservationIgnored private weak var peekFun: FunModel?
 
     /// Draws the pane's window material as a menu's, translucent: a visual effect view that follows the window's
     /// active state draws flat grey while the window isn't key, which the user saw in the menu bar (2026-10-29).
@@ -173,9 +176,23 @@ final class MenuPaneController {
         navigation.closeFlyout()
     }
 
+    /// Shows or hides the peeking butler's panel beside the pane, as the fun model plays him.
+    ///
+    /// - Parameter fun: the fun model
+    func refreshPeek(_ fun: FunModel) {
+        peekFun = fun
+        peekPanel.refresh(fun: fun, pane: isPaneVisible ? styledWindow : nil, flyout: panel)
+    }
+
+    /// Whether the butler could peek out beside the pane now: a side has room on the screen and the flyout leaves it free.
+    func canPeek() -> Bool {
+        isPaneVisible && peekPanel.canPeek(pane: styledWindow, flyout: panel)
+    }
+
     /// The pane closed: the flyout goes with it, always.
     func paneDisappeared() {
         isPaneVisible = false
+        peekPanel.hide()
         pending?.cancel()
         pending = nil
         pendingDecision = nil
@@ -269,6 +286,8 @@ final class MenuPaneController {
         }
         window.addChildWindow(panel, ordered: .above)
         panel.orderFront(nil)
+        // The butler leans out on the side the flyout isn't on.
+        if let peekFun { refreshPeek(peekFun) }
         if fade {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.12
@@ -298,6 +317,7 @@ final class MenuPaneController {
         }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
+        if let peekFun { refreshPeek(peekFun) }
         contentHeight = 0
         placedArea = nil
         if let paneResizeObserver {

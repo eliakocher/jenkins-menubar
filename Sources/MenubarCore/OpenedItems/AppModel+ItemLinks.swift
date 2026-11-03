@@ -44,8 +44,11 @@ extension AppModel {
     ///   - reference: the merge request's full reference
     ///   - webURL: its page
     ///   - updatedAt: when it last changed, when known
-    public func loadItemLinks(ofMergeRequest reference: String, webURL: URL, updatedAt: Date? = nil) async {
-        await itemLinks.load(reference: reference, webURL: webURL, updatedAt: updatedAt)
+    ///   - title: its title, when known: a title that names the work item spares the request for the related issues
+    public func loadItemLinks(ofMergeRequest reference: String, webURL: URL, updatedAt: Date? = nil, title: String? = nil) async {
+        await itemLinks.load(
+            reference: reference, webURL: webURL, updatedAt: updatedAt, title: title,
+            ignoredPrefix: team.primaryProject().team.ignoredMergeRequestPrefix)
     }
 
     /// Asks GitLab for the links of the merge request of a build.
@@ -55,7 +58,10 @@ extension AppModel {
         guard let linked = mergeRequest(ofBuild: build) else {
             return
         }
-        await itemLinks.load(reference: linked.reference, webURL: linked.webURL, updatedAt: knownMergeRequest(linked.reference)?.updatedAt)
+        let known = knownMergeRequest(linked.reference)
+        await itemLinks.load(
+            reference: linked.reference, webURL: linked.webURL, updatedAt: known?.updatedAt, title: known?.title ?? linked.title,
+            ignoredPrefix: team.project(build.project)?.team.ignoredMergeRequestPrefix ?? "")
     }
 
     private func evidence(ofMergeRequest reference: String) -> WorkItemEvidence {
