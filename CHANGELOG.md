@@ -5,6 +5,11 @@ versions follow [Semantic Versioning](https://semver.org/). The version lives in
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-03
+
+### Fixed
+- Opening the menu bar pane while the butler is about to peek no longer crashes the app.
+
 ## [1.0.3] - 2026-11-03
 
 ### Added

@@ -176,12 +176,19 @@ final class MenuPaneController {
         navigation.closeFlyout()
     }
 
-    /// Shows or hides the peeking butler's panel beside the pane, as the fun model plays him.
+    /// Shows or hides the peeking butler's panel beside the pane, as the fun model plays him, on the next turn of the run
+    /// loop: this is called from SwiftUI's updates, inside the pane window's constraint pass, where no window may change
+    /// (``MenuPeekPanelController/setNeedsRefresh(_:)``).
     ///
     /// - Parameter fun: the fun model
     func refreshPeek(_ fun: FunModel) {
         peekFun = fun
-        peekPanel.refresh(fun: fun, pane: isPaneVisible ? styledWindow : nil, flyout: panel)
+        peekPanel.setNeedsRefresh { [weak self, weak fun] in
+            guard let self, let fun else {
+                return nil
+            }
+            return (fun, self.isPaneVisible ? self.styledWindow : nil, self.panel)
+        }
     }
 
     /// Whether the butler could peek out beside the pane now: a side has room on the screen and the flyout leaves it free.
@@ -192,7 +199,8 @@ final class MenuPaneController {
     /// The pane closed: the flyout goes with it, always.
     func paneDisappeared() {
         isPaneVisible = false
-        peekPanel.hide()
+        // The pane's window takes its child along as it closes; the panel itself goes a turn later, outside the update.
+        if let peekFun { refreshPeek(peekFun) }
         pending?.cancel()
         pending = nil
         pendingDecision = nil

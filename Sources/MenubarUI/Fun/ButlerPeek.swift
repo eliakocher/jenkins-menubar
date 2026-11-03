@@ -243,6 +243,11 @@ struct ButlerPeekOverlay: View {
         }
         // The slide follows the phase the model plays; the playback itself lives in the model, so nothing here can end it.
         .onChange(of: fun?.playing?.phase, initial: true) { _, phase in
+            // Where another view draws him (the menu bar pane's panel), nothing here slides: an animation of a value that
+            // nothing draws would still update the surface's window every frame.
+            guard drawsFigure else {
+                return
+            }
             let target: CGFloat = phase == .slidingOut || phase == nil ? 0 : 1
             if reduceMotion || phase == nil {
                 slide = target

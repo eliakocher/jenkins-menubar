@@ -60,7 +60,14 @@ final class MenuPeekPanelController {
     }
 
     private var panel: MenuPeekPanel?
+    private var hosting: MenuFlyoutHostingView?
     private var side: Side?
+    /// what the next refresh reads: the fun model, the pane's window and the flyout's, as they are when it runs
+    private var source: (@MainActor () -> (fun: FunModel, pane: NSWindow?, flyout: NSWindow?)?)?
+    private var isRefreshScheduled = false
+    /// Refreshes the panel when the pane's window resizes or moves while he is out, so he stays on its edge.
+    private var paneObservers: [any NSObjectProtocol] = []
+    private weak var observedPane: NSWindow?
 
     /// Whether he could peek now: a side has room and the flyout leaves it free.
     func canPeek(pane: NSWindow?, flyout: NSWindow?, along: CGFloat = 0.68) -> Bool {
@@ -72,40 +79,122 @@ final class MenuPeekPanelController {
             visible: (pane.screen ?? NSScreen.main)?.visibleFrame ?? pane.frame, along: along, width: Self.shownWidth) != nil
     }
 
-    /// Shows the panel while the pane's peek plays, puts it on the right side, and hides it otherwise.
+    /// Asks for a refresh on the next turn of the run loop; asks in the same turn share one.
+    ///
+    /// The pane calls this from SwiftUI's updates, which run inside its window's layout and constraint passes: a window's
+    /// frame, child windows or content view changed there marks the pane's constraints dirty again, and AppKit raises
+    /// when a window needs more constraint passes than it has views (the crash of 2026-11-03). So the panel's window is
+    /// only ever touched here, a turn later, outside every pass.
+    ///
+    /// - Parameter source: returns the fun model, the pane's window (`nil` while the pane is closed) and the flyout's,
+    ///   read when the refresh runs; `nil` hides the panel
+    func setNeedsRefresh(_ source: @escaping @MainActor () -> (fun: FunModel, pane: NSWindow?, flyout: NSWindow?)?) {
+        self.source = source
+        guard !isRefreshScheduled else {
+            return
+        }
+        isRefreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else {
+                    return
+                }
+                self.isRefreshScheduled = false
+                guard let state = self.source?() else {
+                    self.hide()
+                    return
+                }
+                self.refresh(fun: state.fun, pane: state.pane, flyout: state.flyout)
+            }
+        }
+    }
+
+    /// Shows the panel while the pane's peek plays, puts it on the right side, and hides it otherwise. A pane or a place
+    /// that isn't sound (no size, off every screen, not finite) skips the peek. Call it outside layout: see
+    /// ``setNeedsRefresh(_:)``.
     func refresh(fun: FunModel, pane: NSWindow?, flyout: NSWindow?) {
         guard let playing = fun.playing, playing.owner == FunModel.paneOwner, let pane, pane.isVisible,
+            Self.isSound(pane.frame), let screen = pane.screen ?? NSScreen.main,
             let placement = Self.placement(
                 pane: pane.frame, flyout: flyout?.isVisible == true ? flyout?.frame : nil,
-                visible: (pane.screen ?? NSScreen.main)?.visibleFrame ?? pane.frame, along: CGFloat(playing.along),
-                width: Self.shownWidth)
+                visible: screen.visibleFrame, along: CGFloat(playing.along), width: Self.shownWidth),
+            Self.isSound(placement.frame)
         else {
             hide()
             return
         }
         let panel = panel ?? MenuPeekPanel()
         self.panel = panel
-        if side != placement.side || panel.contentView == nil {
+        if hosting == nil || side != placement.side {
             side = placement.side
-            let hosting = MenuFlyoutHostingView(rootView: AnyView(MenuPeekPanelView(fun: fun, side: placement.side)))
-            hosting.sizingOptions = []
-            panel.contentView = hosting
+            let view = AnyView(MenuPeekPanelView(fun: fun, side: placement.side))
+            if let hosting {
+                hosting.rootView = view
+            } else {
+                // In a plain container, not as the window's content view: the panel's size is only ever set here, and
+                // SwiftUI never manages the window's content size from the figure.
+                let hosting = MenuFlyoutHostingView(rootView: view)
+                hosting.sizingOptions = []
+                let container = NSView(frame: NSRect(origin: .zero, size: placement.frame.size))
+                hosting.frame = container.bounds
+                hosting.autoresizingMask = [.width, .height]
+                container.addSubview(hosting)
+                panel.contentView = container
+                self.hosting = hosting
+            }
         }
-        panel.setFrame(placement.frame, display: true)
+        panel.level = pane.level
+        panel.appearanceSource = pane
+        if panel.frame != placement.frame {
+            panel.setFrame(placement.frame, display: false)
+        }
         if panel.parent !== pane {
+            panel.parent?.removeChildWindow(panel)
             pane.addChildWindow(panel, ordered: .above)
         }
-        panel.orderFront(nil)
+        if !panel.isVisible {
+            panel.orderFront(nil)
+        }
+        observe(pane)
     }
 
     /// Takes the panel away.
     func hide() {
+        stopObserving()
         guard let panel, panel.parent != nil || panel.isVisible else {
             return
         }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
-        side = nil
+    }
+
+    /// whether a frame can place a window: finite, with a size
+    static func isSound(_ frame: NSRect) -> Bool {
+        [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite) && frame.width >= 1 && frame.height >= 1
+    }
+
+    private func observe(_ pane: NSWindow) {
+        guard observedPane !== pane else {
+            return
+        }
+        stopObserving()
+        observedPane = pane
+        paneObservers = [NSWindow.didResizeNotification, NSWindow.didMoveNotification].map { name in
+            NotificationCenter.default.addObserver(forName: name, object: pane, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let source = self.source else {
+                        return
+                    }
+                    self.setNeedsRefresh(source)
+                }
+            }
+        }
+    }
+
+    private func stopObserving() {
+        paneObservers.forEach(NotificationCenter.default.removeObserver)
+        paneObservers = []
+        observedPane = nil
     }
 }
 
@@ -141,11 +230,15 @@ struct MenuPeekPanelView: View {
 
     var body: some View {
         // Leaning out to the right is the left-edge art, whose cut line is the panel's left edge, and the other way round.
+        // He is laid out once, fully out; the slide is an offset, which only moves his drawing, so the animation never
+        // asks for layout (and never for the window's constraints).
+        let back = (1 - slide) * MenuPeekPanelController.shownWidth
         ButlerPeekFigure(
-            edge: side == .right ? .left : .right, along: 0.5, slide: slide, hat: FunModel.peekHat(catches: fun.catches),
+            edge: side == .right ? .left : .right, along: 0.5, slide: 1, hat: FunModel.peekHat(catches: fun.catches),
             length: MenuPeekPanelController.length)
+            .offset(x: side == .right ? -back : back)
             .contentShape(Rectangle())
-            .onTapGesture { fun.catchButler() }
+            .onTapGesture { _ = fun.catchButler() }
             .onHover { near in
                 fuse?.cancel()
                 fuse = nil
