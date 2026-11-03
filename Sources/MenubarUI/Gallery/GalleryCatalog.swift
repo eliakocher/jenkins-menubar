@@ -51,6 +51,6 @@ public enum GalleryCatalog {
         + digestEntries
         + markdownEntries
         + settingsEntries + updateRowEntries
-        + readmeEntries
+        + readmeEntries + readmeClaudeEntries
 }
 #endif

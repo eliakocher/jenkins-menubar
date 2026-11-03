@@ -14,49 +14,63 @@ More [screenshots](#screenshots) are below. They show made-up data, in dark mode
 Every screenshot is drawn from the app's design gallery with made-up people, projects and branches; nothing here is a real
 team's data. They are in dark mode, and the app follows the system's appearance. `scripts/readme-shots.sh` renders them again.
 
-### A failed build, its tests and its console log
+### Pipelines
 
-![Pipelines with a failed build selected: its stages, the failed tests, the build info, the recent builds and the console log opened below](docs/screenshots/pipelines.png)
+![Pipelines with a failed build selected: its stages, the failed tests, the build info, the recent builds with their hints and the console log opened below](docs/screenshots/pipelines.png)
 
-*A failed build shows its failed stages and tests, how it compares to the recent builds, and the console log, searchable, with the errors and warnings to jump to.*
+*A failed build shows its stages and failed tests, how it compares to the recent builds (with hints for a likely flaky run), and its console log, with the errors and warnings to jump to.*
 
-### A merge request
+![A failed build with Claude's analysis: the verdict, the root cause, the evidence from the log, the suspect commit and the next step](docs/screenshots/why-failed.png)
+
+*With Claude on, "Why Did It Fail?" gives the verdict, the root cause with its evidence, the suspect commits and a next step.*
+
+<img src="docs/screenshots/rebuild-sheet.png" alt="The Rebuild with Changes sheet: the build's parameters as fields, a switch and a menu, with Cancel and Rebuild" width="420">
+
+*Rebuild with Changes: the build's parameters by type, to change before it runs again.*
+
+### Merge requests
 
 ![A merge request: the Merge card with the blocked checks, the reviewers, the approvals and the builds](docs/screenshots/merge-request.png)
 
-*A merge request's detail: what blocks the merge and the way to fix it, the reviewers, the approvals, the builds and the code changes.*
+*What blocks the merge, each with its way to fix it, then the reviewers, the approvals and the builds.*
 
-### A work item
+![The Claude card of a merge request: a question about nine selected lines, Claude's answer with a code block, and the diff with the lines picked and the Ask Claude button](docs/screenshots/ask-claude.png)
+
+*Pick lines in the diff, click Ask Claude, and the question goes with those lines; the answer comes back as Markdown, with code you can copy.*
+
+![The Discussion card: a thread whose comments mention you have an accent bar and an @you badge](docs/screenshots/discussion.png)
+
+*Comments that mention you stand out with an accent bar and an "@you" badge, and their replies start unfolded.*
+
+### Work items, Slots and Workspaces
 
 ![A work item: its facts, its merge requests with their builds, its slot with the code freeze countdown and its description](docs/screenshots/work-item.png)
 
 *A work item's facts, the merge requests behind it with their builds, its slot's dates and its description.*
 
-### Slots
-
 ![Slots: the roadmap of the release slots and the current slot with its epics and items](docs/screenshots/slots.png)
 
 *The roadmap of the release slots, and the current one open: its dates, its items by epic, and the ones at risk.*
-
-### The Inbox
-
-![The Inbox: My To-Dos, a coffee break, Claude's answer, mentions and review requests](docs/screenshots/inbox.png)
-
-*GitLab's to-dos in groups, with the app's own entries and your own to-dos beside them.*
-
-### The Digest
-
-![The Digest: a summary of what needs you today, with the merge requests, reviews, builds and work items behind it](docs/screenshots/digest.png)
-
-*The morning digest, written by Claude when you turn it on: what needs you, in order, with a link to each thing.*
-
-### Workspaces
 
 ![Workspaces: six local checkouts with their branch and state, and the selected one's work item, merge request and build](docs/screenshots/workspaces.png)
 
 *Your local checkouts, and the work item, merge request and build behind each one.*
 
-### Settings → Menu Bar and the alert
+### Inbox and Digest
+
+![The Inbox: My To-Dos, a coffee break, Claude's answer, mentions and review requests](docs/screenshots/inbox.png)
+
+*GitLab's to-dos in groups, with the app's own entries and your own to-dos beside them.*
+
+<img src="docs/screenshots/inbox-panel.png" alt="The Inbox's big panel with a coffee cup and the line: Warm cups, cold pipelines, that's the plan, and the buttons Done, Snooze 1 Hour and Dismiss" width="380">
+
+*Each kind of event can announce itself with a big panel, a desktop notification or only the Inbox. This one is the weekday coffee break.*
+
+![The Digest: a summary of what needs you today, with the merge requests, reviews, builds and work items behind it](docs/screenshots/digest.png)
+
+*The morning digest, written by Claude when you turn it on: what needs you, in order, with a link to each thing.*
+
+### Settings and alerts
 
 <img src="docs/screenshots/settings-menu-bar.png" alt="Settings, Menu Bar: a live preview of the menu bar item on a light and a dark menu bar, and the list of what it shows" width="420">
 
@@ -81,7 +95,7 @@ It needs macOS 26 and the Xcode Command Line Tools (`xcode-select --install`); n
 
 For the team values, **Settings → Team** can import and export a file without tokens: see `team.example.json`. The
 tokens go into the login keychain, **Settings → Accounts** checks that Jenkins and GitLab take them. Jenkins needs your
-user and an API token, GitLab a token with the `api` scope (`read_api` is enough to read, but Re-request Review writes).
+user and an API token, GitLab a token with the `api` scope (`read_api` is enough to read, but Re-request Review and the Merge card write).
 
 ### Update
 
@@ -113,8 +127,9 @@ Nothing is rebuilt without that click.
     only the Inbox, and whether it counts for the badge.
   - **Merge Requests**: yours, review requested and reviewed, each with a status badge in GitLab's colors and its
     description. The details show the approvals and their rules, the unresolved threads, the code changes, and the GitLab pipeline
-    with its jobs. A **Merge** card lists what blocks the merge, with the way to fix each, and can merge, set auto-merge,
-    rebase or mark a draft as ready, each only on your click and after a confirmation where it can't be undone. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
+    with its jobs. A **Merge** card lists what blocks the merge, with the way to fix each, and can merge, set or cancel
+    auto-merge, rebase, or mark a draft as ready, each only on your click; merging asks for a confirmation first, since it
+    can't be undone. **Re-request Review** (↻) asks a reviewer again, or all the ones whose review is older than your last push.
   - **Work Items**: committed and not committed, with filters and label filters, and their related merge requests.
     **New Work Item…** (⌘N) and **New Follow-Up Item** open GitLab's own new issue page, prefilled, in the
     browser.

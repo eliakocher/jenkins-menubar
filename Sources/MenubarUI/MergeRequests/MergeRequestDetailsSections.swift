@@ -614,6 +614,8 @@ struct MergeRequestDetailsFixtures: Sendable {
     var reReviewPhase: ReReviewPhase?
     /// the code changes, by merge request reference (MR-11)
     var changes: [String: MergeRequestChangesState] = [:]
+    /// the lines picked in the Changes card, as the gallery shows a click on their numbers (AI-07)
+    var selection: DiffSelection?
     /// the merge state, by merge request reference (MR-16)
     var mergeStates: [String: MergeStateLoad] = [:]
     /// what the Merge card's last write is doing, by merge request reference

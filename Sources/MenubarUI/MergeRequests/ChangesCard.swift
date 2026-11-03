@@ -247,12 +247,14 @@ struct ChangesCard: View {
     ) -> some View {
         let file = changes.files[index]
         let unfolded = isUnfolded(file, in: changes)
+        // The gallery's fixtures may pick lines at once, as a click on their numbers would.
+        let picked = selection ?? fixtures?.selection
         return ChangedFileView(
             file: file, isUnfolded: unfolded, layout: layout, checkout: checkout, showsFolder: !grouped,
             diffState: changes.isListOnly ? .listOnly : isLoadingDiffs ? .loading : .idle,
             openInIDE: checkout.map { checkout in { openInIDE(file, in: checkout) } },
             openInGitLab: { actions.open(changesURL) }, copy: copyPath, loadDiff: { loadDiff(at: index) },
-            selection: selection?.path == file.path ? selection : nil,
+            selection: picked?.path == file.path ? picked : nil,
             select: askClaude == nil ? nil : { line in
                 // A pick by number replaces the selected text.
                 textPickPath = nil

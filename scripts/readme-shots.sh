@@ -21,9 +21,14 @@ all=(
 	pane:readme.pane
 	pipelines:readme.pipelines
 	merge-request:readme.merge-request
+	ask-claude:readme.ask-claude
+	discussion:readme.discussion
+	why-failed:readme.why-failed
+	rebuild-sheet:readme.rebuild-sheet
 	work-item:readme.work-item
 	slots:readme.slots
 	inbox:readme.inbox
+	inbox-panel:readme.inbox-panel
 	digest:readme.digest
 	workspaces:readme.workspaces
 	settings-menu-bar:readme.settings-menu-bar

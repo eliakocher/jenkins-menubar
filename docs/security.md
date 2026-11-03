@@ -37,12 +37,17 @@ already running as you, and a compromised GitLab or Jenkins.
   settings backups, process arguments or environments, the gallery or test fixtures.
 - Everything the app itself sends to Claude goes through `SecretRedactor`, which removes the stored tokens, auth
   headers, URL passwords, private keys and the common token formats.
-- The GitLab token needs `read_api` for everything except Re-request Review, which needs `api`.
+- The GitLab token needs `read_api` for everything except Re-request Review and the Merge card's writes, which need
+  `api`.
 
 ### Writes and commands
 
-- Three server writes exist: Rebuild and Cancel Rebuild on Jenkins, Re-request Review on GitLab. Each needs a click;
-  no link, launch, timer, notification arriving or Claude answer triggers one.
+- The server writes: Rebuild and Cancel Rebuild on Jenkins; on GitLab, Re-request Review and the Merge card's Merge,
+  Set to Auto-Merge, Cancel Auto-Merge, Rebase and Mark as Ready. Each needs a click; no link, launch, timer,
+  notification arriving or Claude answer triggers one.
+- Merge asks for a confirmation in the app first, since it can't be undone. Merge and auto-merge send the head commit
+  the card showed (`sha`), so GitLab refuses a merge that would take commits pushed since; the request carries the token
+  in the header only, and the logs keep the operation's name and the options, never the token.
 - The one local git write, Start Work, needs a confirmation and a clean checkout, and never forces anything. Background
   git only reads.
 - Every program is started with an argument list, never a shell string. Continue in Claude Code uses a fixed script that

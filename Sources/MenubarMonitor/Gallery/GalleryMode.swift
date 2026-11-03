@@ -254,7 +254,7 @@ final class GalleryDelegate: NSObject, NSApplicationDelegate {
 
     private static func readmeStyle(of entry: GalleryEntry) -> ReadmeStyle {
         switch entry.id {
-        case "readme.pane", "readme.alert": .frameless
+        case "readme.pane", "readme.alert", "readme.rebuild-sheet", "readme.inbox-panel": .frameless
         case "readme.settings-menu-bar": .settings
         case "readme.work-item": .window
         default: .mainWindow

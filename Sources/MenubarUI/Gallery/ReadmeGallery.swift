@@ -22,7 +22,13 @@ extension GalleryCatalog {
             // A failed build: its stages, the failed tests and the console log, open at the end of the log.
             GalleryEntry(screen: "readme", state: "pipelines", size: CGSize(width: 1400, height: 1120)) { f in
                 PipelinesGalleryView(
-                    data: f.readmePipelines, selection: "MR-16", size: CGSize(width: 1400, height: 1120), failedTests: .standard
+                    data: f.readmePipelines, selection: "MR-16", size: CGSize(width: 1400, height: 1120), failedTests: .standard,
+                    flakyHints: FlakyHintFixtures(states: [
+                        f.failedBuild.id: .loaded([
+                            .passedOnSameCommit(stage: "tests", build: 2),
+                            .failedBefore(stage: "deploy", failed: 3, of: 10),
+                        ])
+                    ])
                 )
                 .environment(
                     \.consoleLogFixture,
@@ -59,6 +65,14 @@ extension GalleryCatalog {
             // Settings → Menu Bar with its preview, tall enough for the whole list.
             GalleryEntry(screen: "readme", state: "settings-menu-bar", size: CGSize(width: SettingsMetrics.width, height: 1026)) { f in
                 reuse("settings-menu-bar.typical", f).frame(width: SettingsMetrics.width, height: 1026, alignment: .top)
+            },
+            // "Rebuild with Changes…": the build's parameters by type, to change before it starts again.
+            GalleryEntry(screen: "readme", state: "rebuild-sheet", size: CGSize(width: RebuildSheet.width, height: 560)) { f in
+                reuse("rebuild-sheet.ready", f).background(Color(nsColor: .windowBackgroundColor))
+            },
+            // The Inbox's big panel at 08:59: the coffee break.
+            GalleryEntry(screen: "readme", state: "inbox-panel", size: CGSize(width: 380, height: 330)) { f in
+                reuse("inbox-panel.coffee", f)
             },
             // The alert of a failed build, one of five pages.
             GalleryEntry(screen: "readme", state: "alert", size: CGSize(width: 320, height: 459)) { f in

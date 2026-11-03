@@ -192,7 +192,8 @@ struct MergeStateTests {
     // MARK: - The requests
 
     private nonisolated static func body(_ request: HTTPRequest) throws -> [String: Any] {
-        try #require(try JSONSerialization.jsonObject(with: try #require(request.body)) as? [String: Any])
+        let data = try #require(request.body)
+        return try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
     }
 
     private nonisolated static func input(_ request: HTTPRequest) throws -> [String: Any] {
@@ -269,8 +270,9 @@ struct MergeStateTests {
         stub.answer(operation: "MergeRequestSetDraft", body: #"{"data":{"mergeRequestSetDraft":{"errors":["Draft can't be changed"]}}}"#)
         let client = GitLabClient(transport: stub, gitLab: Self.gitLab, token: "glpat-test")
 
+        let operation = try #require(GitLabOperation<Void>.setDraft(Self.source, draft: false))
         await #expect(throws: GitLabError(.graphQLErrors(messages: ["Draft can't be changed"]))) {
-            try await client.send(try #require(GitLabOperation<Void>.setDraft(Self.source, draft: false)))
+            try await client.send(operation)
         }
         let input = try Self.input(try #require(stub.requests(operation: "MergeRequestSetDraft").first))
         #expect(input["draft"] as? Bool == false && input["iid"] as? String == "16")
