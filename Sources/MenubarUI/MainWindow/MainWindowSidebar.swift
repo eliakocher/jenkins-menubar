@@ -8,6 +8,9 @@ struct OpenedSidebar {
     var items: [OpenedItem] = []
     var selection: Binding<OpenedItem.ID?> = .constant(nil)
     var actions = OpenedItemActions.none
+    /// what a row shows besides its kind: the title, the symbol's colour and the chips. Called in the row's own body, so
+    /// what it reads from the store (as loaded, never fetched) is tracked by that row alone.
+    var details: @MainActor (OpenedItem) -> OpenedItemRowDetails = { OpenedItemRowDetails.make(item: $0) }
 
     /// the selected item, if it is still open
     var selected: OpenedItem? {
@@ -35,10 +38,15 @@ struct MainWindowSidebar: View {
     @Binding var section: MainWindowSection
     /// the sections it lists, in order; Digest only while the Claude features are on
     var sections = MainWindowSection.allCases
+    /// called with the offsets and the destination of a drag of the rows, which saves the new order; `nil` leaves them
+    /// fixed
+    var moveSections: ((IndexSet, Int) -> Void)?
     /// each section's count; a section without one shows no badge
     var badges: [MainWindowSection: Int] = [:]
     /// the marker's tooltip of each section with a problem of its own
     var markers: [MainWindowSection: String] = [:]
+    /// the sections with something new to look at, which get a small accent dot
+    var unread: Set<MainWindowSection> = []
     var opened = OpenedSidebar()
 
     /// What the list selects: a section, or an opened item.
@@ -58,6 +66,9 @@ struct MainWindowSidebar: View {
                                 .foregroundStyle(.red)
                                 .help(help)
                         }
+                        if unread.contains(section) {
+                            SidebarUnreadDot()
+                        }
                     }
                 } icon: {
                     Image(systemName: section.systemImage)
@@ -65,10 +76,12 @@ struct MainWindowSidebar: View {
                 .badge(badges[section].map { Text(verbatim: String($0)) })
                 .tag(Choice.section(section))
             }
+            // The rows drag into the user's order, like Finder's sidebar; Settings → Appearance lists the same order.
+            .onMove(perform: moveSections)
             if !opened.items.isEmpty {
                 Section {
                     ForEach(opened.items) { item in
-                        OpenedItemRow(item: item, actions: opened.actions)
+                        OpenedItemRow(item: item, actions: opened.actions, details: opened.details)
                             .tag(Choice.opened(item.id))
                     }
                 } header: {
@@ -80,20 +93,54 @@ struct MainWindowSidebar: View {
     }
 
     /// The list wants an optional selection; the sidebar always has one, so clearing it keeps the old one.
+    ///
+    /// A click moves the highlight at once and changes the section a moment later: the new section's list, detail and
+    /// toolbar take a while to build, and built in the same update they held the highlight back (the user, 2026-11-02:
+    /// "i click and like only 1 second later it gets selected").
     private var selection: Binding<Choice?> {
         Binding(
-            get: { opened.selected.map { .opened($0.id) } ?? .section(section) },
+            get: { clicked ?? opened.selected.map { .opened($0.id) } ?? .section(section) },
             set: { newValue in
-                switch newValue {
-                case .section(let chosen)?:
-                    opened.selection.wrappedValue = nil
-                    section = chosen
-                case .opened(let id)?:
-                    opened.selection.wrappedValue = id
-                case nil:
-                    break
+                guard let newValue else {
+                    return
+                }
+                clicked = newValue
+                Task { @MainActor in
+                    // Long enough for the window to draw the highlight first.
+                    try? await Task.sleep(for: .milliseconds(1))
+                    apply(newValue)
+                    if clicked == newValue {
+                        clicked = nil
+                    }
                 }
             })
+    }
+
+    /// the row clicked last, until the section or item behind it shows
+    @ViewState private var clicked: Choice?
+
+    private func apply(_ choice: Choice) {
+        switch choice {
+        case .section(let chosen):
+            opened.selection.wrappedValue = nil
+            section = chosen
+        case .opened(let id):
+            opened.selection.wrappedValue = id
+        }
+    }
+}
+
+/// The small dot after a sidebar row's title: something new is waiting in the section. The accent color, white on the
+/// selected row, whose accent fill would swallow it.
+private struct SidebarUnreadDot: View {
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        Circle()
+            .fill(prominence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(Color.accentColor))
+            .frame(width: 7, height: 7)
+            .accessibilityLabel("New")
+            .help("A digest you haven't seen yet")
     }
 }
 
@@ -122,13 +169,17 @@ private struct OpenedHeader: View {
     }
 }
 
-/// One opened item: its kind's symbol, `!12` or `#12` (a build's number too) and the title, a pin when it is kept, and a ✕ while the pointer is on
-/// the row.
+/// One opened item in two lines (the user, 2026-11-03: "i almost don't see the title"): its kind's symbol, coloured, then
+/// the title without its leading work item number, and below it the small chips of its numbers. A pin when it is kept at
+/// the end, and a ✕ while the pointer is on the row.
 private struct OpenedItemRow: View {
     let item: OpenedItem
     let actions: OpenedItemActions
+    let details: @MainActor (OpenedItem) -> OpenedItemRowDetails
 
     @ViewState private var isHovered = false
+    /// `.increased` on the selected row, whose accent fill would swallow the colours
+    @Environment(\.backgroundProminence) private var prominence
 
     /// the section whose symbol the item wears
     private static func section(of item: OpenedItem) -> MainWindowSection {
@@ -140,15 +191,20 @@ private struct OpenedItemRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 6) {
+        let details = details(item)
+        let isSelected = prominence == .increased
+        HStack(spacing: 8) {
             Image(systemName: Self.section(of: item).systemImage)
-                .foregroundStyle(.secondary)
-            Text(verbatim: item.shortReference)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            Text(verbatim: item.title ?? item.fallbackTitle)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.white) : details.symbolTint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
+                // One width for every kind's symbol, so the titles start at the same place.
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: details.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                OpenedItemChipsLine(chips: details.chips)
+                    .environment(\.menuHighlighted, isSelected)
+            }
             Spacer(minLength: 0)
             if isHovered {
                 Button {

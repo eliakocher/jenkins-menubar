@@ -141,6 +141,71 @@ public final class WorkItemsStore {
         saveRelatedMergeRequests()
     }
 
+    /// Asks GitLab, in the background, for the related MRs of work items that aren't among the loaded ones, like the
+    /// slot items of other people, so their chips show without a click (SLOT-09). It is the last thing the Slots section
+    /// loads: the caller starts it at a low priority after the section has settled, and cancels it when the user
+    /// leaves.
+    ///
+    /// The requests run `atOnce` at a time in the order of `workItems`. Nothing is asked for an epic, for an answer
+    /// younger than ``relatedReusedFor`` that still fits the item's last update, or without a token. The answers show
+    /// in groups of `publishEvery`, so the views that read them rebuild a few times, not once per answer, and the cache
+    /// is written once at the end. A failed request changes nothing; a cancelled run keeps what it got.
+    ///
+    /// - Parameters:
+    ///   - workItems: the work items, the ones to show first first
+    ///   - atOnce: how many requests run at the same time
+    ///   - publishEvery: how many answers arrive before they show
+    public func loadRelatedMergeRequests(of workItems: [WorkItem], atOnce: Int = 3, publishEvery: Int = 6) async {
+        let now = services.now()
+        var seen: Set<String> = []
+        let due: [(WorkItem, GitLabOperation<[RelatedMergeRequest]>)] = workItems.compactMap { item in
+            guard seen.insert(item.reference).inserted, let operation = GitLabOperation.relatedMergeRequests(of: item) else {
+                return nil
+            }
+            if let entry = relatedMergeRequests.entries[item.reference], entry.workItemUpdatedAt == item.updatedAt,
+                now.timeIntervalSince(entry.fetchedAt) < Self.relatedReusedFor
+            {
+                return nil
+            }
+            return (item, operation)
+        }
+        guard !due.isEmpty, case .success(let session) = await services.session() else { return }
+        let client = session.client
+        let currentTime = services.now
+        var arrived: [String: RelatedMergeRequestsCache.Entry] = [:]
+        func publish() {
+            guard !arrived.isEmpty else { return }
+            relatedMergeRequests.entries.merge(arrived) { _, new in new }
+            arrived = [:]
+        }
+        await withTaskGroup(of: (String, RelatedMergeRequestsCache.Entry?).self) { group in
+            var pending = due.makeIterator()
+            func askNext() {
+                guard !Task.isCancelled, let (item, operation) = pending.next() else { return }
+                group.addTask {
+                    let mergeRequests = try? await client.send(operation)
+                    return (item.reference, mergeRequests.map {
+                        RelatedMergeRequestsCache.Entry(workItemUpdatedAt: item.updatedAt, fetchedAt: currentTime(), mergeRequests: $0)
+                    })
+                }
+            }
+            for _ in 0..<max(1, atOnce) {
+                askNext()
+            }
+            for await (reference, entry) in group {
+                if let entry {
+                    arrived[reference] = entry
+                }
+                if arrived.count >= max(1, publishEvery) {
+                    publish()
+                }
+                askNext()
+            }
+        }
+        publish()
+        saveRelatedMergeRequests()
+    }
+
     /// Searches the labels for the label picker: the remembered ones, the filter labels and GitLab's (WI-06). The
     /// colors GitLab sends are remembered.
     ///

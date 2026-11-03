@@ -71,6 +71,9 @@ struct GallerySectionToolbar: ToolbarContent {
         if section == .activity {
             ActivityToolbarItems(isInspectorShown: .constant(false), showInFinder: {}, clear: {})
         }
+        if section == .slots {
+            SlotsToolbarItems()
+        }
     }
 }
 

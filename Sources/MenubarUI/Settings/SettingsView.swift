@@ -53,6 +53,7 @@ public struct SettingsView: View {
         SettingsShell(selection: $settings.selectedPane, query: $query, onReveal: { settings.reveal($0) }) { pane in
             switch pane {
             case .general: GeneralPane(system: system)
+            case .menuBar: MenuBarPane()
             case .notifications: NotificationsPane(system: system)
             case .appearance: AppearancePane()
             case .accounts: AccountsPane()
@@ -195,6 +196,7 @@ extension SettingsPane {
     var symbol: String {
         switch self {
         case .general: "gearshape.fill"
+        case .menuBar: "menubar.rectangle"
         case .notifications: "bell.badge.fill"
         case .appearance: "paintpalette.fill"
         case .accounts: "key.fill"
@@ -212,6 +214,7 @@ extension SettingsPane {
     var tint: Color {
         switch self {
         case .general, .advanced: .gray
+        case .menuBar: .cyan
         case .notifications: .red
         case .appearance: .indigo
         case .accounts: .blue
@@ -339,8 +342,9 @@ extension SettingsPane {
     /// the pane header's line on what the pane is for
     var summary: String {
         switch self {
-        case .general: "How MegaMonitor starts, shows in the menu bar, and opens links."
-        case .notifications: "Which builds alert you, and how."
+        case .general: "How MegaMonitor starts and opens links."
+        case .menuBar: "What the menu bar shows, and what its menu lists."
+        case .notifications: "Which builds alert you, and what lands in your Inbox."
         case .appearance: "How details, text, code changes and discussions look."
         case .accounts: "Sign in to GitLab and Jenkins. Tokens stay in your keychain."
         case .projects: "The Jenkins jobs and GitLab projects MegaMonitor watches."

@@ -164,7 +164,7 @@ public struct WorkItemState: RawRepresentable, Codable, Hashable, Sendable, Cust
 }
 
 /// A merge request that mentions a work item, from the RelatedMergeRequests query (WI-05):
-/// `iid state title webUrl reference(full: true)`.
+/// `iid state title webUrl reference(full: true) sourceBranch`.
 public struct RelatedMergeRequest: Codable, Hashable, Identifiable, Sendable {
     public var iid: Int
     public var state: State
@@ -172,16 +172,71 @@ public struct RelatedMergeRequest: Codable, Hashable, Identifiable, Sendable {
     public var webURL: URL
     /// the full reference, like `group/project!12`
     public var reference: String
+    /// the source branch; `nil` in a cache written before the field was asked for
+    public var sourceBranch: String?
+    /// whether GitLab says the MR closes the work item when merged; `false` while the query doesn't ask for it (the
+    /// issue type has no list of closing MRs, only the development widget of a work item has one)
+    public var closesWorkItem: Bool
 
-    public init(iid: Int, state: State, title: String, webURL: URL, reference: String) {
+    public init(
+        iid: Int, state: State, title: String, webURL: URL, reference: String, sourceBranch: String? = nil,
+        closesWorkItem: Bool = false
+    ) {
         self.iid = iid
         self.state = state
         self.title = title
         self.webURL = webURL
         self.reference = reference
+        self.sourceBranch = sourceBranch
+        self.closesWorkItem = closesWorkItem
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        iid = try values.decode(Int.self, forKey: .iid)
+        state = try values.decode(State.self, forKey: .state)
+        title = try values.decode(String.self, forKey: .title)
+        webURL = try values.decode(URL.self, forKey: .webURL)
+        reference = try values.decode(String.self, forKey: .reference)
+        sourceBranch = try values.decodeIfPresent(String.self, forKey: .sourceBranch)
+        closesWorkItem = try values.decodeIfPresent(Bool.self, forKey: .closesWorkItem) ?? false
     }
 
     public var id: URL { webURL }
+
+    /// the project path of the reference, `group/project` of `group/project!12`
+    var projectPath: String {
+        reference.lastIndex(of: "!").map { String(reference[..<$0]) } ?? ""
+    }
+
+    /// Returns whether this is the work item's own MR, not one that only mentions it: it closes the item, or, in the
+    /// item's project, its source branch starts with `<iid>-` (the team's branch rule, see ``WorkItem/branchName``) or
+    /// its title starts with `#<iid>` (after a `Draft:` marker, and not followed by another digit). The branch and
+    /// title rules need the same project, since another project has its own numbers.
+    ///
+    /// - Parameter workItem: the work item
+    /// - Returns: whether the MR is the item's own
+    public func isOwn(of workItem: WorkItem) -> Bool {
+        if closesWorkItem {
+            return true
+        }
+        guard let iid = workItem.iid, let sign = workItem.reference.lastIndex(of: "#"),
+            String(workItem.reference[..<sign]) == projectPath
+        else {
+            return false
+        }
+        if let sourceBranch, sourceBranch.hasPrefix("\(iid)-") {
+            return true
+        }
+        var text = Substring(title)
+        for marker in ["draft:", "[draft]", "(draft)", "wip:"] where text.lowercased().hasPrefix(marker) {
+            text = text.dropFirst(marker.count).drop { $0 == " " }
+            break
+        }
+        guard text.hasPrefix("#\(iid)") else { return false }
+        let next = text.dropFirst(iid.count + 1).first
+        return next.map { !($0.isASCII && $0.isNumber) } ?? true
+    }
 
     /// GitLab's `MergeRequestState`. Others are kept as they come.
     public struct State: RawRepresentable, Codable, Hashable, Sendable, CustomStringConvertible {
@@ -197,5 +252,48 @@ public struct RelatedMergeRequest: Codable, Hashable, Identifiable, Sendable {
         public static let closed = State(rawValue: "closed")
 
         public var description: String { rawValue }
+    }
+}
+
+extension WorkItem {
+    /// Returns the MRs of the work item that count for its chips, its marker and the slots: its own MRs (see
+    /// ``RelatedMergeRequest/isOwn(of:)``), or all of them when none is its own.
+    ///
+    /// - Parameter mergeRequests: every MR that mentions the item
+    /// - Returns: the own MRs, else all, in the given order
+    public func shownMergeRequests(from mergeRequests: [RelatedMergeRequest]) -> [RelatedMergeRequest] {
+        let own = mergeRequests.filter { $0.isOwn(of: self) }
+        return own.isEmpty ? mergeRequests : own
+    }
+
+    /// The branch name the team gives the item's branch: the number, `-`, then the title in lowercase kebab case.
+    /// Accents are dropped (`é` becomes `e`), every run of characters other than `a-z` and `0-9` becomes one `-`, none
+    /// stays at the ends, and the length is not capped. A `Draft:` prefix stays as words. An empty title gives the
+    /// number alone.
+    public var branchName: String {
+        Self.branchName(iid: iid ?? "", title: title)
+    }
+
+    /// Returns a branch name, see ``branchName``.
+    ///
+    /// - Parameters:
+    ///   - iid: the item's number
+    ///   - title: the item's title
+    /// - Returns: the name, like `18874-fix-closing-the-dialog`
+    public static func branchName(iid: String, title: String) -> String {
+        var words: [String] = []
+        var word = ""
+        for character in title.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX")) {
+            if character.isASCII, character.isLetter || character.isNumber {
+                word.append(character.lowercased())
+            } else if !word.isEmpty {
+                words.append(word)
+                word = ""
+            }
+        }
+        if !word.isEmpty {
+            words.append(word)
+        }
+        return ([iid].filter { !$0.isEmpty } + words).joined(separator: "-")
     }
 }

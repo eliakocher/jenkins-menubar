@@ -168,6 +168,7 @@ extension GalleryCatalog {
     static var settingsEntries: [GalleryEntry] {
         settingsWindowEntries + settingsGeneralEntries + settingsJenkinsEntries + settingsGitLabEntries
             + settingsTeamEntries + settingsTeamLinkEntries + settingsProjectsEntries + settingsAccountsEntries + settingsAdvancedEntries
+            + settingsSidebarEntries
     }
 
     // MARK: - Window
@@ -239,8 +240,8 @@ extension GalleryCatalog {
                             + "management policy of this Mac").message)
                 }
             },
-            GalleryEntry(screen: "settings-notifications", state: "typical", size: paneSize(360)) { _ in
-                SettingsPaneGalleryView(height: 360) { NotificationsGalleryView() }
+            GalleryEntry(screen: "settings-notifications", state: "typical", size: paneSize(1000)) { _ in
+                SettingsPaneGalleryView(height: 1000) { NotificationsGalleryView() }
             },
             GalleryEntry(screen: "settings-notifications", state: "muted-jobs", size: paneSize(560)) { _ in
                 SettingsPaneGalleryView(height: 560) {
@@ -279,6 +280,18 @@ extension GalleryCatalog {
     }
 
     // MARK: - Advanced
+
+    /// Appearance's "Sidebar" section alone: the sections to drag, with Reset to Default.
+    private static var settingsSidebarEntries: [GalleryEntry] {
+        [
+            GalleryEntry(screen: "settings-appearance", state: "sidebar-order", size: paneSize(440)) { _ in
+                SettingsPaneGalleryView(height: 440) {
+                    Form { SidebarOrderSection() }
+                        .formStyle(.grouped)
+                }
+            }
+        ]
+    }
 
     private static var settingsAdvancedEntries: [GalleryEntry] {
         [

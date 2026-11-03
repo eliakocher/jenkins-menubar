@@ -55,6 +55,14 @@ public struct PreferencesStore: @unchecked Sendable {
         }
     }
 
+    /// the UserDefaults key of ``Preferences/inboxNotifications``, JSON text; outside ``Key`` like
+    /// ``notificationPolicy``, so its change isn't one line of the log
+    public static let inboxNotificationsKey = "inboxNotifications"
+
+    /// the UserDefaults key of ``Preferences/menuBarLayout``, JSON text; outside ``Key`` like
+    /// ``inboxNotificationsKey``, and absent for the default layout
+    public static let menuBarLayoutKey = "menuBarLayout"
+
     /// The UserDefaults key of each value, which is also its name in the log (SET-01).
     public enum Key: String, CaseIterable, Sendable {
         case checkIntervalSeconds
@@ -140,6 +148,18 @@ public struct PreferencesStore: @unchecked Sendable {
         if let raw = defaults.object(forKey: Key.globalShortcut.rawValue) as? String {
             preferences.globalShortcut = HotkeyShortcut(rawValue: raw)
         }
+        // Text that doesn't decode reads as the default routing.
+        if let text = defaults.string(forKey: Self.inboxNotificationsKey),
+            let rules = try? JSONDecoder().decode(InboxNotificationRules.self, from: Data(text.utf8))
+        {
+            preferences.inboxNotifications = rules
+        }
+        // Text that doesn't decode reads as the default layout; unknown parts and rows are dropped (APP-11).
+        if let text = defaults.string(forKey: Self.menuBarLayoutKey),
+            let layout = try? JSONDecoder().decode(MenuBarLayout.self, from: Data(text.utf8))
+        {
+            preferences.menuBarLayout = layout
+        }
         // A case that isn't one of the value's options is caught here.
         return Self.validated(preferences)
     }
@@ -160,7 +180,37 @@ public struct PreferencesStore: @unchecked Sendable {
             defaults.set(after.object, forKey: key.rawValue)
             changes.append(Change(key: key, old: before.text, new: after.text))
         }
+        if new.inboxNotifications != old.inboxNotifications {
+            saveInboxNotifications(new.inboxNotifications)
+        }
+        if new.menuBarLayout != old.menuBarLayout {
+            saveMenuBarLayout(new.menuBarLayout)
+        }
         return changes
+    }
+
+    private func saveInboxNotifications(_ rules: InboxNotificationRules) {
+        guard rules != InboxNotificationRules() else {
+            defaults.removeObject(forKey: Self.inboxNotificationsKey)
+            return
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        if let data = try? encoder.encode(rules), let text = String(data: data, encoding: .utf8) {
+            defaults.set(text, forKey: Self.inboxNotificationsKey)
+        }
+    }
+
+    private func saveMenuBarLayout(_ layout: MenuBarLayout) {
+        guard layout != MenuBarLayout() else {
+            defaults.removeObject(forKey: Self.menuBarLayoutKey)
+            return
+        }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        if let data = try? encoder.encode(layout), let text = String(data: data, encoding: .utf8) {
+            defaults.set(text, forKey: Self.menuBarLayoutKey)
+        }
     }
 
     private static func validated(_ preferences: Preferences) -> Preferences {

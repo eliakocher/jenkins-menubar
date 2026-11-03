@@ -64,6 +64,8 @@ public enum AIUseCase: String, Codable, Hashable, Sendable, CaseIterable {
     case askAboutCode
     /// a question about a work item (AI-08)
     case askAboutItem
+    /// the daily coffee break's one line, written by Haiku (``CoffeeBreak``)
+    case coffeeBreak
 
     /// the use case's name in the log: "explain a failed build"
     public var logName: String {
@@ -74,6 +76,7 @@ public enum AIUseCase: String, Codable, Hashable, Sendable, CaseIterable {
         case .openInClaudeCode: "open in Claude Code"
         case .askAboutCode: "ask about code"
         case .askAboutItem: "ask about a work item"
+        case .coffeeBreak: "coffee break line"
         }
     }
 }
@@ -88,7 +91,7 @@ public struct AISettings: Codable, Hashable, Sendable {
     public var model: ClaudeModel
     /// how long Claude thinks; Default passes no flag
     public var effort: ClaudeEffort
-    /// whether the digest is written by itself each morning and posted as a notification; off by default
+    /// whether the digest is written by itself each morning, and added to the Inbox while the Digest isn't on screen; off by default
     public var morningDigest: Bool
     /// when the morning digest is written, in minutes after midnight, local time
     public var digestMinutes: Int

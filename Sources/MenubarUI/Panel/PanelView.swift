@@ -43,7 +43,13 @@ enum PanelView {
     }
 
     /// Returns what the stores hold now, as the panel's plain values.
-    static func data(_ model: AppModel, now: Date) -> PanelData {
+    ///
+    /// - Parameters:
+    ///   - model: the app's model
+    ///   - now: the time the ages count from
+    ///   - inbox: whether to read the Inbox's rows, which only the menu pane needs: the window's lists leave them unread, so
+    ///     a change of the to-dos draws the Inbox and not every list
+    static func data(_ model: AppModel, now: Date, inbox: Bool = false) -> PanelData {
         let pipelines = model.pipelines
         let projects = model.projects
         let mergeRequests = model.mergeRequests
@@ -67,6 +73,14 @@ enum PanelView {
                 missingLabels: workItems.labels.missingFilterLabels(of: filters), filters: filters,
                 rowLabels: pipelines.preferences.workItemRows, labelColors: workItems.labels.colors,
                 related: workItems.relatedMergeRequests),
-            update: model.updates.state)
+            update: model.updates.state,
+            inbox: inbox ? Self.inbox(model.inbox) : PanelData.Inbox())
+    }
+
+    /// Returns the Inbox's pending rows and badge as plain values.
+    static func inbox(_ store: InboxStore) -> PanelData.Inbox {
+        PanelData.Inbox(
+            entries: store.pending, badgeCount: store.badgeCount, hasLoaded: store.fetchedAt != nil, isLoading: store.isLoading,
+            problem: store.problem)
     }
 }

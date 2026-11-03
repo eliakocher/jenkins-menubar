@@ -9,6 +9,9 @@ public struct MainWindowShellModel: Hashable, Sendable {
     public var badges: [MainWindowSection: Int]
     /// the sections with a problem of their own, with the marker's tooltip, "Jenkins problem" or "GitLab problem"
     public var markers: [MainWindowSection: String]
+    /// the sections with something new to look at, which the sidebar marks with a small accent dot: Digest while a digest
+    /// was written that it hasn't shown yet
+    public var unread: Set<MainWindowSection>
     /// "Last checked 10:42" for what the shown section shows; `nil` before the first check or load
     public var subtitle: String?
     /// whether a check or load of the shown section runs: a spinner takes Reload's place (JERR-07)
@@ -31,10 +34,14 @@ public struct MainWindowShellModel: Hashable, Sendable {
     ///   - slotsBusy: whether the slot labels or the slot items load
     ///   - digestSubtitle: Digest's subtitle, "Written Mon 10:42"; `nil` for none
     ///   - digestBusy: whether Claude writes the digest
+    ///   - digestUnread: whether a digest was written that the Digest section hasn't shown yet
+    ///   - inbox: what the Inbox adds: its badge, its problem and its subtitle (Task 7.03)
     public init(
         _ data: PanelData, section: MainWindowSection, activitySubtitle: String? = nil, workspacesSubtitle: String? = nil,
-        workspacesBusy: Bool = false, slotsBusy: Bool = false, digestSubtitle: String? = nil, digestBusy: Bool = false
+        workspacesBusy: Bool = false, slotsBusy: Bool = false, digestSubtitle: String? = nil, digestBusy: Bool = false,
+        digestUnread: Bool = false, inbox: InboxShell = InboxShell()
     ) {
+        unread = digestUnread ? [.digest] : []
         update = data.update
         workItemFilters = data.workItems.filters
         showHiddenTitle = PipelinesStore.showHiddenTitle(count: data.jenkins.hiddenCount)
@@ -48,6 +55,7 @@ public struct MainWindowShellModel: Hashable, Sendable {
             || (section == .slots && (workItems.isLoading || slotsBusy))
             || (section == .workspaces && workspacesBusy)
             || (section == .digest && digestBusy)
+            || (section == .inbox && inbox.isBusy)
         // TEAM-03: the team row alone, without counts or times.
         guard jenkins.problem != .teamValuesMissing else {
             badges = [:]
@@ -70,6 +78,7 @@ public struct MainWindowShellModel: Hashable, Sendable {
             let counted = data.team.committedLabel.isEmpty ? lists.others : lists.committed
             badges[.workItems] = counted?.items.count ?? 0
         }
+        badges[.inbox] = inbox.badge
         self.badges = badges.filter { $0.value > 0 }
 
         // Offline is an app-wide row: it marks no section (OD-05). A missing GitLab token is a setup step, not a
@@ -81,6 +90,9 @@ public struct MainWindowShellModel: Hashable, Sendable {
             }
             if mergeRequests.problem != nil, !mergeRequestsNeedToken {
                 markers[.mergeRequests] = "GitLab problem"
+            }
+            if let problem = inbox.problem, problem != .noToken(.gitLab) {
+                markers[.inbox] = "GitLab problem"
             }
             if (workItems.problem != nil && !workItemsNeedToken) || (!workItemsNeedToken && !workItems.missingLabels.isEmpty) {
                 markers[.workItems] = "GitLab problem"
@@ -111,6 +123,8 @@ public struct MainWindowShellModel: Hashable, Sendable {
             subtitle = workItemsNeedToken ? nil : workItems.lastLoadAt.map { Formatting.lastChecked($0) }
         case .digest:
             subtitle = digestSubtitle
+        case .inbox:
+            subtitle = inbox.subtitle
         }
     }
 
@@ -142,6 +156,27 @@ public struct MainWindowShellModel: Hashable, Sendable {
     }
 }
 
+/// What the Inbox adds to the main window's shell, from the store: the sidebar's badge, the problem that marks the row,
+/// the subtitle and whether a load runs. The window reads only these, never the rows, so a change of the to-dos draws
+/// the Inbox list and the badge, not the window.
+public struct InboxShell: Hashable, Sendable {
+    /// the sidebar's count (`InboxStore.badgeCount`)
+    public var badge: Int
+    /// the problem of the last load; the missing token is no problem but a setup step (MR-04)
+    public var problem: Problem?
+    /// "Checked 14:29", for the shown Inbox
+    public var subtitle: String?
+    /// whether a load runs
+    public var isBusy: Bool
+
+    public init(badge: Int = 0, problem: Problem? = nil, subtitle: String? = nil, isBusy: Bool = false) {
+        self.badge = badge
+        self.problem = problem
+        self.subtitle = subtitle
+        self.isBusy = isBusy
+    }
+}
+
 /// The GitLab surfaces the main window shows, for `Scheduler.setVisible(_:)` (OD-02, WIN-02).
 public enum MainWindowSurfaces {
     /// the name the window reports its surfaces under
@@ -166,7 +201,7 @@ public enum MainWindowSurfaces {
         case .workspaces: return [.mergeRequests, .workItems]
         // The slots join the work items with their merge requests and builds (SLOT-03).
         case .slots: return [.mergeRequests, .workItems]
-        case .pipelines, .activity, .digest: return []
+        case .pipelines, .activity, .digest, .inbox: return []
         }
     }
 }

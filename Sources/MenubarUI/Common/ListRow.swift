@@ -122,6 +122,9 @@ struct DetailsLine: View {
     /// the start of `lead` that is a reference, like "web!8", which the last resort cuts in the middle so its number stays
     /// and keeps the rest of `lead`; `nil` cuts `lead` at the end
     var reference: String?
+    /// whether `reference` is a merge request's number: shows it as the small green number chip (``MergeRequestNumberChip``)
+    /// instead of as text
+    var chip = false
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
@@ -137,8 +140,24 @@ struct DetailsLine: View {
         }
     }
 
+    /// the chip's reference and what follows it in the lead, "Ready to merge" without the " · " between them
+    private var chipped: (reference: String, rest: String)? {
+        guard chip, let reference, lead.hasPrefix(reference) else {
+            return nil
+        }
+        let rest = lead.dropFirst(reference.count)
+        return (reference, String(rest.hasPrefix(" · ") ? rest.dropFirst(3) : rest))
+    }
+
     @ViewBuilder private var leastLine: some View {
-        if let reference, lead.hasPrefix(reference) {
+        if let chipped {
+            PanelLineLayout {
+                MergeRequestNumberChip(text: chipped.reference)
+                    .panelLineCap(0.6)
+                Text(verbatim: chipped.rest.isEmpty ? "" : " " + chipped.rest)
+            }
+            .lineLimit(1)
+        } else if let reference, lead.hasPrefix(reference) {
             PanelLineLayout {
                 Text(verbatim: reference)
                     .truncationMode(.middle)
@@ -156,9 +175,19 @@ struct DetailsLine: View {
     /// The line with the first `count` parts after the lead, at its natural width, so `ViewThatFits` can tell whether it fits.
     @ViewBuilder
     private func whole(_ count: Int) -> some View {
-        Text(verbatim: line(count))
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+        if let chipped {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                MergeRequestNumberChip(text: chipped.reference)
+                    .fixedSize()
+                Text(verbatim: " " + ([chipped.rest] + more.prefix(count)).filter { !$0.isEmpty }.joined(separator: " · "))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+        } else {
+            Text(verbatim: line(count))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+        }
     }
 
     private func line(_ count: Int) -> String {

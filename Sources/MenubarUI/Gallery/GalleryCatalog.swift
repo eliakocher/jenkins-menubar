@@ -41,7 +41,7 @@ public enum GalleryCatalog {
         },
     ] + statusIconEntries + menuPaneEntries + alertEntries + watchSheetEntries
         + welcomeEntries
-        + mainWindowEntries + pipelinesEntries
+        + mainWindowEntries + inboxEntries + openedRowsEntries + pipelinesEntries + rebuildSheetEntries + consoleLogEntries
         + mergeRequestsEntries
         + mergeRequestDetailsEntries
         + workItemsEntries
@@ -49,6 +49,7 @@ public enum GalleryCatalog {
         + workspacesEntries
         + slotsEntries
         + digestEntries
+        + markdownEntries
         + settingsEntries + updateRowEntries
 }
 #endif

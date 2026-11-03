@@ -215,6 +215,7 @@ private struct RowLabelFields: View {
                     if !isEditing { text = hidden.joined(separator: ", ") }
                 }
         }
+        .settingsAnchor(.workItemRowLabels)
         .onDisappear(perform: commit)
         Toggle(isOn: $rows.showsScopedValueOnly) {
             SettingsRowLabel("Show scoped labels by their value only", "priority::high shows as high")

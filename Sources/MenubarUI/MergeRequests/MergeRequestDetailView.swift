@@ -134,15 +134,16 @@ struct MergeRequestDetailContent: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
                 StatusBadge(text: model.status.text, symbol: model.status.symbol, tint: model.status.color.swiftUI)
-                Text(verbatim: "\(model.projectName) !\(String(model.mergeRequest.iid))")
+                // The reference as the small green chip (whatever the state: the badge before it says that), then the project.
+                ReferenceChip(kind: .mergeRequest, text: "!\(String(model.mergeRequest.iid))", help: model.mergeRequest.reference)
+                    .fixedSize()
+                    .textSelection(.enabled)
+                Text(verbatim: model.projectName)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                    .help(model.mergeRequest.reference)
                 // The checkout the branch lives in; a click shows it in Workspaces (WS-07).
                 WorkspaceTag(subject: .mergeRequest(model.mergeRequest))
-                Spacer(minLength: 8)
-                moreMenu(model)
             }
             Text(verbatim: model.mergeRequest.title)
                 .font(.title2.weight(.semibold))
@@ -157,7 +158,7 @@ struct MergeRequestDetailContent: View {
             }
             chips(model, state: state, jump: jump)
                 .padding(.top, 4)
-            // The frequent actions as buttons, not behind the ⋯ menu.
+            // The frequent actions as buttons.
             actionRow(model)
             if let eggLine = model.eggLine {
                 Text(verbatim: eggLine)
@@ -198,7 +199,7 @@ struct MergeRequestDetailContent: View {
             case .hidden:
                 EmptyView()
             }
-            // The work item the title names or GitLab links: "Work Item #19202" (MR-12).
+            // The work item the title names or GitLab links, the blue "#19202" (MR-12).
             WorkItemLinkChips(
                 items: model.workItems, project: Self.project(of: model.mergeRequest.reference), actions: actions.itemLinks)
             if let details = state.details {
@@ -250,7 +251,7 @@ struct MergeRequestDetailContent: View {
     }
 
     /// Copy Link, Ask Claude while the Claude features are on, and the follow-up item (NEW-04), as the build detail has its
-    /// buttons; the ⋯ menu keeps GitLab's pages.
+    /// buttons. GitLab's pages are in the toolbar, the Changes card and the Builds card.
     private func actionRow(_ model: MergeRequestDetailModel) -> some View {
         DetailActionRow {
             CopyLinkButton(help: "Copies the merge request's link in GitLab") { actions.copy(model.mergeRequest.webURL) }
@@ -266,22 +267,6 @@ struct MergeRequestDetailContent: View {
             }
         }
         .padding(.top, 2)
-    }
-
-    /// The links the header doesn't show as chips: GitLab's pages.
-    private func moreMenu(_ model: MergeRequestDetailModel) -> some View {
-        Menu {
-            Button("Open in GitLab") { actions.open(model.mergeRequest.webURL) }
-            Button("Changes in GitLab") { actions.open(model.changesURL) }
-            Button("Pipelines in GitLab") { actions.open(model.pipelinesURL) }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .imageScale(.large)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help("More")
     }
 }
 

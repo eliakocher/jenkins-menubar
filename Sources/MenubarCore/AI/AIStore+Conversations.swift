@@ -211,6 +211,7 @@ extension AIStore {
                 let message = (error as? AIGatherError)?.message ?? error.localizedDescription
                 if let index = conversations[subject]?.turns.firstIndex(where: { $0.id == turn.id }) {
                     conversations[subject]?.turns[index].status = .failed(message)
+                    landed(subject, subject.useCase, failure: message)
                 }
                 return
             }
@@ -244,5 +245,10 @@ extension AIStore {
             return
         }
         conversations[subject]?.turns[index].status = status
+        switch status {
+        case .answered(let text, _, _): landed(subject, subject.useCase, text: text)
+        case .failed(let message): landed(subject, subject.useCase, failure: message)
+        case .thinking: break
+        }
     }
 }

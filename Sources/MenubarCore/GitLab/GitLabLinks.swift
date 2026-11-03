@@ -10,6 +10,14 @@ public enum GitLabLinks {
         gitLab.appending(path: "dashboard/merge_requests")
     }
 
+    /// Returns "All To-Dos in GitLab": `<gitlab>/dashboard/todos` (INBOX-02).
+    ///
+    /// - Parameter gitLab: the GitLab instance
+    /// - Returns: the link
+    public static func todos(gitLab: URL) -> URL {
+        gitLab.appending(path: "dashboard/todos")
+    }
+
     /// Returns "All work items in GitLab": the dashboard's issues, assigned to me or created by me, in the state of
     /// the filters; the plain dashboard before my username is known (WI-07).
     ///

@@ -38,7 +38,7 @@ struct ClaudeButtonLook: ViewModifier {
 
 /// A button that asks Claude, as a split button: a click uses Settings' model (the default), the arrow picks the model
 /// for this run. Used by every Claude action:
-/// Why Did It Fail?, Summarize Discussion, Write Digest and Open in Claude Code.
+/// Why Did It Fail?, Summarize Discussion, Write Digest and Continue in Claude Code.
 struct ClaudeActionButton: View {
     let title: String
     var systemImage: String?

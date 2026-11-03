@@ -14,6 +14,13 @@ public struct HTTPRequest: Sendable, Hashable {
     /// whether a 3xx answer is followed; `false` hands it over as it is, with its `Location`, as Jenkins's answer to a
     /// build request needs (PIPE-09)
     public var followsRedirects: Bool
+    /// the most bytes of the answer's body read; the transport drops the connection once it has them, and the body is
+    /// that long. nil reads the whole body. The console log's pages need it: Jenkins's `progressiveText` always answers
+    /// up to the log's end (PIPE-12).
+    public var bodyLimit: Int?
+    /// whether `RequestRecorder` keeps the start of the answer's body with the request; `false` for answers whose text
+    /// is never kept on disk, like the console log (PIPE-12)
+    public var keepsBody: Bool
 
     public init(
         method: String = "GET",
@@ -22,7 +29,9 @@ public struct HTTPRequest: Sendable, Hashable {
         body: Data? = nil,
         timeout: Duration,
         graphQL: GraphQLOperation? = nil,
-        followsRedirects: Bool = true
+        followsRedirects: Bool = true,
+        bodyLimit: Int? = nil,
+        keepsBody: Bool = true
     ) {
         self.method = method
         self.url = url
@@ -31,6 +40,8 @@ public struct HTTPRequest: Sendable, Hashable {
         self.timeout = timeout
         self.graphQL = graphQL
         self.followsRedirects = followsRedirects
+        self.bodyLimit = bodyLimit
+        self.keepsBody = keepsBody
     }
 }
 

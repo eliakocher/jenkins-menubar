@@ -192,6 +192,8 @@ public struct PipelinesCheck: Sendable {
         public var gitLabUser: GitLabUser?
         /// the alerts to announce, in order
         public var alerts: [BuildAlert]
+        /// the alerts of muted jobs: nothing shows, but the Activity log still gets their lines (ALERT-09)
+        public var mutedAlerts: [BuildAlert] = []
         /// when the round started
         public var startedAt: Date
     }
@@ -231,12 +233,16 @@ public struct PipelinesCheck: Sendable {
             project: project, token: gitLabToken, builds: result.builds, known: input.merged, transport: recorder)
 
         var alerts: [BuildAlert] = []
+        var muted: [BuildAlert] = []
         if let jobURL = project.team.jenkinsJob {
             alerts = AlertPolicy(jobURL: jobURL).alerts(
                 previous: input.alertStates, current: result.builds,
                 lastCheck: input.alertsArmed ? result.previousCheck : nil, preferences: input.preferences)
             // A muted job stays followed, so its alert state moves on; only the glass alert and the banners go (ALERT-09).
-            alerts = input.notifications.filter(alerts)
+            // Its finished build still gets its Activity line, so the alerts that go are kept for the log.
+            let shown = input.notifications.filter(alerts)
+            muted = alerts.filter { alert in !shown.contains { $0.id == alert.id } }
+            alerts = shown
         }
         let alertStates = AlertPolicy.states(after: result.builds, previous: input.alertStates)
         // The easter eggs add a line to the finished builds' alerts, and keep their streaks (EGG-11).
@@ -246,6 +252,11 @@ public struct PipelinesCheck: Sendable {
         let projects = services.team.projects()
         if projects.count > 1, let name = Project.names(of: projects)[project.id] {
             alerts = alerts.map { alert in
+                var alert = alert
+                alert.content.project = name
+                return alert
+            }
+            muted = muted.map { alert in
                 var alert = alert
                 alert.content.project = name
                 return alert
@@ -264,7 +275,7 @@ public struct PipelinesCheck: Sendable {
         }
         return Output(
             project: project, result: result, merged: merged, alertStates: alertStates, eggs: eggs, gitLabUser: gitLabUser,
-            alerts: alerts, startedAt: startedAt)
+            alerts: alerts, mutedAlerts: muted, startedAt: startedAt)
     }
 
     /// Returns the key a project's Jenkins problem is tracked under: `jenkins` for the primary project, as before there
@@ -282,12 +293,15 @@ public struct PipelinesCheck: Sendable {
     ///
     /// - Parameters:
     ///   - alerts: the alerts, from ``Output/alerts``
+    ///   - muted: the alerts of muted jobs, from ``Output/mutedAlerts``: logged, never shown (ALERT-09)
     ///   - preferences: the alert style and stage alerts
-    public func announce(_ alerts: [BuildAlert], preferences: Preferences) async {
-        guard !alerts.isEmpty else {
+    public func announce(_ alerts: [BuildAlert], muted: [BuildAlert] = [], preferences: Preferences) async {
+        guard !alerts.isEmpty || !muted.isEmpty else {
             return
         }
-        await AlertAnnouncer(effects: services.effects, log: services.log).announce(alerts, preferences: preferences)
+        let announcer = AlertAnnouncer(effects: services.effects, log: services.log)
+        await announcer.announce(alerts, preferences: preferences)
+        await announcer.logMuted(muted)
     }
 
     /// Asks GitLab for my username, unless it is known for this token.

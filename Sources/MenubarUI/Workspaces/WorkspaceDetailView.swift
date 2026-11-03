@@ -122,7 +122,6 @@ struct WorkspaceDetailContent: View {
                 if let problem = row.actionProblem {
                     StatusLine(.problem, problem)
                 }
-                ClaudeCodeLaunchLine(context: .workspace(row.checkout, task: row.task))
                 if let problem = row.problem {
                     StatusLine(.problem, problem)
                 }
@@ -153,8 +152,6 @@ struct WorkspaceDetailContent: View {
             DetailActionButton("Open in Terminal", "terminal", help: "Open \(row.checkout.name) in your terminal") {
                 actions.openInTerminal(row.checkout)
             }
-            // Claude Code in this checkout, with its task as the first prompt (AI-05).
-            OpenInClaudeCodeButton(context: .workspace(row.checkout, task: row.task))
             DetailActionButton("Reveal in Finder", "folder", help: "Show \(row.checkout.name) in Finder") {
                 actions.revealInFinder(row.checkout)
             }
@@ -177,9 +174,13 @@ struct WorkspaceDetailContent: View {
                 VStack(alignment: .leading, spacing: 0) {
                     if let number = row.number {
                         taskRow("Work Item") {
-                            Text(verbatim: "\(number)  \(row.title)")
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                WorkItemNumberChip(text: number)
+                                    .fixedSize()
+                                Text(verbatim: row.title)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
                             if row.titleFromBranch {
                                 Text("Not among the loaded work items: the title is the branch's")
                                     .font(.footnote)
@@ -195,9 +196,15 @@ struct WorkspaceDetailContent: View {
                     }
                     if let mergeRequest = row.task.mergeRequest, let status = row.status {
                         taskRow("Merge Request") {
-                            Text(verbatim: "\(row.mergeRequestReference ?? "")  \(mergeRequest.title)")
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                if let reference = row.mergeRequestReference {
+                                    MergeRequestNumberChip(text: reference)
+                                        .fixedSize()
+                                }
+                                Text(verbatim: mergeRequest.title)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
                             StatusBadge(text: status.text, symbol: status.symbol, tint: status.color.swiftUI)
                         } buttons: {
                             smallButton("Show", help: "Show it in Merge Requests") {

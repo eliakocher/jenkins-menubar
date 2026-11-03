@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The app's loading rule, for every screen: show what you know, skeleton what's loading, never a blank page.
@@ -280,31 +281,96 @@ private struct SkeletonShimmer: ViewModifier {
                 .environment(\.skeletonIsShimmering, true)
                 .overlay {
                     if !reduceMotion {
-                        TimelineView(.animation) { context in
-                            let phase = context.date.timeIntervalSinceReferenceDate
-                                .truncatingRemainder(dividingBy: Skeleton.cycle) / Skeleton.cycle
-                            GeometryReader { proxy in
-                                let band = max(80, proxy.size.width * 0.4)
-                                LinearGradient(
-                                    colors: [.clear, Skeleton.highlight(scheme), .clear], startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                                .frame(width: band)
-                                .offset(x: -band + CGFloat(phase) * (proxy.size.width + band))
+                        // Core Animation moves the band, off the main thread: a TimelineView drew the whole window again
+                        // at every frame while a skeleton showed, which kept the main thread busy and made clicks wait.
+                        ShimmerBand(highlight: NSColor(Skeleton.highlight(scheme)).cgColor)
+                            // The sweep shows only where a bar is.
+                            .mask {
+                                content
+                                    .environment(\.skeletonIsShimmering, true)
+                                    .environment(\.skeletonIsMask, true)
                             }
-                        }
-                        // The sweep shows only where a bar is.
-                        .mask {
-                            content
-                                .environment(\.skeletonIsShimmering, true)
-                                .environment(\.skeletonIsMask, true)
-                        }
-                        .allowsHitTesting(false)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
                     }
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Loading")
                 .accessibilityHidden(!announces)
         }
+    }
+}
+
+/// The shimmer's band: a soft highlight that Core Animation sweeps from the leading edge past the trailing one, once per
+/// ``Skeleton/cycle``, in step with every other band on screen.
+private struct ShimmerBand: NSViewRepresentable {
+    let highlight: CGColor
+
+    func makeNSView(context: Context) -> ShimmerBandView {
+        ShimmerBandView()
+    }
+
+    func updateNSView(_ view: ShimmerBandView, context: Context) {
+        view.highlight = highlight
+    }
+}
+
+private final class ShimmerBandView: NSView {
+    private let band = CAGradientLayer()
+    private var animatedWidth: CGFloat?
+
+    var highlight: CGColor = .clear {
+        didSet {
+            band.colors = Self.colors(highlight)
+        }
+    }
+
+    /// The highlight fading out to each side; into the highlight's own clear, as a SwiftUI gradient does, not to clear
+    /// black, which greys the edges.
+    private static func colors(_ highlight: CGColor) -> [CGColor] {
+        let faded = highlight.copy(alpha: 0) ?? .clear
+        return [faded, highlight, faded]
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        band.startPoint = CGPoint(x: 0, y: 0.5)
+        band.endPoint = CGPoint(x: 1, y: 0.5)
+        band.colors = Self.colors(highlight)
+        layer?.addSublayer(band)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("not from a nib")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        let width = bounds.width
+        let bandWidth = max(80, width * 0.4)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        band.bounds = CGRect(x: 0, y: 0, width: bandWidth, height: bounds.height)
+        band.position = CGPoint(x: -bandWidth / 2, y: bounds.midY)
+        CATransaction.commit()
+        guard width > 0, width != animatedWidth else {
+            return
+        }
+        animatedWidth = width
+        let sweep = CABasicAnimation(keyPath: "position.x")
+        sweep.fromValue = -bandWidth / 2
+        sweep.toValue = width + bandWidth / 2
+        sweep.duration = Skeleton.cycle
+        sweep.repeatCount = .infinity
+        // The same phase for every band: the cycle counted from the media clock.
+        let now = band.convertTime(CACurrentMediaTime(), from: nil)
+        sweep.beginTime = now - now.truncatingRemainder(dividingBy: Skeleton.cycle)
+        band.add(sweep, forKey: "sweep")
     }
 }

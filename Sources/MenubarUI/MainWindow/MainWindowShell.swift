@@ -26,6 +26,8 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     var detailLink = DetailLink(.gitLab)
     /// the sections the sidebar lists (Digest only while the Claude features are on)
     var sections = MainWindowSection.allCases
+    /// called with the offsets and the destination of a drag of the sidebar's rows; `nil` leaves the rows fixed
+    var moveSections: ((IndexSet, Int) -> Void)?
     private let content: Content
     private let detail: Detail
     private let sectionToolbar: SectionToolbar
@@ -44,6 +46,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     ///   - navigation: the Back and Forward buttons; `nil` for none
     ///   - detailLink: the toolbar's "Open in GitLab" or "Open in Jenkins"
     ///   - sections: the sections the sidebar lists
+    ///   - moveSections: what a drag of the sidebar's rows does
     ///   - content: the section's list
     ///   - detail: the section's detail; not shown for Activity, whose list is full width
     ///   - sectionToolbar: the section's own toolbar items: Watch a Build in Pipelines, the filter menu in Work Items,
@@ -54,6 +57,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
         reload: (@MainActor () -> Void)? = nil, searchFocusRequest: Int = 0,
         searchNote: String? = nil, opened: OpenedSidebar = OpenedSidebar(), navigation: NavigationControls? = nil,
         detailLink: DetailLink = DetailLink(.gitLab), sections: [MainWindowSection] = MainWindowSection.allCases,
+        moveSections: ((IndexSet, Int) -> Void)? = nil,
         @ViewBuilder content: () -> Content, @ViewBuilder detail: () -> Detail,
         @ToolbarContentBuilder sectionToolbar: () -> SectionToolbar
     ) {
@@ -69,6 +73,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
         self.navigation = navigation
         self.detailLink = detailLink
         self.sections = sections
+        self.moveSections = moveSections
         self.content = content()
         self.detail = detail()
         self.sectionToolbar = sectionToolbar()
@@ -123,7 +128,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
                     .frame(minHeight: 0, maxHeight: .infinity)
                     .toolbar { toolbar }
             }
-        } else if section == .activity || section == .slots || section == .digest {
+        } else if section.isFullWidth {
             NavigationSplitView(columnVisibility: twoColumnVisibility) {
                 sidebar
             } detail: {
@@ -152,7 +157,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     }
 
     private var sidebar: some View {
-        MainWindowSidebar(section: $section, sections: sections, badges: model.badges, markers: model.markers, opened: opened)
+        MainWindowSidebar(section: $section, sections: sections, moveSections: moveSections, badges: model.badges, markers: model.markers, unread: model.unread, opened: opened)
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
     }
 

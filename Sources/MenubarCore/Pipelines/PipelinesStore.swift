@@ -44,11 +44,17 @@ public final class PipelinesStore {
     /// the project as Team had it at the last check
     public private(set) var project: Project
     /// the state of the last check: my jobs, the user they were looked up for, and the builds (PIPE-01)
-    public private(set) var state: JenkinsState
+    public private(set) var state: JenkinsState {
+        didSet { shownBuilds = nil }
+    }
     /// the watched jobs and the builds hidden by hand
-    public private(set) var userState: UserState
+    public private(set) var userState: UserState {
+        didSet { shownBuilds = nil }
+    }
     /// the iids of the merged MRs among the MR jobs (HIDE-03)
-    public private(set) var merged: [Int]
+    public private(set) var merged: [Int] {
+        didSet { shownBuilds = nil }
+    }
     /// the problem of the last check (JERR, TEAM-03); `nil` when Jenkins answered
     public private(set) var checkProblem: Problem?
     /// whether the Mac has no network path (OD-05)
@@ -60,10 +66,25 @@ public final class PipelinesStore {
     /// whether there are builds to show, from the cache or a check; until then the sections show a loading row (OD-01)
     public private(set) var hasLoaded: Bool
     /// the time the hiding rules use, moved on at each check, each preference change and ``refreshTime()`` (HIDE-02)
-    public private(set) var now: Date
+    public private(set) var now: Date {
+        didSet { shownBuilds = nil }
+    }
     /// the preferences the hiding rules and the alerts follow; a change applies at once (HIDE-02)
     public var preferences: Preferences {
-        didSet { now = services.now() }
+        didSet {
+            shownBuilds = nil
+            now = services.now()
+        }
+    }
+
+    /// the builds that show and the count hidden by hand, worked out once per change of what they depend on: the
+    /// window and the status icon read them many times per update
+    @ObservationIgnored private var shownBuilds: ShownBuilds?
+
+    private struct ShownBuilds: Equatable {
+        var mine: [Build]
+        var watched: [Build]
+        var hiddenCount: Int
     }
 
     /// which builds may alert; a change applies at the next check (ALERT-09)
@@ -77,6 +98,8 @@ public final class PipelinesStore {
 
     /// Asks for a check at once, as watching does (WATCH-01). ``AppModel`` sets it to the scheduler's Check now.
     @ObservationIgnored public var requestCheck: @MainActor () -> Void = {}
+    /// called after a check with the alerts of the builds that finished, those of muted jobs left out
+    @ObservationIgnored public var onFinishedBuilds: @MainActor ([BuildAlert]) -> Void = { _ in }
 
     @ObservationIgnored private let services: PipelinesServices
     @ObservationIgnored private let round: PipelinesCheck
@@ -146,17 +169,41 @@ public final class PipelinesStore {
 
     /// my builds that show, newest started first (PIPE-08)
     public var myBuilds: [Build] {
-        followed(.mine).filter { visibility(of: $0) == .shown }
+        shown.mine
     }
 
     /// the watched builds that show, newest started first, in the section after mine (WATCH-04)
     public var watchedBuilds: [Build] {
-        followed(.watched).filter { visibility(of: $0) == .shown }
+        shown.watched
     }
 
     /// the builds hidden by hand that would show otherwise, for "Show N Hidden Builds" (HIDE-01, HIDE-04)
     public var hiddenCount: Int {
-        (followed(.mine) + followed(.watched)).count { visibility(of: $0) == .hiddenByHand }
+        shown.hiddenCount
+    }
+
+    /// The builds that show, from the cache while nothing they depend on changed. The inputs are read every time, so
+    /// a view that reads the builds is drawn again when one of them changes.
+    private var shown: ShownBuilds {
+        _ = (state, userState, merged, preferences, now)
+        if let shownBuilds {
+            return shownBuilds
+        }
+        let built = shown(at: now)
+        shownBuilds = built
+        return built
+    }
+
+    private func shown(at now: Date) -> ShownBuilds {
+        let mine = followed(.mine)
+        let watched = followed(.watched)
+        let visibility = { (build: Build) in
+            PipelineRules.visibility(
+                of: build, hidden: self.userState.hidden, merged: Set(self.merged), preferences: self.preferences, now: now)
+        }
+        return ShownBuilds(
+            mine: mine.filter { visibility($0) == .shown }, watched: watched.filter { visibility($0) == .shown },
+            hiddenCount: (mine + watched).count { visibility($0) == .hiddenByHand })
     }
 
     /// "Show 1 Hidden Build" or "Show N Hidden Builds"; `nil` when nothing is hidden by hand (HIDE-01)
@@ -332,11 +379,50 @@ public final class PipelinesStore {
     ///
     /// - Parameter build: the build to start again
     public func rebuild(_ build: BuildID) {
+        startRebuild(build, form: nil)
+    }
+
+    /// Starts a build's job again with parameters the user edited, "Rebuild with Changes…" (PIPE-09). It runs as
+    /// ``rebuild(_:)`` does; the log names no value, since a parameter may be a secret.
+    ///
+    /// - Parameters:
+    ///   - build: the build the form was filled from
+    ///   - form: the edited form from ``rebuildForm(for:)``
+    public func rebuild(_ build: BuildID, with form: RebuildForm) {
+        startRebuild(build, form: form)
+    }
+
+    /// Asks Jenkins for what "Rebuild with Changes…" edits: the job's parameter definitions filled with the build's
+    /// values. It only reads, and doesn't touch ``rebuilds``.
+    ///
+    /// - Parameter build: the build to start again
+    /// - Returns: the form, or why Jenkins couldn't be asked
+    public func rebuildForm(for build: BuildID) async -> Result<RebuildForm, JenkinsRebuildError> {
+        let project = currentProject()
+        let token = await services.token(.jenkins)
+        let client: JenkinsClient
+        switch JenkinsClient.make(
+            project: project, token: token, transport: services.recorder(for: project), timeouts: services.timeouts)
+        {
+        case .success(let made): client = made
+        case .failure(let error): return .failure(.problem(error.problem))
+        }
+        do {
+            return .success(try await client.rebuildForm(job: build.job, number: build.number))
+        } catch let error as JenkinsRebuildError {
+            return .failure(error)
+        } catch {
+            return .failure(.problem(.unreachable(.jenkins)))
+        }
+    }
+
+    private func startRebuild(_ build: BuildID, form: RebuildForm?) {
         if rebuilds[build.job]?.isUnderWay == true {
             return
         }
         rebuilds[build.job] = JenkinsRebuild(build: build, phase: .starting)
-        log(.info, .jenkins, "Rebuilding \(build.label)", detail: state.builds.first { $0.id == build }?.title)
+        let title = state.builds.first { $0.id == build }?.title
+        log(.info, .jenkins, "Rebuilding \(build.label)\(form == nil ? "" : " with changes")", detail: title)
         let project = currentProject()
         let services = services
         rebuildTasks[build.job] = Task {
@@ -353,7 +439,11 @@ public final class PipelinesStore {
             }
             let item: QueueItem
             do {
-                item = try await client.rebuild(job: build.job, number: build.number)
+                if let form {
+                    item = try await client.rebuild(job: build.job, form: form)
+                } else {
+                    item = try await client.rebuild(job: build.job, number: build.number)
+                }
             } catch let error as JenkinsRebuildError {
                 rebuildFailed(build, error)
                 return
@@ -484,9 +574,15 @@ public final class PipelinesStore {
         return eggMemory.spellcheckDemos
     }
 
-    /// Moves the time of the hiding rules on to now, as when the panel opens (HIDE-02).
+    /// Moves the time of the hiding rules on to now, as when the panel opens (HIDE-02). When that shows and hides the
+    /// same builds, the time stays: a new one would draw every view of the builds again for nothing, as at each switch
+    /// to Pipelines.
     public func refreshTime() {
-        now = services.now()
+        let time = services.now()
+        guard shown(at: time) != shown else {
+            return
+        }
+        now = time
     }
 
     /// Reads the project, the watched and hidden builds and the caches again, as after the import at launch.
@@ -550,7 +646,8 @@ public final class PipelinesStore {
         let output = try await round.run(input)
         jobLookupRequested = false
         apply(output)
-        await round.announce(output.alerts, preferences: preferences)
+        await round.announce(output.alerts, muted: output.mutedAlerts, preferences: preferences)
+        onFinishedBuilds(output.alerts)
         #if DEBUG
         checksEnded += 1
         let ready = checkWaiters.filter { $0.count <= checksEnded }

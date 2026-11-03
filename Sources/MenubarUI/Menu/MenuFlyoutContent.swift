@@ -15,6 +15,8 @@ struct MenuFlyoutActions {
     var panel = PanelActions.none
     /// "Show in Window": the main window's section with the entry selected
     var showInWindow: @MainActor (MenuSelection) -> Void = { _ in }
+    /// the Inbox's Done and Snooze, for its entries' context menus (INBOX-03, INBOX-04)
+    var inbox = InboxActions.none
 
     static var none: MenuFlyoutActions { MenuFlyoutActions() }
 }
@@ -60,7 +62,10 @@ struct MenuFlyoutContent: View {
             }
         }
         .padding(.vertical, MenuMetrics.edge)
-        .frame(width: MenuMetrics.flyoutWidth)
+        // The panel's width at most, the scroll view's when it is narrower: with scroll bars always shown, a flyout that
+        // scrolls loses the bar's width, and a fixed width got centered in what was left, so its text moved left of the
+        // other flyouts' (the user, 2026-11-02, the Work Items flyout's headers).
+        .frame(idealWidth: MenuMetrics.flyoutWidth, maxWidth: MenuMetrics.flyoutWidth, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
         // The first row's top lines up with the open area's row, as a native submenu's first item with its item.
         .alignmentGuide(.menuFlyoutTop) { $0[.top] + MenuMetrics.edge }
@@ -126,6 +131,19 @@ struct MenuFlyoutContent: View {
             BuildRowMenu(model: row, actions: actions.panel)
             Divider()
             Button("Show in Window") { actions.showInWindow(entry.selection) }
+        case .inbox(let row):
+            Button("Done") { actions.inbox.done([row.entry]) }
+            if row.entry.todo != nil {
+                InboxSnoozeMenu(entries: [row.entry], actions: actions.inbox) { _ in } label: {
+                    Text("Snooze")
+                }
+            }
+            Divider()
+            Button("Show in Window") { actions.showInWindow(entry.selection) }
+            if let url = entry.url, !InboxOpening.isLocal(row.entry) {
+                Button(entry.openTitle) { actions.panel.open(url) }
+                Button("Copy Link") { actions.panel.copy(url) }
+            }
         case .mergeRequest, .workItem:
             Button("Show in Window") { actions.showInWindow(entry.selection) }
             if let url = entry.url {
@@ -134,6 +152,9 @@ struct MenuFlyoutContent: View {
             if let url = entry.url {
                 Divider()
                 Button("Copy Link") { actions.panel.copy(url) }
+            }
+            if case .workItem(let row) = entry.kind {
+                CopyBranchNameButton(workItem: row.workItem)
             }
         }
     }
@@ -148,6 +169,8 @@ struct MenuEntryRow: View {
     /// whether the flyout keeps a symbol column: when any of its entries has a symbol; without, the text starts at the
     /// row's edge, under the section headers (the user, 2026-10-29)
     var showsSymbolColumn = true
+    /// whether an Inbox entry was opened: it shows faded
+    @Environment(\.inboxIsSeen) private var isSeen
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -173,6 +196,7 @@ struct MenuEntryRow: View {
                     case .build(let row): WorkspaceTag(subject: .build(row.build))
                     case .mergeRequest(let row): WorkspaceTag(subject: .mergeRequest(row.mergeRequest))
                     case .workItem(let row): MenuSecondaryText(row.age).font(.subheadline).lineLimit(1).fixedSize()
+                    case .inbox(let row): MenuSecondaryText(row.age).font(.subheadline).lineLimit(1).fixedSize()
                     }
                 }
                 detailsLine
@@ -194,8 +218,14 @@ struct MenuEntryRow: View {
         }
         .padding(.vertical, 2)
         .menuRow(isHighlighted: isHighlighted, corner: MenuMetrics.flyoutCorner - MenuMetrics.inset)
+        .opacity(isFaded ? 0.6 : 1)
         .help(entry.url == nil ? entry.title : "\(entry.title)\n⌥-click to open in the browser")
         .accessibilityElement(children: .combine)
+    }
+
+    /// an Inbox entry that was opened, while the pointer isn't on it
+    private var isFaded: Bool {
+        if case .inbox(let row) = entry.kind { isSeen(row.id) && !isHighlighted } else { false }
     }
 }
 
@@ -206,16 +236,62 @@ extension MenuEntryRow {
         if case .workItem(let row) = entry.kind {
             WorkItemDetailsLine(row: row)
                 .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
+        } else if case .inbox(let row) = entry.kind {
+            InboxDetailsLine(row: row, avatarSize: 13)
+                .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
         } else {
-            HStack(spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
                 if let pill = entry.pill {
                     LabelPill(label: pill, style: .compact)
                         .fixedSize()
                 }
-                MenuSecondaryText(entry.subtitle)
-                    .lineLimit(1)
+                if let chip = entry.numberChip {
+                    // The MR's number as the window's small chip, then the rest of the grey line.
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        if !chip.before.isEmpty {
+                            MenuSecondaryText(chip.before)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
+                        MergeRequestNumberChip(text: chip.text)
+                            .fixedSize()
+                        MenuSecondaryText(chip.rest)
+                            .lineLimit(1)
+                    }
+                } else {
+                    MenuSecondaryText(entry.subtitle)
+                        .lineLimit(1)
+                }
             }
         }
+    }
+}
+
+extension MenuEntry {
+    /// The merge request number in a build's or an MR's grey line, to draw as a chip: what comes before it ("by Sam Lee · "
+    /// of a watched build), the number, and the rest of the line without the " · " after it; `nil` for a line without
+    /// one. The chip is the merge request green, whatever the state.
+    fileprivate var numberChip: (before: String, text: String, rest: String)? {
+        let text: String
+        switch kind {
+        case .build(let row):
+            guard row.build.mergeRequestIID != nil else {
+                return nil
+            }
+            text = row.build.label
+        case .mergeRequest(let row):
+            text = row.shortReference
+        case .workItem, .inbox:
+            return nil
+        }
+        guard let range = subtitle.range(of: text) else {
+            return nil
+        }
+        var rest = subtitle[range.upperBound...]
+        if rest.hasPrefix(" · ") {
+            rest = rest.dropFirst(3)
+        }
+        return (String(subtitle[..<range.lowerBound]), text, rest.hasPrefix(" ") ? String(rest) : " " + rest)
     }
 }
 

@@ -14,11 +14,11 @@ struct LinkedItemsCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 let short = mergeRequest.shortReference(project: mergeRequest.project)
                 LinkedItemRow(
-                    symbol: "arrow.triangle.pull", reference: short, title: mergeRequest.title, kind: "Merge Request",
+                    referenceKind: .mergeRequest, reference: short, title: mergeRequest.title, kind: "Merge Request",
                     url: mergeRequest.webURL, actions: actions)
                 ForEach(workItems) { item in
                     LinkedItemRow(
-                        symbol: "checklist", reference: item.shortReference(project: mergeRequest.project), title: item.title,
+                        referenceKind: .workItem, reference: item.shortReference(project: mergeRequest.project), title: item.title,
                         kind: "Work Item", url: item.webURL, actions: actions)
                 }
             }
@@ -30,9 +30,9 @@ struct LinkedItemsCard: View {
     }
 }
 
-/// One linked item: its symbol, reference and title; it lights up on hover like the other detail rows.
+/// One linked item: its reference chip (blue "#19202", green "!12477") and title; it lights up on hover like the other detail rows.
 private struct LinkedItemRow: View {
-    let symbol: String
+    let referenceKind: ReferenceKind
     /// "!12477" or "#19202"
     let reference: String
     let title: String?
@@ -48,12 +48,8 @@ private struct LinkedItemRow: View {
             if let url { actions.follow(url) }
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: symbol)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
-                Text(verbatim: reference)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                ReferenceChip(kind: referenceKind, text: reference)
+                    .fixedSize()
                 Text(verbatim: title ?? "")
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)

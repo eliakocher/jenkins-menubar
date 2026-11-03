@@ -1,0 +1,1 @@
+{"data":{"createNote":{"errors":[],"note":{"id":"gid://gitlab/Note/9001","url":"https://gitlab.example.com/group/project/-/merge_requests/16#note_9001","body":"Looks good, one question.","createdAt":"2026-11-02T10:15:30Z","author":{"username":"jdoe","name":"Jane Doe"},"discussion":{"id":"gid://gitlab/Discussion/5f1c0a"}}}}}

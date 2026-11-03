@@ -363,6 +363,45 @@ struct OnDemandTests {
         #expect(Set(store.relatedMergeRequests.entries.keys) == ["\(Self.path)#9"])
     }
 
+    @Test("SLOT-09 the background load of other items' related MRs asks 3 at a time, skips loaded ones and epics, and stops when cancelled")
+    func relatedBackgroundLoad() async throws {
+        let world = try World()
+        world.stub.answer(operation: "RelatedMergeRequests", after: .seconds(1),
+                          body: try FixtureFiles.string("GitLab/related-merge-requests-none.json"))
+        let fresh = RelatedMergeRequestsCache.Entry(workItemUpdatedAt: Self.item(1).updatedAt, fetchedAt: Self.start, mergeRequests: [])
+        try world.caches.save(Cached(value: RelatedMergeRequestsCache(entries: ["\(Self.path)#1": fresh]), fetchedAt: Self.start),
+                              as: .relatedMergeRequests, for: .main)
+        let store = world.workItemsStore()
+        var epic = Self.item(99)
+        epic.reference = "group&99"
+        let items = [Self.item(1), epic] + (2...8).map { Self.item($0) } + [Self.item(2)]
+
+        let load = Task { await store.loadRelatedMergeRequests(of: items, atOnce: 3, publishEvery: 2) }
+        await world.clock.waitForSleepers(3)
+        #expect(world.count("RelatedMergeRequests") == 3)
+        // Nothing shows before the first group of answers is in.
+        #expect(store.relatedMergeRequests.entries.count == 1)
+        world.clock.advance(by: .seconds(1))
+        await world.clock.waitForSleepers(3)
+        #expect(world.count("RelatedMergeRequests") == 6)
+        world.clock.advance(by: .seconds(1))
+        await world.clock.waitForSleepers(1)
+        #expect(world.count("RelatedMergeRequests") == 7)
+        world.clock.advance(by: .seconds(1))
+        await load.value
+        #expect(world.relatedIIDs == ["2", "3", "4", "5", "6", "7", "8"])
+        #expect(Set(store.relatedMergeRequests.entries.keys) == Set((1...8).map { "\(Self.path)#\($0)" }))
+        #expect(world.workItemsStore().relatedMergeRequests.entries.count == 8)
+
+        // A run that is cancelled asks for nothing more.
+        let again = world.workItemsStore()
+        let cancelled = Task { await again.loadRelatedMergeRequests(of: (20...30).map { Self.item($0) }) }
+        await world.clock.waitForSleepers(3)
+        cancelled.cancel()
+        await cancelled.value
+        #expect(world.count("RelatedMergeRequests") == 10)
+    }
+
     // MARK: - The loads' side work
 
     @Test("WI-06 logs a gone filter label once")

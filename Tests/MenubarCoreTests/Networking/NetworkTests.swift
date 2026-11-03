@@ -140,6 +140,31 @@ struct NetworkTests {
         #expect(clock.sleeperCount == 0)
     }
 
+    @Test("PIPE-12 the transport stops reading an answer at the body limit")
+    func bodyLimit() async throws {
+        let body = String(repeating: "0123456789abcdef\n", count: 20_000)
+        let server = try LocalServer(answer: """
+            HTTP/1.1 200 OK\r
+            Content-Type: text/plain\r
+            X-Text-Size: 340000\r
+            Content-Length: \(body.utf8.count)\r
+            Connection: close\r
+            \r
+            \(body)
+            """)
+        let transport = URLSessionTransport()
+        let url = server.url("/job/MR-1/2/logText/progressiveText?start=0")
+
+        let cut = try await transport.send(HTTPRequest(url: url, timeout: .seconds(5), bodyLimit: 1000))
+        let whole = try await transport.send(HTTPRequest(url: url, timeout: .seconds(5)))
+
+        #expect(cut.status == 200)
+        #expect(cut.body.count == 1000)
+        #expect(cut.header("X-Text-Size") == "340000")
+        #expect(cut.body == whole.body.prefix(1000))
+        #expect(whole.body.count == body.utf8.count)
+    }
+
     @Test("NET-02 cookies are not stored")
     func noCookies() async throws {
         let server = try LocalServer(answer: LocalServer.ok)

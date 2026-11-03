@@ -36,7 +36,7 @@ public struct MergeRequestStatus: Hashable, Sendable {
     }
 
     /// One of GitLab's colors, as hex text for the light and the dark appearance.
-    public struct Color: Hashable, Sendable {
+    public struct Color: Codable, Hashable, Sendable {
         /// like `#108548`
         public var light: String
         /// like `#52B87A`

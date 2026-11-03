@@ -2,7 +2,8 @@ import MenubarCore
 import SwiftUI
 
 /// The build detail's action row under the header, a ``DetailActionRow`` (the user, 2026-10-30: "represent them directly
-/// in the view, so they're not hidden behind a menu"). The ⋯ menu keeps only the rare ones. Rebuild or Cancel Rebuild,
+/// in the view, so they're not hidden behind a menu"). Rebuild (a split button: Rebuild Identically, or with Changes…)
+/// or Cancel Rebuild,
 /// Notifications, Hide Until the Next Build, Stop Watching, the console and the test results in Jenkins, and Copy
 /// Link, each where it applies.
 struct BuildActionRow: View {
@@ -45,10 +46,10 @@ struct BuildActionRow: View {
                     actions.cancelRebuild(row.build.jobKey)
                 }
             } else {
-                button("Rebuild", "arrow.clockwise", help: "Starts the job again with this build's parameters") {
-                    actions.rebuildBuild(row.build.id)
-                }
-                .disabled(model.rebuild?.isUnderWay == true)
+                RebuildSplitButton(
+                    isDisabled: model.rebuild?.isUnderWay == true,
+                    identically: { actions.rebuildBuild(row.build.id) },
+                    withChanges: { actions.rebuildBuildWithChanges(row.build.id) })
             }
         }
     }

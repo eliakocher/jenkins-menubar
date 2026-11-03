@@ -57,6 +57,24 @@ struct AlertAnnouncerTests {
         #expect(await setup.effects.alertWindows == (banner ? [] : [alert]))
     }
 
+    // MARK: ALERT-09
+
+    @Test("ALERT-09 logging a muted finished build writes its lines and shows nothing; a muted stage banner leaves none")
+    func mutedFinishedIsLogged() async throws {
+        let setup = try Setup()
+        let alert = try Self.finished(.failure)
+        let stage = BuildAlert(kind: .stageFailed, build: alert.build, content: alert.content)
+
+        await setup.announcer.logMuted([alert, stage])
+
+        let messages = await setup.log.entries().map(\.message)
+        #expect(messages.count == 2)
+        #expect(messages[0].hasSuffix("finished") && messages[1].hasSuffix("(muted)"))
+        #expect(await setup.effects.alertWindows.isEmpty)
+        #expect(await setup.effects.banners.isEmpty)
+        #expect(await setup.effects.sounds.isEmpty)
+    }
+
     // MARK: ALERT-07
 
     @Test("ALERT-07 a preview shows in the chosen style, and nothing shows without the team's Jenkins job")

@@ -122,16 +122,3 @@ struct SlotMemberSuggestion: View {
         .frame(width: 360)
     }
 }
-
-/// A slot's people, the ones with items in it, most items first (SLOT-08). The points and the load are in the header.
-struct SlotPeopleLine: View {
-    let slot: SlotSummary
-
-    var body: some View {
-        if !slot.members.isEmpty {
-            PeopleLine(people: slot.members, size: 20, maxAvatars: 8)
-                .font(.callout)
-                .lineLimit(1)
-        }
-    }
-}

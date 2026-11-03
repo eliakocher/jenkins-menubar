@@ -59,6 +59,8 @@ public enum ClaudeFailure: Error, Hashable, Sendable {
 public actor ClaudeEngine {
     /// the fixed safety limit of one call, `--max-budget-usd`: a runaway call stops here. Not a setting, not shown.
     static let maxBudgetUSD = "1.00"
+    /// the limit of the coffee break's one line: a few cents at most
+    static let maxCoffeeBudgetUSD = "0.05"
     /// the same limit for a question about code, which reads files and may review a long diff with Opus (AI-07)
     static let maxCodeBudgetUSD = "5.00"
     /// the limits with the user's setup, whose tool list alone is some 200,000 tokens before the cache has it (AI-09)
@@ -159,6 +161,9 @@ public actor ClaudeEngine {
     static func budget(for prompt: ClaudePrompt, setup: Bool = false) -> String {
         if setup {
             return prompt.useCase == .askAboutCode ? maxSetupCodeBudgetUSD : maxSetupBudgetUSD
+        }
+        if prompt.useCase == .coffeeBreak {
+            return maxCoffeeBudgetUSD
         }
         return prompt.useCase == .askAboutCode ? maxCodeBudgetUSD : maxBudgetUSD
     }

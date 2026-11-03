@@ -26,7 +26,8 @@ struct AdvancedSettingsForm: View {
                 } label: {
                     SettingsRowLabel(
                         "Reload GitLab data older than",
-                        "When a list shows them; Check Now always reloads")
+                        "When a list shows them; Check Now always reloads. In the background, data refreshes every 5 min, or at "
+                            + "this age if that is longer")
                 }
                 .pickerStyle(.menu)
                 .settingsAnchor(.gitLabDataAge)

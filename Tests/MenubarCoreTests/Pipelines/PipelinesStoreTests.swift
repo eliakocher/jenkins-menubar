@@ -688,6 +688,34 @@ struct PipelinesStoreTests {
         #expect(store.watchedBuilds.map(\.job).sorted() == ["MR-2", "MR-3"])
     }
 
+    @Test("ALERT-09 a muted build's finished line is still in Activity, marked muted; nothing shows")
+    func mutedBuildIsLogged() async throws {
+        let harness = try Harness()
+        harness.answerJobs(["MR-1", "MR-4"])
+        for job in ["MR-1", "MR-4"] {
+            harness.answer(job, number: 7, result: nil, startedAgo: 600)
+        }
+        harness.store.notifications = NotificationPolicy(jobs: ["MR-1": .never])
+        try await harness.check()
+
+        harness.time.wait(60)
+        for job in ["MR-1", "MR-4"] {
+            harness.answer(job, number: 7, result: "FAILURE", startedAgo: 660)
+        }
+        try await harness.check()
+
+        let messages = await harness.messages()
+        #expect(messages.contains { $0.hasPrefix("!1 #7") && $0.hasSuffix("finished") })
+        // The alert line has the headline, not the label: one muted, one shown.
+        #expect(messages.filter { $0.hasSuffix("(muted)") }.count == 1)
+        // The job that isn't muted is logged as before, as shown.
+        #expect(messages.contains { $0.hasPrefix("!4 #7") && $0.hasSuffix("finished") })
+        #expect(messages.filter { $0.hasSuffix("(alert)") }.count == 1)
+        #expect(await harness.effects.alertWindows.map(\.build.job) == ["MR-4"])
+        // One sound, for the job that isn't muted.
+        #expect(await harness.effects.sounds.count == 1)
+    }
+
     @Test("ALERT-09 a muted job gets no stage banner either, and a job that isn't muted does")
     func mutedJobsGetNoStageBanner() async throws {
         let harness = try Harness()

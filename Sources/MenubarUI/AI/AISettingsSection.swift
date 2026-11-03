@@ -76,7 +76,7 @@ struct AISettingsSection: View {
                 }
                 Section {
                     Toggle(isOn: binding(ai, \.morningDigest)) {
-                        SettingsRowLabel("Write a morning digest", "Posted as a notification")
+                        SettingsRowLabel("Write a morning digest", "Lands in your Inbox while you are not on the Digest")
                     }
                     .settingsSwitch()
                     .settingsAnchor(.morningDigest)

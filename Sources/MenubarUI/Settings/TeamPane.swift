@@ -3,132 +3,12 @@ import MenubarCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The seven team values in their three sections, Jenkins, GitLab and Work Item Conventions, each field with its issue
-/// under it (TEAM-01, `docs/design/settings-team.md`). Settings → Team shows them, and the welcome flow's Team step
-/// shows the first two sections. Put it inside a grouped `Form`.
-public struct TeamValueFields: View {
-    @Binding private var values: TeamValues
-    private let issues: [TeamValues.Key: String]
-    private let onSubmit: () -> Void
-    private let onLeave: (TeamValues.Key) -> Void
-    private let showsConventions: Bool
-    private let initialFocus: TeamValues.Key?
-    @FocusState private var focused: TeamValues.Key?
-
-    /// - Parameters:
-    ///   - values: the values as typed, usually `SettingsStore.teamDraft`, which saves them once typing pauses
-    ///   - issues: the issue to show under each field, like "Enter a URL that starts with https:// or http://"
-    ///   - onSubmit: Return in a field, which saves now
-    ///   - onLeave: a field lost the keyboard focus, after which its issue shows
-    ///   - showsConventions: whether the Work Item Conventions section shows; the welcome flow leaves it out
-    ///     (review WELCOME-08)
-    ///   - initialFocus: the field that takes the keyboard focus when the fields appear (review WELCOME-05)
-    public init(
-        values: Binding<TeamValues>, issues: [TeamValues.Key: String], onSubmit: @escaping () -> Void = {},
-        onLeave: @escaping (TeamValues.Key) -> Void = { _ in }, showsConventions: Bool = true,
-        initialFocus: TeamValues.Key? = nil
-    ) {
-        _values = values
-        self.issues = issues
-        self.onSubmit = onSubmit
-        self.onLeave = onLeave
-        self.showsConventions = showsConventions
-        self.initialFocus = initialFocus
-    }
-
-    public var body: some View {
-        Section {
-            field(.jenkinsJobURL)
-        } header: {
-            // The focus's watchers hang on a single view that always shows: the conventions may be left out, and a
-            // modifier on a section may go to each of its rows (inferred).
-            Text("Jenkins")
-                .onChange(of: focused) { old, _ in
-                    if let old {
-                        onLeave(old)
-                    }
-                }
-                .task {
-                    if let initialFocus {
-                        focused = initialFocus
-                    }
-                }
-        } footer: {
-            SettingsFooter(
-                "The multibranch job that builds the GitLab project, as the browser shows it. Merge request builds are "
-                    + "its MR-<number> jobs; Check in Accounts confirms that Jenkins knows it.")
-        }
-        Section {
-            field(.gitLabURL)
-            field(.gitLabProject)
-        } header: {
-            Text("GitLab")
-        }
-        if showsConventions {
-            Section {
-                field(.committedLabel)
-                field(.slotLabelPrefix)
-                field(.ignoredMergeRequestPrefix)
-                field(.typeLabelPrefix)
-            } header: {
-                Text("Work Item Conventions")
-            } footer: {
-                SettingsFooter(
-                    "Committed work items get a section of their own that the sort and the limit never cut. The slot "
-                        + "label's value shows before a work item's title. Merge requests whose title starts with the "
-                        + "prefix, like automatic cascades, don't count as work on a work item. The type label prefix "
-                        + "labels the work items made from New Work Item, like type::Bug.")
-            }
-            Section {
-                field(.slotReleaseWeekday)
-                field(.slotCodeFreezeNth)
-                field(.slotCodeFreezeWeekday)
-                field(.slotEarlyAccessNth)
-                field(.slotEarlyAccessWeekday)
-                field(.slotWarnDays)
-                field(.slotUpcomingShown)
-                field(.slotPastShown)
-                field(.inProgressLabel)
-                field(.slotPlanningURL)
-                field(.slotGroup)
-                field(.slotScheduledLabelPrefix)
-                field(.squadLabelPrefix)
-                field(.statusLabelPrefix)
-                field(.squadCapacity)
-            } header: {
-                Text("Slots")
-            } footer: {
-                SettingsFooter(
-                    "A slot label's value like 2026.51 is the ISO week of its release, on the release weekday in that week "
-                        + "(slots before 2026.30 released on Thursday, so their dates are a few days off). The code freeze is "
-                        + "the Nth weekday before the release, by default the 4th Friday; early access the 2nd Monday. "
-                        + "Committed items without a merge request are flagged from the warning days before the code freeze, "
-                        + "and the slot alert, if on in General, comes then. Empty values use the defaults. Slots shows the current slot and this many upcoming ones (1 to 12), "
-                        + "and later ones only with committed items. The in-progress "
-                        + "label marks work items that are being worked on; empty finds a label like status::InProgress. "
-                        + "With a slot group, Slots shows every issue of the group and its subgroups in the shown slots, "
-                        + "committed by the slot label, planned by the scheduled one; the squad labels give the chips, and "
-                        + "the capacity the load.")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func field(_ key: TeamValues.Key) -> some View {
-        TextField(Self.label(of: key), text: Binding(get: { values[key] }, set: { values[key] = $0 }),
-                  prompt: Text(Self.prompt(of: key)))
-            .focused($focused, equals: key)
-            .onSubmit(onSubmit)
-            .help(values[key])
-        if let issue = issues[key] {
-            StatusLine(.problem, issue)
-        }
-    }
-
+/// The labels and the example values of the team values in Settings, Team and the welcome flow.
+extension TeamValues.Key {
     /// "Jenkins job URL", "GitLab URL", "Project", "Committed label", "Slot label prefix", "Ignored merge request
     /// prefix", "Type label prefix"
-    static func label(of key: TeamValues.Key) -> String {
-        switch key {
+    var label: String {
+        switch self {
         case .jenkinsJobURL: "Jenkins job URL"
         case .gitLabURL: "GitLab URL"
         case .gitLabProject: "Project"
@@ -161,8 +41,8 @@ public struct TeamValueFields: View {
     }
 
     /// the example of `team.example.json`, or "Off" for an optional value
-    static func prompt(of key: TeamValues.Key) -> String {
-        switch key {
+    var prompt: String {
+        switch self {
         case .jenkinsJobURL: "https://jenkins.example.com/job/project"
         case .gitLabURL: "https://gitlab.example.com"
         case .gitLabProject: "group/subgroup/project"
@@ -287,7 +167,7 @@ struct TeamSettingsForm: View {
                          .slotEarlyAccessNth, .slotEarlyAccessWeekday, .slotWarnDays, .slotUpcomingShown, .slotPastShown],
                         id: \.self) { key in
                     if let issue = issues[key] {
-                        StatusLine(.problem, "\(TeamValueFields.label(of: key)): \(issue)")
+                        StatusLine(.problem, "\(key.label): \(issue)")
                     }
                 }
             } header: {
@@ -308,8 +188,8 @@ struct TeamSettingsForm: View {
                 row(.squadLabelPrefix, "Gives the squad chips")
                     .settingsAnchor(.squads)
                 SettingsTextRow(
-                    TeamValueFields.label(of: .slotTeams), caption: "GitLab usernames per team; empty takes the squad labels",
-                    text: binding(.slotTeams), prompt: TeamValueFields.prompt(of: .slotTeams), issue: issues[.slotTeams],
+                    TeamValues.Key.slotTeams.label, caption: "GitLab usernames per team; empty takes the squad labels",
+                    text: binding(.slotTeams), prompt: TeamValues.Key.slotTeams.prompt, issue: issues[.slotTeams],
                     stacked: true)
                 row(.slotMemberWorkDays, "Only for whoever doesn't work 5 days")
                 row(.squadCapacity, "Points per slot, for the load")
@@ -328,7 +208,7 @@ struct TeamSettingsForm: View {
 
     private func row(_ key: TeamValues.Key, _ caption: String) -> some View {
         SettingsTextRow(
-            TeamValueFields.label(of: key), caption: caption, text: binding(key), prompt: TeamValueFields.prompt(of: key),
+            key.label, caption: caption, text: binding(key), prompt: key.prompt,
             issue: issues[key], width: 220)
     }
 

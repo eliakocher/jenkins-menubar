@@ -5,8 +5,8 @@ import UserNotifications
 
 /// The alerts' effects on the Mac (Task 4.4): the alert window, banners and sounds.
 ///
-/// - The alert window is an ``AlertPanel`` of its own per alert: non-activating and floating, so it never takes the
-///   keyboard by itself (ALERT-03, `docs/design/alert.md`).
+/// - The alert window is one ``AlertPanel`` that holds every alert as a page: non-activating and floating, so it never
+///   takes the keyboard by itself (ALERT-03, `docs/design/alert.md`).
 /// - Banners go through UNUserNotificationCenter, in the categories `build` and `build-and-mr`, and with Rebuild for a
 ///   failed, unstable or aborted build `build-rebuild` and `build-and-mr-rebuild` (PIPE-09), and for a real build, not a
 ///   preview, the same four with the suffix `-live`, which add Open Console and Hide Until the Next Build; the payload is
@@ -29,6 +29,9 @@ final class NativeEffects: Effects {
     private var bannerFallbacks: Set<UUID> = []
     /// starts a build's rebuild, for the alert window's Rebuild; the app delegate sets it to the shell's (PIPE-09)
     var onRebuild: @MainActor (BuildID) -> Void = { _ in }
+    /// opens the "Rebuild with Changes…" sheet for a build, for the alert window's Rebuild menu; the app delegate sets it
+    /// to the shell's (PIPE-09)
+    var onRebuildWithChanges: @MainActor (BuildID) -> Void = { _ in }
     /// hides a build until its job's next build, for the alert window's Hide; the app delegate sets it to the shell's
     /// (HIDE-01)
     var onHide: @MainActor (BuildID) -> Void = { _ in }
@@ -41,6 +44,7 @@ final class NativeEffects: Effects {
         panels.show(
             alert, notificationsOff: bannerFallbacks.remove(alert.id) != nil,
             rebuild: { [weak self] build in self?.onRebuild(build) },
+            rebuildWithChanges: { [weak self] build in self?.onRebuildWithChanges(build) },
             hide: { [weak self] build in self?.onHide(build) },
             open: { [weak self] url, inApp in self?.onOpen(url, inApp) })
     }

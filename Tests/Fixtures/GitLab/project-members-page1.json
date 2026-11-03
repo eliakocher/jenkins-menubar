@@ -1,0 +1,4 @@
+{"data":{"project":{"projectMembers":{"pageInfo":{"hasNextPage":true,"endCursor":"cursor-1"},"nodes":[
+ {"user":{"username":"jdoe","name":"Jane Doe","state":"active"}},
+ {"user":{"username":"slee","name":"Sam Lee","state":"active"}},
+ {"user":null}]}}}}

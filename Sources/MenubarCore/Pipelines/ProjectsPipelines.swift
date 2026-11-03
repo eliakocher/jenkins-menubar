@@ -33,6 +33,12 @@ public final class ProjectsPipelines {
         didSet { stores.forEach { $0.requestCheck = requestCheck } }
     }
 
+    /// Called after each check with the alerts of the builds that finished, those of muted jobs left out, for the
+    /// Inbox's history of failed builds (Task 7.03). ``AppModel`` sets it.
+    @ObservationIgnored public var onFinishedBuilds: @MainActor ([BuildAlert]) -> Void = { _ in } {
+        didSet { stores.forEach { $0.onFinishedBuilds = onFinishedBuilds } }
+    }
+
     @ObservationIgnored private let services: PipelinesServices
     @ObservationIgnored private var isOffline = false
 
@@ -73,6 +79,7 @@ public final class ProjectsPipelines {
             } else {
                 let store = PipelinesStore(services: services, preferences: preferences, project: project.id)
                 store.requestCheck = requestCheck
+                store.onFinishedBuilds = onFinishedBuilds
                 store.notifications = notifications
                 store.setOffline(isOffline)
                 next.append(store)
@@ -186,6 +193,25 @@ public final class ProjectsPipelines {
     /// - Parameter id: the build
     public func rebuild(_ id: BuildID) {
         store(for: id.project)?.rebuild(id)
+    }
+
+    /// Starts a build's job again with edited parameters, in its project (PIPE-09).
+    ///
+    /// - Parameters:
+    ///   - id: the build
+    ///   - form: the edited form from ``rebuildForm(for:)``
+    public func rebuild(_ id: BuildID, with form: RebuildForm) {
+        store(for: id.project)?.rebuild(id, with: form)
+    }
+
+    /// Asks Jenkins for the form "Rebuild with Changes…" edits, in the build's project (PIPE-09).
+    ///
+    /// - Parameter id: the build
+    public func rebuildForm(for id: BuildID) async -> Result<RebuildForm, JenkinsRebuildError> {
+        guard let store = store(for: id.project) else {
+            return .failure(.jobGone)
+        }
+        return await store.rebuildForm(for: id)
     }
 
     /// Watches the job that a link or a number names, in the project the link points into, else in the chosen one

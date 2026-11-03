@@ -207,7 +207,7 @@ extension Fixtures {
         if !markers {
             workItems.markers = [:]
         }
-        return panel(
+        var data = panel(
             mine: [
                 running("MR-12", 7, "Fix the login redirect after a timeout", startedMinutesAgo: 5, estimateMinutes: 25,
                         stages: ["build", "tests"]),
@@ -222,6 +222,8 @@ extension Fixtures {
                         stages: ["tests"], kind: .watched, author: "Sam Lee"),
             ],
             hiddenCount: 1, workItems: workItems)
+        data.inbox = inboxPanel
+        return data
     }
 }
 #endif

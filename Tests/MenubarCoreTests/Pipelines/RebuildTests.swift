@@ -416,4 +416,38 @@ struct RebuildTests {
         }
         #expect(curls == requests.count)
     }
+
+    @Test("PIPE-09 a rebuild with changes sends the edited values and keeps them, and a typed password, out of the logs")
+    @MainActor
+    func rebuildWithChangesKeepsValuesOutOfLogs() async throws {
+        let harness = try Harness()
+        try harness.answerParameters("build-parameters.json")
+        try harness.answerDefinitions("job-parameter-definitions-typed.json")
+        harness.answerBuildRequest()
+        let store = harness.store
+        let build = BuildID(job: "MR-1", number: 7)
+        let secret = "typed-secret-value-8431"
+
+        guard case .success(var form) = await store.rebuildForm(for: build) else {
+            Issue.record("the form didn't load")
+            return
+        }
+        #expect(harness.posts.isEmpty)
+        form.fields[0].value = "hotfix/9.x"
+        form.fields[4].value = secret
+        store.rebuild(build, with: form)
+        await harness.clock.waitForSleepers()
+
+        #expect(store.rebuilds["MR-1"]?.phase == .queued(QueueItem(id: 42)))
+        let post = try #require(harness.posts.first)
+        let body = String(decoding: try #require(post.body), as: UTF8.self)
+        #expect(body.hasPrefix("TARGET_BRANCH=hotfix%2F9.x&SKIP_UI_TESTS=false&ENVIRONMENT=staging&NOTES=line%20one%0Aline%20two"))
+        #expect(body.hasSuffix("&DEPLOY_PASSWORD=\(secret)"))
+        let entries = await harness.entries()
+        #expect(entries.contains { $0.message == "Rebuilding !1 #7 with changes" })
+        for file in harness.folder.contents() {
+            let text = try harness.folder.read(file)
+            #expect(!text.contains(secret) && !text.contains("hotfix"), "\(file)")
+        }
+    }
 }

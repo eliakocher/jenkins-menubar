@@ -21,7 +21,7 @@ public enum FlakyHintState: Hashable, Sendable {
 /// selection asks again. The requests go through the Jenkins recorder, so they show in Activity like the checks'.
 @Observable @MainActor
 public final class FlakyHintStore {
-    private var states: [BuildID: FlakyHintState] = [:]
+    private let states = ObservedEntries<BuildID, FlakyHintState>()
     @ObservationIgnored private var stagesByBuild: [BuildID: [Stage]] = [:]
     @ObservationIgnored private var asking: Set<BuildID> = []
     @ObservationIgnored private let services: PipelinesServices

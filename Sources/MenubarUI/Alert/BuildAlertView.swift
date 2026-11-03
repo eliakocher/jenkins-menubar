@@ -10,9 +10,14 @@ import SwiftUI
 /// the Next Build in the context menu of its background, so the buttons stay calm. A dark tint over the glass and a
 /// lighter grey for the facts keep it readable over a light window (the user, 2026-10-30). 320 pt wide; the height
 /// fits the content.
+///
+/// When the window holds several alerts, a ``AlertPager`` adds "1 of 3" with ‹ › above the butler and Dismiss All next to
+/// Dismiss; the page keeps its own buttons and its own butler.
 public struct BuildAlertView: View {
     let alert: BuildAlert
     let notificationsOff: Bool
+    let pager: AlertPager?
+    let rebuildWithChanges: (() -> Void)?
     let perform: (AlertContent.Action) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.colorScheme) private var colorScheme
@@ -26,16 +31,28 @@ public struct BuildAlertView: View {
     /// - Parameters:
     ///   - alert: the alert
     ///   - notificationsOff: whether it shows as a window because its banner couldn't (ALERT-03)
-    ///   - perform: runs a button's action; the panel opens its link and closes
-    public init(alert: BuildAlert, notificationsOff: Bool, perform: @escaping (AlertContent.Action) -> Void) {
+    ///   - pager: the paging of a window with several alerts; `nil` for one
+    ///   - rebuildWithChanges: opens the sheet of "Rebuild with Changes…" for the build; with it, Rebuild is a split
+    ///     button; `nil` keeps the plain button (PIPE-09)
+    ///   - perform: runs a button's action; the panel opens its link and dismisses the page
+    public init(
+        alert: BuildAlert, notificationsOff: Bool, pager: AlertPager? = nil, rebuildWithChanges: (() -> Void)? = nil,
+        perform: @escaping (AlertContent.Action) -> Void
+    ) {
         self.alert = alert
         self.notificationsOff = notificationsOff
+        self.pager = pager
+        self.rebuildWithChanges = rebuildWithChanges
         self.perform = perform
     }
 
     public var body: some View {
         let content = alert.content
         VStack(spacing: 0) {
+            if let pager {
+                AlertPagerBar(pager: pager)
+                    .padding(.bottom, 4)
+            }
             Image(nsImage: AppImages.alert(content.icon, hat: content.hat))
                 .resizable()
                 .frame(width: 96, height: 96)
@@ -84,19 +101,27 @@ public struct BuildAlertView: View {
             }
             VStack(spacing: 8) {
                 ForEach(content.buttons, id: \.self) { action in
-                    Button(action.title) {
-                        perform(action)
-                    }
-                    .controlSize(.large)
-                    .buttonSizing(.flexible)
-                    .frame(maxWidth: .infinity)
-                    .background {
-                        // The plain buttons' fill a touch more visible on the darker glass.
-                        if action != content.defaultAction {
-                            Capsule().fill(Color.white.opacity(colorScheme == .dark ? 0.08 : 0))
+                    if action == .dismiss, let pager {
+                        // Dismiss takes this page, Dismiss All the whole window.
+                        HStack(spacing: 8) {
+                            button(action, content: content)
+                            Button("Dismiss All", action: pager.dismissAll)
+                                .controlSize(.large)
+                                .buttonSizing(.flexible)
+                                .frame(maxWidth: .infinity)
+                                .background { plainFill }
                         }
+                    } else if action == .rebuild, let rebuildWithChanges {
+                        RebuildSplitButton(
+                            identically: { perform(.rebuild) }, withChanges: rebuildWithChanges
+                        )
+                        .controlSize(.large)
+                        .buttonSizing(.flexible)
+                        .frame(maxWidth: .infinity)
+                        .background { plainFill }
+                    } else {
+                        button(action, content: content)
                     }
-                    .keyboardShortcut(shortcut(for: action))
                 }
             }
             .padding(.top, 20)
@@ -120,6 +145,26 @@ public struct BuildAlertView: View {
                 }
             }
         }
+    }
+
+    private func button(_ action: AlertContent.Action, content: AlertContent) -> some View {
+        Button(action.title) {
+            perform(action)
+        }
+        .controlSize(.large)
+        .buttonSizing(.flexible)
+        .frame(maxWidth: .infinity)
+        .background {
+            // The plain buttons' fill a touch more visible on the darker glass.
+            if action != content.defaultAction {
+                plainFill
+            }
+        }
+        .keyboardShortcut(shortcut(for: action))
+    }
+
+    private var plainFill: some View {
+        Capsule().fill(Color.white.opacity(colorScheme == .dark ? 0.08 : 0))
     }
 
     /// how dark the glass's tint is: strong in dark, where light text sits on glass over a light window, slight in
@@ -171,4 +216,53 @@ private struct AlertGreyStyle: ShapeStyle {
 
 private extension ShapeStyle where Self == AlertGreyStyle {
     static var alertGrey: AlertGreyStyle { AlertGreyStyle() }
+}
+
+/// The paging of an alert window that holds several alerts (ALERT-03): where the shown page is and what ‹, › and Dismiss
+/// All do.
+public struct AlertPager {
+    /// "1 of 3"; the newest alert is the first
+    public var position: String
+    public var hasPrevious: Bool
+    public var hasNext: Bool
+    public var previous: () -> Void
+    public var next: () -> Void
+    public var dismissAll: () -> Void
+
+    public init(
+        position: String, hasPrevious: Bool, hasNext: Bool, previous: @escaping () -> Void, next: @escaping () -> Void,
+        dismissAll: @escaping () -> Void
+    ) {
+        self.position = position
+        self.hasPrevious = hasPrevious
+        self.hasNext = hasNext
+        self.previous = previous
+        self.next = next
+        self.dismissAll = dismissAll
+    }
+}
+
+/// "‹ 1 of 3 ›" above the butler.
+private struct AlertPagerBar: View {
+    let pager: AlertPager
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: pager.previous) {
+                Image(systemName: "chevron.left")
+            }
+            .disabled(!pager.hasPrevious)
+            .help("Newer Alert")
+            Text(verbatim: pager.position)
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.alertGrey)
+            Button(action: pager.next) {
+                Image(systemName: "chevron.right")
+            }
+            .disabled(!pager.hasNext)
+            .help("Older Alert")
+        }
+        .buttonStyle(.borderless)
+        .accessibilityElement(children: .contain)
+    }
 }

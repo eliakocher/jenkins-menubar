@@ -275,9 +275,8 @@ struct WorkspaceRowContent: View {
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     if let number = row.number, row.branch != row.checkout.baseBranch {
-                        Text(verbatim: number)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
+                        WorkItemNumberChip(text: number)
+                            .fixedSize()
                     }
                     Text(verbatim: row.title)
                         .foregroundStyle(row.kind == .free || row.titleFromBranch ? .secondary : .primary)
@@ -323,8 +322,8 @@ struct WorkspaceFacts: View {
     var body: some View {
         PillFlowLayout(spacing: 10, lineSpacing: 2) {
             if let status = row.status, let reference = row.mergeRequestReference {
-                fact(symbol: status.symbol, color: status.color.swiftUI, text: reference)
-                    .help("\(reference) · \(status.text)")
+                // The green chip, whatever the status; the status is in the tooltip and the detail's Task card.
+                MergeRequestNumberChip(text: reference, help: ReferenceKind.tooltip(reference, state: status.text))
             } else if row.kind != .free, row.branch != nil, row.branch != row.checkout.baseBranch {
                 Text("No merge request")
                     .foregroundStyle(.tertiary)

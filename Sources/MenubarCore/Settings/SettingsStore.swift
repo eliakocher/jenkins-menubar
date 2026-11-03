@@ -199,14 +199,24 @@ public final class SettingsStore {
     }
 
     private func apply(_ new: Preferences, labelMessage: String?) {
+        // The Inbox's routing is kept outside ``PreferencesStore/Key``, so a change to it alone has no `Change`.
+        let routingChanged = new.inboxNotifications != storedPreferences.inboxNotifications
+        // The menu bar's layout too (APP-11).
+        let layoutChanged = new.menuBarLayout != storedPreferences.menuBarLayout
         let changes = preferencesStore.save(new)
-        guard !changes.isEmpty else { return }
+        guard !changes.isEmpty || routingChanged || layoutChanged else { return }
         storedPreferences = preferencesStore.load()
         var messages = changes
             .filter { labelMessage == nil || !Self.labelKeys.contains($0.key) }
             .map { "\($0.key.rawValue): \(Self.shown($0.old)) → \(Self.shown($0.new))" }
         if let labelMessage, changes.contains(where: { Self.labelKeys.contains($0.key) }) {
             messages.append(labelMessage)
+        }
+        if routingChanged {
+            messages.append("inboxNotifications: \(storedPreferences.inboxNotifications.summary)")
+        }
+        if layoutChanged {
+            messages.append("menuBarLayout: \(storedPreferences.menuBarLayout.summary)")
         }
         logInfo(messages)
         if changes.contains(where: { $0.key == .checkIntervalSeconds }) {

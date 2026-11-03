@@ -1,0 +1,3 @@
+{"data":{"project":{"projectMembers":{"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[
+ {"user":{"username":"bkhan","name":"Bilal Khan","state":"blocked"}},
+ {"user":{"username":"akim","name":"Ana Kim","state":"active"}}]}}}}

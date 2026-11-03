@@ -12,10 +12,11 @@ struct WorkItemsModelTests {
     @Test(
         "WIN-02 work item detail lists ignored related MRs greyed",
         arguments: [
-            // The cascade MR is open, yet it counts for nothing: last, greyed, with the footer.
-            ("[cascade]", ["!43", "!42", "!44"], [false, false, true], RelatedMergeRequestMarker.merged),
-            // Without a prefix in Team every MR counts: open first.
-            ("", ["!44", "!43", "!42"], [false, false, false], .open),
+            // The item's own MR first, then the ones that mention it. The cascade MR is open, yet it counts for nothing:
+            // last, greyed, with the footer.
+            ("[cascade]", ["!43", "!41", "!42", "!44"], [false, false, false, true], RelatedMergeRequestMarker.merged),
+            // Without a prefix in Team every mentioning MR is listed, open first; the marker counts the own MR only.
+            ("", ["!43", "!44", "!41", "!42"], [false, false, false, false], .merged),
         ])
     func ignoredRelatedGreyed(prefix: String, order: [String], ignored: [Bool], marker: RelatedMergeRequestMarker) throws {
         let f = Self.fixtures
@@ -36,6 +37,25 @@ struct WorkItemsModelTests {
         #expect(detail.relatedFooters == (prefix.isEmpty ? [] : [footer]))
     }
 
+    @Test("WI-05 the detail lists the item's own MRs first and the ones that only mention it apart; the chips count the own ones")
+    func ownAndMentionedMergeRequests() throws {
+        let f = Self.fixtures
+        let w = f.workItemsScreen
+        let item = w.item28
+        let detail = try #require(WorkItemDetailModel(w.data().data, selection: item.id))
+        // !43's branch starts with the item's number; !44, !41 and !42 only mention it.
+        #expect(detail.ownMergeRequests.map { $0.mergeRequest.iid } == [43])
+        #expect(detail.mentionedMergeRequests.map { $0.mergeRequest.iid } == [41, 42, 44])
+        #expect(detail.countedMergeRequests.map { $0.mergeRequest.iid } == [43])
+
+        // None is its own: all of them are listed and count, as before.
+        let mentionOnly = [item.reference: [w.related(44, "Merge release into main", .opened), w.related(41, "Show the size", .merged)]]
+        let all = try #require(WorkItemDetailModel(w.data(related: mentionOnly).data, selection: item.id))
+        #expect(all.mentionedMergeRequests.isEmpty)
+        #expect(all.ownMergeRequests.map { $0.mergeRequest.iid } == [44, 41])
+        #expect(all.countedMergeRequests.count == 2)
+    }
+
     @Test("WI-05 the row's MR chip shows the first counted MR and +N for the others, with a draft and a merged MR told apart")
     func rowChip() {
         let w = Self.fixtures.workItemsScreen
@@ -51,12 +71,11 @@ struct WorkItemsModelTests {
         // open first, then merged; the first and "+N" of the counted ones; cascade and closed MRs don't count
         let several = chip([merged, cascade, closed, open, draft])
         #expect(several?.text == "!14 +2")
-        #expect(several?.kind == .open)
         #expect(several?.help.components(separatedBy: "\n").count == 3)
         #expect(several?.help.hasPrefix("!14 · open · Rework the color tokens") == true)
         #expect(chip([merged])?.text == "!11")
-        #expect(chip([merged])?.kind == .merged)
-        #expect(chip([draft])?.kind == .draft)
+        #expect(chip([merged])?.help == "!11 · merged · Move the values")
+        #expect(chip([draft])?.help == "!15 · draft · Draft: Try it")
         #expect(chip([w.related(8, "Fix it", .opened, project: "group/subgroup/web")])?.text == "web!8")
         #expect(chip([cascade, closed]) == nil)
         #expect(chip([]) == nil)
@@ -65,7 +84,7 @@ struct WorkItemsModelTests {
         // the marker alone, before the MRs are known, gives a chip without text
         let only = WorkItemMergeRequestChip.make([], marker: .merged, project: project, ignoredPrefix: "")
         #expect(only?.text == nil)
-        #expect(only?.kind == .merged)
+        #expect(only?.help == RelatedMergeRequestMarker.merged.text)
     }
 
     @Test("MR-13 a work item has a slot name, so Show in Slots shows, only with a slot label")

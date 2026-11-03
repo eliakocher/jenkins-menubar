@@ -32,6 +32,12 @@ public struct MenuPaneView: View {
                 .onChange(of: Self.rows(of: pane), initial: true) { _, rows in
                     controller.navigation.paneRows = rows
                 }
+                .onChange(of: pane.flyoutless, initial: true) { _, flyoutless in
+                    controller.navigation.flyoutless = flyoutless
+                }
+                .onChange(of: Self.flyoutLimits(of: pane), initial: true) { _, limits in
+                    controller.navigation.flyoutLimits = limits
+                }
         }
         .focusable()
         .focusEffectDisabled()
@@ -46,7 +52,12 @@ public struct MenuPaneView: View {
             handle(press.key, option: press.modifiers.contains(.option))
         }
         .onAppear {
-            controller.flyout = { [model] area in MenuFlyout(PanelView.data(model, now: .now), area: area) }
+            controller.flyout = { [model, controller] area in
+                guard !controller.navigation.flyoutless.contains(area) else { return nil }
+                return MenuFlyout(
+                    PanelView.data(model, now: .now, inbox: true), area: area,
+                    limit: controller.navigation.flyoutLimits[area] ?? MenuFlyout.cap)
+            }
             controller.makeFlyoutRoot = makeFlyoutRoot
             controller.paneAppeared()
             isFocused = true
@@ -65,7 +76,7 @@ public struct MenuPaneView: View {
     /// Returns what the pane shows at a time, with the easter eggs: Option's Quit title and the mashed Check Now's line
     /// (EGG-09, EGG-10).
     private func paneModel(at date: Date) -> MenuPaneModel {
-        var pane = MenuPaneModel(PanelView.data(model, now: date))
+        var pane = MenuPaneModel(PanelView.data(model, now: date, inbox: true), layout: model.pipelines.preferences.menuBarLayout)
         pane.easterEggs = model.pipelines.preferences.easterEggs
         pane.footer.eggLine = pane.easterEggs ? model.eggs.mashLine : nil
         return pane
@@ -74,6 +85,11 @@ public struct MenuPaneView: View {
     /// Returns the rows the keys move over.
     static func rows(of pane: MenuPaneModel) -> [MenuNavigation.PaneRow] {
         MenuNavigation.paneRows(problemIsLinked: pane.problem?.pane != nil, areas: pane.areas.map(\.section))
+    }
+
+    /// Returns how many entries each area's flyout lists (APP-11).
+    static func flyoutLimits(of pane: MenuPaneModel) -> [MainWindowSection: Int] {
+        Dictionary(uniqueKeysWithValues: pane.areas.map { ($0.section, $0.flyoutRows) })
     }
 
     private var events: MenuPaneEvents {
@@ -94,7 +110,8 @@ public struct MenuPaneView: View {
                 actions.openSettings(pane)
             }
         case .area(let section):
-            if controller.navigation.openArea == section {
+            // Without a flyout, a click opens the area in the window at once (APP-11).
+            if controller.navigation.openArea == section || controller.navigation.flyoutless.contains(section) {
                 actions.openSection(section)
             } else {
                 controller.open(section)
@@ -150,9 +167,16 @@ public struct MenuPaneView: View {
         let actions = panelActions
         switch item {
         case .entry(let id):
+            if case .inbox(let row)? = flyout.entry(id)?.kind {
+                // The target in the app (⌥ in the browser), noted as seen; opening marks nothing done.
+                InboxOpening.open(row.entry, store: model.inbox, links: .live(model: model, router: router, openURL: openURL), router: router)
+                dismiss()
+                return
+            }
             switch flyout.entry(id)?.destination(option: option) {
             case .window(let selection)?: showInWindow(selection)
             case .browser(let url)?: actions.open(url)
+            case .item(let url)?: actions.follow(url)
             case nil: break
             }
         case .command(.showInWindow):
@@ -174,6 +198,7 @@ public struct MenuPaneView: View {
         case .build(let job): router.selection.pipelines = job
         case .mergeRequest(let id): router.selection.mergeRequests = id
         case .workItem(let id): router.selection.workItems = id
+        case .inbox: break
         }
         router.reveal(section: selection.section)
         dismiss()
@@ -191,10 +216,15 @@ public struct MenuPaneView: View {
                 }
             },
             panel: panelActions,
-            showInWindow: { showInWindow($0) })
+            showInWindow: { showInWindow($0) },
+            inbox: InboxActions.live(
+                model: model, links: .live(model: model, router: router, openURL: openURL), router: router))
         let model = model
-        let host = MenuFlyoutHost(controller: controller, actions: actions) { PanelView.data(model, now: $0) }
-        return AnyView(host.appEnvironment(model, router: router))
+        let host = MenuFlyoutHost(controller: controller, actions: actions) { PanelView.data(model, now: $0, inbox: true) }
+        return AnyView(
+            host
+                .environment(\.inboxIsSeen) { [store = model.inbox] in store.seen.isSeen($0) }
+                .appEnvironment(model, router: router))
     }
 
     /// The actions the pane shares with the old panel's rows, so a build's context menu is the same everywhere.
@@ -234,6 +264,11 @@ public struct MenuPaneView: View {
             close: { dismiss() },
             // The pane stays open, so the row's "Rebuilding…" shows (PIPE-09).
             rebuildBuild: { model.projects.rebuild($0) },
+            // The sheet needs the main window, which shows the build under it.
+            rebuildBuildWithChanges: { build in
+                router.requestRebuildSheet(for: build)
+                dismiss()
+            },
             cancelRebuild: { job in
                 let projects = model.projects
                 Task { await projects.cancelRebuild(jobKey: job) }
@@ -267,7 +302,8 @@ struct MenuFlyoutHost: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 10)) { context in
             if let area = controller.navigation.openArea {
-                let flyout = MenuFlyout(data(context.date), area: area)
+                let flyout = MenuFlyout(
+                    data(context.date), area: area, limit: controller.navigation.flyoutLimits[area] ?? MenuFlyout.cap)
                 ScrollViewReader { proxy in
                     ScrollView {
                         MenuFlyoutContent(flyout: flyout, highlight: controller.navigation.flyoutHighlight, actions: actions)

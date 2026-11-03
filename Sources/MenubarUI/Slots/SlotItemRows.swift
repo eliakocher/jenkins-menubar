@@ -4,26 +4,15 @@ import SwiftUI
 
 // MARK: - What a row says
 
-/// The words and symbols of a slot item's row, from its labels (SLOT-09). Pure, so the rows and the tests read the same.
+/// The words and colors of a slot item's row, from its labels (SLOT-09). Pure, so the rows and the tests read the same.
 enum SlotItemText {
-    /// the kind of work a row shows a symbol for
+    /// the kind of work a row shows as a chip
     enum Kind: Hashable {
         case bug
         case feature
         case task
         case epic
         case other
-
-        /// the SF Symbol
-        var symbol: String {
-            switch self {
-            case .bug: "ladybug.fill"
-            case .feature: "sparkles"
-            case .task: "checkmark.square"
-            case .epic: "flag.fill"
-            case .other: "doc.text"
-            }
-        }
 
         var tint: Color {
             switch self {
@@ -84,46 +73,21 @@ enum SlotRowLayout: Equatable {
     case compact
 }
 
-/// The widths of the columns, shared by the rows and the header over them.
+/// The widths of the columns of the rows. The columns have no titles of their own: each says what it is.
 enum SlotColumns {
-    static let state: CGFloat = 16
-    static let type: CGFloat = 18
-    static let reference: CGFloat = 74
-    static let commitment: CGFloat = 84
-    static let progress: CGFloat = 56
-    static let status: CGFloat = 108
-    static let assignees: CGFloat = 60
-    static let weight: CGFloat = 42
-    static let spacing: CGFloat = 10
+    /// the width of the icon before an epic's or a commitment's title in its header
+    static let headerIcon: CGFloat = 14
+    /// what an item row keeps free before its title, so the title lines up with the text of the epic's header above it
+    /// (its 8 pt of padding, the icon and the gap are the header's own, and the row has the 8 pt too)
+    static let titleInset: CGFloat = headerIcon + 8
+    /// the status text with its progress bar under it
+    static let status: CGFloat = 116
+    /// the avatar and the name
+    static let assignees: CGFloat = 148
+    static let weight: CGFloat = 34
+    static let spacing: CGFloat = 12
     /// the least width the title gets before the columns give way to the compact row
     static let title: CGFloat = 280
-}
-
-/// The titles of the columns over a slot's items.
-struct SlotColumnHeader: View {
-    var body: some View {
-        HStack(spacing: SlotColumns.spacing) {
-            Color.clear.frame(width: SlotColumns.state + SlotColumns.spacing + SlotColumns.type)
-            column("Item", width: SlotColumns.reference)
-            Text("Title")
-                .frame(minWidth: SlotColumns.title, idealWidth: SlotColumns.title, maxWidth: .infinity, alignment: .leading)
-            column("Commitment", width: SlotColumns.commitment)
-            column("Progress", width: SlotColumns.progress)
-            column("Status", width: SlotColumns.status)
-            column("Assignees", width: SlotColumns.assignees)
-            column("Weight", width: SlotColumns.weight, alignment: .trailing)
-        }
-        .font(.caption2.weight(.medium))
-        .foregroundStyle(.tertiary)
-        .padding(.horizontal, 8)
-        .accessibilityHidden(true)
-    }
-
-    private func column(_ title: LocalizedStringKey, width: CGFloat, alignment: Alignment = .leading) -> some View {
-        Text(title)
-            .lineLimit(1)
-            .frame(width: width, alignment: alignment)
-    }
 }
 
 // MARK: - An epic and its items
@@ -150,7 +114,7 @@ struct SlotEpicSection: View {
         }
     }
 
-    /// The header with its progress, or without the progress text and bar when the list is narrow (the detail beside it
+    /// The header with its "1 of 3 done", or without it when the list is narrow (the detail beside it
     /// may take all but 300 pt).
     private var header: some View {
         ViewThatFits(in: .horizontal) {
@@ -175,6 +139,7 @@ struct SlotEpicSection: View {
             Image(systemName: group.epic == nil ? "tray" : "flag.fill")
                 .foregroundStyle(group.epic == nil ? Color.secondary : .purple)
                 .font(.caption)
+                .frame(width: SlotColumns.headerIcon)
             if let epic = group.epic {
                 Button {
                     actions.follow(epic.webURL)
@@ -205,7 +170,6 @@ struct SlotEpicSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                SlotProgressBar(progress: group.progress, width: 72)
                     .help(
                         "This slot's share: \(Int((group.progress * 100).rounded())) % of the \(group.points) points of its items here, Verified 100 %, in verification 75 %. Its items in other slots don't count.")
             }
@@ -239,6 +203,7 @@ struct SlotCommitmentSection: View {
             Image(systemName: "seal.fill")
                 .foregroundStyle(.teal)
                 .font(.caption)
+                .frame(width: SlotColumns.headerIcon)
             Button {
                 actions.follow(value.webURL)
             } label: {
@@ -274,10 +239,7 @@ struct SlotCommitmentSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-            if showsMore {
-                SlotProgressBar(progress: commitment.progress, width: 72)
-                    .help("This slot's share: \(Int((commitment.progress * 100).rounded())) % by weight of its items here")
-            }
+                .help("This slot's share: \(Int((commitment.progress * 100).rounded())) % by weight of its items here")
         }
     }
 
@@ -292,7 +254,7 @@ struct SlotCommitmentSection: View {
 
 // MARK: - A work item
 
-/// One work item of a slot: its state and type, reference, title with its merge requests and flags, and its facts in
+/// One work item of a slot: its title with the blue number, type and merge requests under it, flags, and its facts in
 /// columns, or folded under the title when narrow. A click selects it, so its detail shows beside the list; a double
 /// click opens it in a tab; ⌥-click opens it in GitLab (SLOT-09).
 struct SlotItemRow: View {
@@ -310,6 +272,7 @@ struct SlotItemRow: View {
     var body: some View {
         content
             .opacity(item.isDone ? 0.55 : 1)
+            .padding(.leading, SlotColumns.titleInset)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(background, in: RoundedRectangle(cornerRadius: 8))
@@ -364,31 +327,14 @@ struct SlotItemRow: View {
 
     // MARK: Regular
 
+    /// The title with its chips under it (the blue number first), the status with its bar, the assignees and the weight. The
+    /// columns have no titles; they line up on the first line of the title.
     private var regular: some View {
-        HStack(alignment: .center, spacing: SlotColumns.spacing) {
-            stateSymbol
-            Image(systemName: kind.kind.symbol)
-                .foregroundStyle(kind.kind.tint)
-                .frame(width: SlotColumns.type)
-                .help(kind.name)
-            Text(verbatim: reference)
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(width: SlotColumns.reference, alignment: .leading)
-                .help(item.workItem.reference)
+        HStack(alignment: .firstTextBaseline, spacing: SlotColumns.spacing) {
             titleBlock(showsFacts: false)
-            commitment
-                .frame(width: SlotColumns.commitment, alignment: .leading)
-            progressColumn
-                .frame(width: SlotColumns.progress, alignment: .leading)
-            Text(verbatim: status ?? "–")
-                .font(.callout)
-                .foregroundStyle(status == nil ? .tertiary : .secondary)
-                .lineLimit(1)
+            statusColumn
                 .frame(width: SlotColumns.status, alignment: .leading)
-            assigneeAvatars
+            assigneeColumn(avatarSize: 20, font: .callout)
                 .frame(width: SlotColumns.assignees, alignment: .leading)
             weight
                 .frame(width: SlotColumns.weight, alignment: .trailing)
@@ -398,28 +344,19 @@ struct SlotItemRow: View {
     // MARK: Compact
 
     private var compact: some View {
-        HStack(alignment: .top, spacing: 8) {
-            stateSymbol
-                .padding(.top, 1)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
             titleBlock(showsFacts: true)
-            assigneeAvatars
             weight
         }
     }
 
     // MARK: Parts
 
-    private var stateSymbol: some View {
-        Image(systemName: item.isDone ? "checkmark.circle.fill" : item.isInProgress ? "circle.lefthalf.filled" : "circle")
-            .foregroundStyle(item.isDone ? Color.green : item.isInProgress ? Color.accentColor : .secondary)
-            .frame(width: SlotColumns.state)
-            .help(item.isDone ? "Done" : item.isInProgress ? "In progress" : "Open")
-    }
-
-    /// The title, a blocked mark before it, and under it the merge requests, the flags and, when narrow, the facts.
+    /// The title, a blocked mark before it, and under it the chips (the type, planned, the merge requests), the flags
+    /// and, when narrow, the facts.
     private func titleBlock(showsFacts: Bool) -> some View {
         let width = showsFacts ? nil : SlotColumns.title
-        return VStack(alignment: .leading, spacing: 3) {
+        return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 if item.isBlocked {
                     Image(systemName: "hand.raised.fill")
@@ -436,7 +373,7 @@ struct SlotItemRow: View {
             if showsFacts {
                 factsLine
             }
-            mergeRequests
+            chipsLine
             ForEach(item.flags) { flag in
                 SlotFlagLine(flag: flag, actions: actions)
             }
@@ -451,36 +388,33 @@ struct SlotItemRow: View {
         .frame(minWidth: width, idealWidth: width, maxWidth: .infinity, alignment: .leading)
     }
 
-    /// "#31 · Bug · In Progress", then Planned: the columns' facts folded under the title.
+    /// "In Progress · 75 %  Alex Kim +1": the columns' facts folded under the title when the card is narrow.
     private var factsLine: some View {
-        HStack(spacing: 6) {
-            Text(verbatim: ([reference, kind.name] + [status, percent].compactMap { $0 }).joined(separator: " · "))
+        HStack(alignment: .center, spacing: 8) {
+            Text(verbatim: [status, percent].compactMap { $0 }.joined(separator: " · "))
                 .lineLimit(1)
-            if !item.isCommitted {
-                plannedPill
-            }
+                .layoutPriority(1)
+            assigneeColumn(avatarSize: 16, font: .caption)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
     }
 
-    @ViewBuilder
-    private var commitment: some View {
-        if item.isCommitted {
-            Text("Committed")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .help(commitmentHelp)
-        } else {
-            plannedPill
+    /// The line under the title: the blue number first, then the type as a chip, "Planned" when the item isn't committed, and
+    /// its merge requests (the user, 2026-11-03: the number's column is gone, its chip leads this line).
+    private var chipsLine: some View {
+        HStack(spacing: 6) {
+            WorkItemNumberChip(text: reference, help: item.workItem.reference)
+                .fixedSize()
+            Text(verbatim: kind.name)
+                .inlineChip(tint: kind.kind.tint)
+                .fixedSize()
+                .help("Type: \(kind.name)")
+            if !item.isCommitted {
+                plannedChip
+            }
+            mergeRequests
         }
-    }
-
-    /// "Committed to 2026.48, scheduled for this slot" when it is due later than its slot
-    private var commitmentHelp: String {
-        guard let due = item.dueSlot else { return "Committed to this slot" }
-        return "Committed to \(due.description), scheduled for this slot"
     }
 
     /// "75 %", or `nil` for an item without a weight, whose progress doesn't count
@@ -488,34 +422,54 @@ struct SlotItemRow: View {
         item.weight > 0 ? "\(Int((item.progress * 100).rounded())) %" : nil
     }
 
-    private var progressColumn: some View {
-        SlotProgressBar(progress: item.progress, width: SlotColumns.progress - 8)
-            .opacity(item.weight > 0 ? 1 : 0.35)
-            .help(
-                item.weight > 0
-                    ? "\(Int((item.progress * 100).rounded())) %: Verified 100 %, in verification 75 %, any other status 0"
-                    : "No weight, so it adds nothing to the progress")
+    /// The status text with the progress bar under it.
+    private var statusColumn: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(verbatim: status ?? "–")
+                .font(.callout)
+                .foregroundStyle(status == nil ? .tertiary : .secondary)
+                .lineLimit(1)
+            SlotProgressBar(progress: item.progress, width: SlotColumns.status - 12)
+                .opacity(item.weight > 0 ? 1 : 0.35)
+                .help(
+                    item.weight > 0
+                        ? "\(Int((item.progress * 100).rounded())) %: Verified 100 %, in verification 75 %, any other status 0"
+                        : "No weight, so it adds nothing to the progress")
+        }
     }
 
-    private var plannedPill: some View {
+    /// Shown under the title of an item that isn't committed, so nothing gets lost with the column gone. An outline, so
+    /// it reads apart from the filled chips.
+    private var plannedChip: some View {
         Text("Planned")
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 1)
-            .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.5)))
+            .font(.caption)
             .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.45)))
+            .fixedSize()
             .help("Scheduled for this slot, not committed: no commitment depends on it yet")
     }
 
-    private var assigneeAvatars: some View {
+    /// The first assignee's avatar and name, "Alex Kim +1" for more, every name in the tooltip.
+    @ViewBuilder
+    private func assigneeColumn(avatarSize: CGFloat, font: Font) -> some View {
         let people = item.workItem.assignees ?? []
-        return HStack(spacing: -5) {
-            ForEach(people.prefix(3), id: \.username) { person in
-                InitialsAvatar(name: person.name, username: person.username, size: 20)
-                    .background(Circle().fill(.background).padding(-1.5))
+        if let first = people.first {
+            HStack(spacing: 6) {
+                InitialsAvatar(name: first.name, username: first.username, size: avatarSize)
+                (Text(verbatim: first.displayName)
+                    + Text(verbatim: people.count > 1 ? " +\(people.count - 1)" : "").foregroundStyle(.tertiary))
+                    .font(font)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .help(people.map(\.displayName).formatted(.list(type: .and)))
+        } else {
+            Text(verbatim: "–")
+                .font(font)
+                .foregroundStyle(.tertiary)
         }
-        .help(people.map(\.displayName).formatted(.list(type: .and)))
     }
 
     private var weight: some View {
@@ -528,20 +482,23 @@ struct SlotItemRow: View {
             .help(item.workItem.weight.map { "Weight \($0)" } ?? "No weight")
     }
 
+    /// The chips of the open merge requests (a draft is open); when none is open and one is merged, the quiet word "Merged"
+    /// instead (the user, 2026-11-03: "show the MR chip only if the MR is open, otherwise show 'merged'"); closed ones are
+    /// left out. "No merge request" once GitLab answered that there is none alive, as the flag counts them.
     @ViewBuilder
     private var mergeRequests: some View {
-        if item.mergeRequests.isEmpty {
-            if item.mergeRequestsLoaded, !item.workItem.isEpic, item.isCommitted {
-                Text(verbatim: "No merge request")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        let open = item.mergeRequests.filter { $0.mergeRequest.state == .opened }
+        let merged = item.mergeRequests.filter { $0.mergeRequest.state == .merged }
+        if !open.isEmpty {
+            ForEach(open) { mergeRequest in
+                SlotMergeRequestChip(mergeRequest: mergeRequest, project: project, actions: actions)
             }
-        } else {
-            HStack(spacing: 10) {
-                ForEach(item.mergeRequests) { mergeRequest in
-                    SlotMergeRequestChip(mergeRequest: mergeRequest, project: project, actions: actions)
-                }
-            }
+        } else if !merged.isEmpty {
+            SlotMergedNote(mergeRequests: merged, project: project)
+        } else if item.mergeRequestsLoaded, !item.workItem.isEpic, item.isCommitted {
+            Text(verbatim: "No merge request")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -582,7 +539,7 @@ struct SlotProblemPill: View {
     }
 }
 
-/// A merge request as "!12" with its state and its build's state.
+/// A merge request as the green "!12" with its build's result after it; the merge request's state is in the tooltip.
 struct SlotMergeRequestChip: View {
     let mergeRequest: SlotMergeRequest
     let project: String
@@ -592,40 +549,18 @@ struct SlotMergeRequestChip: View {
         Button {
             actions.follow(mergeRequest.mergeRequest.webURL)
         } label: {
-            HStack(spacing: 3) {
-                Image(systemName: mergeSymbol)
-                    .foregroundStyle(mergeColor)
-                Text(verbatim: GitLabText.shortReference(mergeRequest.mergeRequest.reference, project: project))
-                if let build = mergeRequest.build {
-                    Image(systemName: BuildState(build.signal).symbol)
-                        .foregroundStyle(BuildState(build.signal).color ?? .secondary)
-                }
-            }
-            .font(.caption)
+            // The MR chip of the lists, green whatever the state, with its build's result after the number.
+            MergeRequestNumberChip(
+                text: GitLabText.shortReference(mergeRequest.mergeRequest.reference, project: project),
+                build: mergeRequest.build.map { BuildState($0.signal) })
         }
         .buttonStyle(.plain)
         .help(help)
         .accessibilityLabel(help)
     }
 
-    private var mergeSymbol: String {
-        switch mergeRequest.mergeRequest.state {
-        case .merged: "arrow.triangle.merge"
-        case .closed: "xmark.circle"
-        default: "arrow.triangle.pull"
-        }
-    }
-
-    private var mergeColor: Color {
-        switch mergeRequest.mergeRequest.state {
-        case .merged: .purple
-        case .closed: .secondary
-        default: .green
-        }
-    }
-
     private var help: String {
-        let state = mergeRequest.mergeRequest.state.rawValue.capitalized
+        let reference = GitLabText.shortReference(mergeRequest.mergeRequest.reference, project: project)
         let build = mergeRequest.build.map { build in
             let name = switch build.signal {
             case .green: "green"
@@ -634,7 +569,36 @@ struct SlotMergeRequestChip: View {
             }
             return ", build \(build.label.map { $0 + " " } ?? "")\(name)"
         }
-        return "\(mergeRequest.mergeRequest.title): \(state)\(build ?? ", no build known")"
+        let word = WorkItemMergeRequestChip.isDraft(mergeRequest.mergeRequest.title) ? "draft" : "open"
+        let item = ReferenceKind.tooltip(reference, state: word, title: mergeRequest.mergeRequest.title)
+        return item + (build ?? ", no build known")
+    }
+}
+
+/// "Merged" in place of the chips of an item whose merge requests are all merged: quiet text with a small purple check; the
+/// tooltip lists them, "!12404 · Title".
+struct SlotMergedNote: View {
+    let mergeRequests: [SlotMergeRequest]
+    let project: String
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.purple)
+            Text(verbatim: "Merged")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize()
+        .help(Self.help(mergeRequests, project: project))
+    }
+
+    /// One line per merge request: "!12404 · Title".
+    static func help(_ mergeRequests: [SlotMergeRequest], project: String) -> String {
+        mergeRequests.map {
+            ReferenceKind.tooltip(
+                GitLabText.shortReference($0.mergeRequest.reference, project: project), title: $0.mergeRequest.title)
+        }.joined(separator: "\n")
     }
 }
 

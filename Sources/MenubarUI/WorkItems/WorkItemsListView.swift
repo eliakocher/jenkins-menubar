@@ -78,7 +78,8 @@ struct WorkItemsListContent: View {
                         .buttonStyle(.link)
                         .selectionDisabled()
                 }
-                if let summary = model.filterSummary {
+                if let summary = model.filterSummary, model.sections.isEmpty {
+                    // No section to carry it: the summary keeps its own quiet line.
                     WorkItemsFilterBar(summary: summary)
                 }
                 if model.isPlaceholder {
@@ -91,7 +92,9 @@ struct WorkItemsListContent: View {
                                 .tag(row.id)
                         }
                     } header: {
-                        Text(verbatim: section.title)
+                        // The filters sit in the first header, as the Merge Requests list's header holds its title.
+                        WorkItemsSectionHeader(
+                            title: section.title, summary: section.id == model.sections.first?.id ? model.filterSummary : nil)
                     }
                 }
                 GitLabSearchSection(search: search, tag: \.reference) { actions.follow($0.url) }
@@ -112,6 +115,7 @@ struct WorkItemsListContent: View {
                     Button(row.openTitle) { actions.open(row.workItem.webURL) }
                     Divider()
                     Button("Copy Link") { actions.copy(row.workItem.webURL) }
+                    CopyBranchNameButton(workItem: row.workItem)
                 }
             } primaryAction: { ids in
                 // It shows in the detail already; ⌥ opens it in GitLab (the user, 2026-10-30).
@@ -161,7 +165,34 @@ struct WorkItemsListContent: View {
     }
 }
 
-/// The quiet line above the first section: the filters in one line, cut at the end with the full text on hover, and the
+/// A section's header: its title, and on the first section the filters in one line (cut at the end, the full text on
+/// hover) with the gear that opens Settings at the filters (WI-02, WIN-04).
+struct WorkItemsSectionHeader: View {
+    let title: String
+    /// the filter summary; `nil` for every section but the first
+    var summary: String?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(verbatim: title)
+                .fixedSize()
+            if let summary {
+                Text(verbatim: summary)
+                    .font(.caption)
+                    .fontWeight(.regular)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(summary)
+                Spacer(minLength: 4)
+                SettingsGearButton(field: .workItemFilters)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/// The quiet line above the first section, when the list has no section to carry it: the filters in one line, cut at the end with the full text on hover, and the
 /// gear that opens Settings at the filters (WI-02, WIN-04). It replaces the filters in the window's subtitle, which ran
 /// over the list column's edge.
 struct WorkItemsFilterBar: View {

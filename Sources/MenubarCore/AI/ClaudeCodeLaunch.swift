@@ -1,15 +1,13 @@
 import Foundation
 
-/// What "Open in Claude Code" starts Claude Code with (AI-05): a work item, a merge request, a failed build or a
-/// checkout. The work on code happens in Claude Code, in the checkout; the app only hands over the context as Claude
-/// Code's first prompt.
+/// What "Continue in Claude Code" starts Claude Code with (AI-05, AI-08): a work item, a merge request or a failed build,
+/// with the chat so far. The work on code happens in Claude Code, in the checkout; the app only hands over the context
+/// as Claude Code's first prompt.
 public enum ClaudeCodeContext: Hashable, Sendable {
     case workItem(WorkItem)
     case mergeRequest(MergeRequest)
     /// a failed build, with its failed tests when they are loaded
     case build(Build, page: URL?, failedTests: [FailedTest])
-    /// a checkout and what it works on
-    case workspace(Checkout, task: WorkspaceTask)
     /// a question about a merge request's code and its answer, to go on with (AI-07)
     case codeQuestion(MergeRequest, text: String)
     /// a whole conversation with Claude about an item, to go on with (AI-08): the item's context, then the text, which is
@@ -33,8 +31,6 @@ public enum ClaudeCodeContext: Hashable, Sendable {
         switch self {
         case .conversation(let inner, _):
             return inner.checkout(in: checkouts, readings: readings, mergeRequests: mergeRequests)
-        case .workspace(let checkout, _):
-            return checkout
         case .mergeRequest(let mergeRequest), .codeQuestion(let mergeRequest, _):
             entry = links.checkout(for: mergeRequest)
         case .build(let build, _, _):
@@ -115,27 +111,12 @@ public enum ClaudeCodeContext: Hashable, Sendable {
             }
             lines.append("")
             lines.append(text)
-        case .workspace(_, let task):
-            if let number = task.number {
-                lines.append("- Work item: #\(number)\(task.title.map { " \"\($0)\"" } ?? "")")
-            }
-            if let url = task.workItemURL {
-                lines.append("- Work item link: \(url.absoluteString)")
-            }
-            if let mergeRequest = task.mergeRequest {
-                lines.append("- Merge request: \(mergeRequest.reference) \(mergeRequest.webURL.absoluteString)")
-            }
-            if let build = task.build {
-                lines.append("- Last Jenkins build: #\(build.number) \(build.result?.rawValue ?? "running")")
-            }
-            lines.append("")
-            lines.append("Look at this checkout's branch and its changes, and tell me where the task stands and what's next.")
         }
         return lines.joined(separator: "\n")
     }
 }
 
-/// Starts Claude Code in a Terminal window, in a checkout, with a first prompt (AI-05), without ever putting the
+/// Starts Claude Code in a Terminal window, in a checkout, with a first prompt (AI-05, "Continue in Claude Code"), without ever putting the
 /// prompt or a path into a shell command.
 ///
 /// The app writes a folder of its own (mode 700) with six files: a fixed `.command` script, and the checkout's path,
@@ -150,7 +131,7 @@ public enum ClaudeCodeLaunch {
     /// the script, the same for every launch
     public static let script = """
         #!/bin/zsh -f
-        # Written by MegaMonitor's "Open in Claude Code". Starts Claude Code in a checkout with a first prompt.
+        # Written by MegaMonitor's "Continue in Claude Code". Starts Claude Code in a checkout with a first prompt.
         # The checkout, the program and the prompt are read from the files next to this script as plain text; nothing
         # in them runs as a command. The folder deletes itself before Claude Code starts.
         here=${0:A:h}

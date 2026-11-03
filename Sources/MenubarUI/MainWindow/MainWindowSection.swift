@@ -10,6 +10,7 @@ extension AppRoute.Section {
     public var title: String {
         switch self {
         case .pipelines: "Pipelines"
+        case .inbox: "Inbox"
         case .mergeRequests: "Merge Requests"
         case .workItems: "Work Items"
         case .activity: "Activity"
@@ -23,6 +24,7 @@ extension AppRoute.Section {
     public var systemImage: String {
         switch self {
         case .pipelines: "hammer"
+        case .inbox: "tray"
         case .mergeRequests: "arrow.triangle.pull"
         case .workItems: "checklist"
         case .activity: "clock.arrow.circlepath"
@@ -32,24 +34,37 @@ extension AppRoute.Section {
         }
     }
 
-    /// Returns the sections the sidebar lists, in the order of ⌘1 and on: all of them, but Digest only while the Claude
+    /// Returns the sections the sidebar lists, in the order of ⌘1 and on (the user's, else the default): all of them, but Digest only while the Claude
     /// features are on (AI-04). The shown section stays listed, so the sidebar never selects an item it doesn't have:
     /// a link or a restart can land on Digest while Claude is off or `claude` isn't found yet.
     ///
     /// - Parameters:
     ///   - claudeIsOffered: whether the Claude features are on and `claude` is installed
     ///   - shown: the section the window shows
+    ///   - order: the user's order of the sections, as the preference ``SectionOrder/key`` keeps it; empty is the default.
+    ///     A hidden section keeps its place in it, and ⌘1 and on follow what the sidebar lists.
     /// - Returns: the sections
-    public static func sidebarSections(claudeIsOffered: Bool, shown: MainWindowSection) -> [MainWindowSection] {
-        allCases.filter { $0 != .digest || claudeIsOffered || shown == .digest }
+    public static func sidebarSections(
+        claudeIsOffered: Bool, shown: MainWindowSection, order: String = ""
+    ) -> [MainWindowSection] {
+        SectionOrder.merged(stored: order).filter { $0 != .digest || claudeIsOffered || shown == .digest }
     }
 
     /// whether the toolbar's section group has items here, besides the shell's Open in and Reload: Watch a Build in
-    /// Pipelines, the filter menu in Work Items, Finder, Clear and the inspector in Activity
+    /// Pipelines, the filter menu in Work Items, Finder, Clear and the inspector in Activity, Slots Settings in Slots
     public var hasToolbarItems: Bool {
         switch self {
-        case .pipelines, .workItems, .activity: true
-        case .mergeRequests, .workspaces, .slots, .digest: false
+        case .pipelines, .workItems, .activity, .slots: true
+        case .inbox, .mergeRequests, .workspaces, .digest: false
+        }
+    }
+
+    /// whether the section's list uses the whole window, with no detail column: Activity, Slots, Digest and the Inbox, whose
+    /// rows open their target under "Opened" or in its own section
+    public var isFullWidth: Bool {
+        switch self {
+        case .activity, .slots, .digest, .inbox: true
+        case .pipelines, .mergeRequests, .workItems, .workspaces: false
         }
     }
 
@@ -63,6 +78,7 @@ extension AppRoute.Section {
     public var searchPrompt: String {
         switch self {
         case .pipelines: "Search builds"
+        case .inbox: "Search inbox"
         case .mergeRequests: "Search merge requests"
         case .workItems: "Search work items"
         case .activity: "Search activity"
@@ -76,6 +92,7 @@ extension AppRoute.Section {
     public var noSelectionTitle: String {
         switch self {
         case .pipelines: "No Build Selected"
+        case .inbox: "No To-Do Selected"
         case .mergeRequests: "No Merge Request Selected"
         case .workItems: "No Work Item Selected"
         case .activity: "No Entry Selected"

@@ -62,8 +62,6 @@ struct BuildDetailModel: Hashable, Sendable {
     var canExplain: Bool
     /// the job's rebuild: "Rebuilding…" with Cancel Rebuild while queued, or its failure (PIPE-09)
     var rebuild: JenkinsRebuild?
-    /// Jenkins's Build with Parameters page, for "Rebuild with Changes…" in Links (PIPE-09)
-    var rebuildWithChanges: URL?
     /// the running build's bar
     var progress: BuildRowModel.Progress?
     /// "0h05m elapsed · ~0h20m left", under the bar
@@ -151,7 +149,6 @@ struct BuildDetailModel: Hashable, Sendable {
         canRebuild = false
         canExplain = false
         rebuild = nil
-        rebuildWithChanges = nil
         progress = nil
         timing = nil
         facts = []
@@ -176,7 +173,6 @@ struct BuildDetailModel: Hashable, Sendable {
         canRebuild = row.offersRebuild
         canExplain = build.result == .failure || build.result == .unstable
         rebuild = row.rebuild
-        rebuildWithChanges = row.rebuildWithChanges
         showsStages = true
         links = row.links.filter { $0.kind != .build }
         failedTests = nil

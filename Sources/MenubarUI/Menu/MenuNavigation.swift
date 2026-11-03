@@ -59,6 +59,10 @@ struct MenuNavigation: Hashable, Sendable {
     var flyoutCount = 0
     /// the highlighted flyout row, by index; `nil` for none
     var flyoutHighlight: Int?
+    /// the areas Settings → Menu Bar shows without a flyout: → does nothing on them, Return opens the window (APP-11)
+    var flyoutless: Set<MainWindowSection> = []
+    /// the most entries each area's flyout lists, from Settings → Menu Bar; an area without one lists ``MenuFlyout/cap``
+    var flyoutLimits: [MainWindowSection: Int] = [:]
 
     /// Returns the pane's rows in order: the problem row when a setting fixes it, the areas, then the footer.
     static func paneRows(problemIsLinked: Bool, areas: [MainWindowSection]) -> [PaneRow] {
@@ -109,6 +113,9 @@ struct MenuNavigation: Hashable, Sendable {
         case .right, .enter:
             guard let highlight else {
                 return .none
+            }
+            if case .area(let section) = highlight, flyoutless.contains(section) {
+                return key == .enter ? .activate(highlight) : .none
             }
             if case .area(let section) = highlight {
                 openArea = section

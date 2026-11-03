@@ -12,15 +12,46 @@ import SwiftUI
 public struct StatusLabel: View {
     @Environment(ProjectsPipelines.self) private var pipelines
     @Environment(AppModel.self) private var model
+    @Environment(WindowRouter.self) private var router
 
     public init() {}
 
     public var body: some View {
-        // Every project's builds and problems, summed (plan Phase 13).
+        // Every project's builds and problems, summed (plan Phase 13). The layout is a plain value; a store the layout
+        // doesn't show is never read, so it never redraws the label (APP-11).
+        let preferences = pipelines.preferences
+        let layout = preferences.menuBarLayout
         StatusLabelContent(model: StatusLabelModel(
             problem: pipelines.problem, counts: pipelines.counts,
-            style: pipelines.preferences.iconStyle, hat: pipelines.butlerHat,
-            bow: pipelines.preferences.easterEggs ? model.eggs.bow : nil))
+            style: preferences.iconStyle, hat: pipelines.butlerHat,
+            bow: preferences.easterEggs ? model.eggs.bow : nil,
+            inboxCount: layout.isOn(.inbox) ? model.inbox.badgeCount : 0,
+            reviewCount: layout.isOn(.reviews) ? model.mergeRequests.reviewCount : 0,
+            slot: layout.isOn(.slot) ? Self.slot(model) : nil,
+            layout: layout))
+            // With the review count on, the merge requests load in the background too, every few minutes while nobody
+            // looks (OD-02, OD-06): the count is the menu bar's own, not the pane's.
+            .onChange(of: layout.isOn(.reviews), initial: true) { _, isOn in
+                router.report(isOn ? [.mergeRequests] : [], shownBy: Self.host, to: model.scheduler)
+            }
+    }
+
+    /// the host the status item reports its GitLab surfaces as
+    static let host = "statusItem"
+
+    /// Returns the next date of my committed slot, from the work items already loaded: the slot most committed items
+    /// have, as the pane's Work Items row shows it (WI-04, SLOT-02).
+    static func slot(_ model: AppModel, calendar: Calendar = .current) -> StatusLabelModel.SlotCountdown? {
+        let team = model.pipelines.project.team
+        guard !team.slotPrefix.isEmpty, !team.committedLabel.isEmpty,
+            let committed = model.workItems.lists?.committed?.items, !committed.isEmpty,
+            let label = MenuPaneModel.slot(of: committed, prefix: team.slotPrefix, colors: [:]),
+            let name = SlotName(label: label.title, prefix: team.slotPrefix)
+        else { return nil }
+        let rules = SlotRules(team: team)
+        guard let dates = rules.dates(of: name, calendar: calendar) else { return nil }
+        return StatusLabelModel.SlotCountdown(
+            dates: dates, warnDays: rules.warnDays, today: model.dependencies.now(), calendar: calendar)
     }
 }
 
@@ -74,8 +105,10 @@ enum StatusMarkersImage {
     /// - Returns: the image, cached by parts, style and, in the color style, scheme
     static func image(for model: StatusLabelModel, colorScheme: ColorScheme) -> NSImage {
         let isTemplate = model.style != .color
+        // Computed once: the parts walk the layout.
+        let parts = model.parts
         let key = Key(
-            parts: model.parts, style: model.style, colorScheme: isTemplate ? nil : colorScheme, hat: model.hat,
+            parts: parts, style: model.style, colorScheme: isTemplate ? nil : colorScheme, hat: model.hat,
             bow: model.bow)
         if let image = cache[key] {
             return image
@@ -83,7 +116,7 @@ enum StatusMarkersImage {
         // Template images use the alpha only, so the label color is black there; the color style needs the real one.
         let label: Color = isTemplate ? .black : (colorScheme == .dark ? .white : .black)
         let content = HStack(spacing: 4) {
-            ForEach(Array(model.parts.enumerated()), id: \.offset) { _, part in
+            ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                 view(of: part, in: model, label: label)
             }
         }
@@ -102,17 +135,24 @@ enum StatusMarkersImage {
     @ViewBuilder
     private static func view(of part: StatusLabelModel.Part, in model: StatusLabelModel, label: Color) -> some View {
         let color = model.color(of: part) ?? label
-        if let symbol = StatusLabelModel.symbol(of: part) {
-            if case .count(_, let count) = part {
-                HStack(spacing: 2) {
-                    Image(systemName: symbol).foregroundStyle(color)
-                    // A `String`, so the count has no grouping.
-                    Text(verbatim: String(count))
-                }
-            } else {
-                Image(systemName: symbol).foregroundStyle(color)
+        switch part {
+        case .inboxDot:
+            // Red in the color style; the monochrome template only keeps its shape, which the menu bar tints.
+            Circle().fill(Color.red).frame(width: 6, height: 6)
+        case .count(_, let count), .inboxCount(let count), .reviews(let count):
+            HStack(spacing: 2) {
+                Image(systemName: StatusLabelModel.symbol(of: part) ?? "").foregroundStyle(color)
+                // A `String`, so the count has no grouping.
+                Text(verbatim: String(count))
             }
-        } else {
+        case .slot(let text, _):
+            HStack(spacing: 2) {
+                Image(systemName: StatusLabelModel.symbol(of: part) ?? "").foregroundStyle(color)
+                Text(verbatim: text).foregroundStyle(color)
+            }
+        case .problem:
+            Image(systemName: Marker.problem).foregroundStyle(color)
+        case .identity:
             Image(nsImage: AppImages.butler(hat: model.hat, bow: model.bow))
         }
     }

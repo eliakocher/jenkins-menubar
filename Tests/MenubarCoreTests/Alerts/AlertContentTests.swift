@@ -47,7 +47,7 @@ struct AlertContentTests {
         let content = try Self.content(
             .failure, duration: 2 * 3600 + 31 * 60 + 59, testCounts: TestCounts(failed: 3, total: 1200),
             failedStages: ["build", "integration-tests"])
-        #expect(content.facts == ["Duration: 2h31m", "Failed tests: 3 of 1200", "Failed stages: build, integration-tests"])
+        #expect(content.facts == ["Duration: 2h31m", "3 failed tests", "Failed stages: build, integration-tests"])
     }
 
     @Test("ALERT-02 title is left out when it equals the job name")

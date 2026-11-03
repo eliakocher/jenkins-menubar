@@ -162,8 +162,8 @@ public struct ClaudeSetup: Hashable, Sendable {
     public var readingTools: [String]
     /// the MCP tools denied by name: the changing ones of the servers that are on
     public var otherTools: [String]
-    /// the servers that are off, by key: all their tools are denied at once with `mcp__<key>__*`, which also takes
-    /// them out of every message's tool list
+    /// the servers that are off or that the listing doesn't know, by key: all their tools are denied at once with
+    /// `mcp__<key>__*`, which also takes them out of every message's tool list
     public var blockedServers: [String]
     /// whether the MCP tools are not known yet: then every MCP tool is denied
     public var blocksAllMcp: Bool
@@ -173,7 +173,13 @@ public struct ClaudeSetup: Hashable, Sendable {
     ///   - inventory: what the setup offers; `nil` while it isn't known, which keeps every MCP tool off
     ///   - serverChoices: the user's choice of servers by key; a server without one follows
     ///     ``McpServerGroup/isOnByDefault``
-    public init(useClaudeMd: Bool, inventory: ClaudeInventory?, serverChoices: [String: Bool] = [:]) {
+    ///   - configuredServers: the keys of the servers the Claude Code config names right now (``McpConfigScan``); one the
+    ///     listing doesn't know was added after it and is denied until the listing is made again. `nil` when the config
+    ///     wasn't read.
+    public init(
+        useClaudeMd: Bool, inventory: ClaudeInventory?, serverChoices: [String: Bool] = [:],
+        configuredServers: Set<String>? = nil
+    ) {
         self.useClaudeMd = useClaudeMd
         guard let inventory else {
             readingTools = []
@@ -188,7 +194,10 @@ public struct ClaudeSetup: Hashable, Sendable {
         // user chose: if it connects during a run, the user's own allow rules would otherwise let all its tools run.
         let toolless = Set(inventory.servers.map { McpServerGroup.key(ofServerNamed: $0.name) })
             .subtracting(groupKeys).filter { !$0.isEmpty }.sorted()
-        blockedServers = groupKeys.filter { !on.contains($0) } + toolless
+        // A server the config names that the listing never saw was added after it: denied too, until the next listing.
+        let listed = Set(groupKeys).union(toolless)
+        let unlisted = (configuredServers ?? []).subtracting(listed).filter { !$0.isEmpty }.sorted()
+        blockedServers = groupKeys.filter { !on.contains($0) } + toolless + unlisted
         let sorted = McpToolClassifier.split(inventory.mcpTools.filter { McpServerGroup.key(of: $0).map(on.contains) == true })
         readingTools = sorted.reading
         otherTools = sorted.changing

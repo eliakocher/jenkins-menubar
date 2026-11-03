@@ -58,9 +58,11 @@ extension WorkItemDetailView {
 }
 
 /// The detail drawn from plain values, for the window and the gallery: a scrolling page in the merge request detail's
-/// language. On top the header: the state badge, the project and the number, the type and the slot pill; the title; the
-/// author and the assignees; a strip of chips for the slot's next date, the flags, the merge requests and their builds,
-/// each jumping to its card or opening its page; the labels, quiet. Below, the cards in one column, or two when wide:
+/// language. On top the header: on the left the state badge, the project and the number, the type and Copy Branch Name;
+/// the title; the author and the assignees; a strip of chips for the slot's next date, the flags, the merge requests and
+/// their builds, each jumping to its card or opening its page; the action buttons. On the right when wide, under them when
+/// narrow, the facts panel: the slot and the scoped labels a line each, the other labels behind "+N" (WI-04). Below, the
+/// cards in one column, or two when wide:
 /// Merge Requests, Slot and Claude; then the description and the discussion. "Open in GitLab" is in the toolbar, the
 /// frequent actions are buttons under the header, and there is no ⋯ menu.
 struct WorkItemDetailContent: View {
@@ -95,7 +97,7 @@ struct WorkItemDetailContent: View {
                     }
                     // The item's own text, loaded on selection (WIN-02).
                     DescriptionSection(source: DescriptionSource(model.workItem), inCard: true)
-                    // Ask Claude and Open in Claude Code, while the Claude features are on (AI-05, AI-08).
+                    // Ask Claude, while the Claude features are on (AI-05, AI-08).
                     if showsClaude(model) {
                         WorkItemClaudeCard(workItem: model.workItem)
                     }
@@ -116,20 +118,26 @@ struct WorkItemDetailContent: View {
 
     // MARK: The header
 
+    /// The header: on the left the state, the reference with Copy Branch Name, the title, the people, the chips and the
+    /// actions; on the right, or under them when narrow, the facts panel.
     private func header(_ model: WorkItemDetailModel, jump: @escaping (Card) -> Void) -> some View {
         let item = model.workItem
         return DetailHeader(title: item.displayTitle, titleHelp: item.displayTitle == item.title ? nil : item.title) {
             StatusBadge(
                 text: model.state, symbol: item.state == .opened ? "circle.dotted" : "checkmark.circle.fill",
                 tint: item.state == .opened ? MergeRequestStatus.Color.green.swiftUI : MergeRequestStatus.Color.blue.swiftUI)
-            Text(verbatim: "\(model.projectName) \(item.isEpic ? "&" : "#")\(item.iid ?? "") · \(model.type)")
+            // The reference as the small blue chip, then where it lives and what it is.
+            ReferenceChip(kind: .workItem, text: "\(item.isEpic ? "&" : "#")\(item.iid ?? "")", help: item.reference)
+                .fixedSize()
+                .textSelection(.enabled)
+            Text(verbatim: "\(model.projectName) · \(model.type)")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .textSelection(.enabled)
-                .help(item.reference)
-            if let slot = model.slotLabel {
-                LabelPill(label: slot, style: .value)
+            // The team's branch name for the item, for a new branch; an epic has none.
+            if !item.isEpic, item.iid != nil {
+                BranchNameCopyButton(workItem: item)
             }
         } menu: {
             // Nothing is left for a ⋯ menu: "Open in GitLab" is in the toolbar.
@@ -141,13 +149,30 @@ struct WorkItemDetailContent: View {
             // The frequent actions as buttons, not behind a menu.
             actionRow(model)
                 .padding(.top, 4)
-            if !model.labels.isEmpty {
-                // Every label, scoped ones whole (WI-04), small: they describe the item, the chips say what to do.
-                PillFlowLayout(spacing: 4, lineSpacing: 4) {
-                    ForEach(model.labels) { LabelPill(label: $0, small: true) }
+        } aside: {
+            factsPanel(model)
+        }
+    }
+
+    /// The facts panel: the slot and the scoped labels a line each (WI-04), the other labels behind "+N"; nothing for an
+    /// item without labels. The chips on the left say what to do; the panel says what the item is.
+    @ViewBuilder
+    private func factsPanel(_ model: WorkItemDetailModel) -> some View {
+        let facts = model.facts
+        if !facts.facts.isEmpty || !facts.otherLabels.isEmpty {
+            DetailFactsPanel {
+                ForEach(facts.facts) { fact in
+                    DetailFactRow(name: fact.name) {
+                        DetailFactValue(
+                            text: fact.value, color: fact.labels.first?.color,
+                            help: fact.labels.map(\.title).joined(separator: ", "))
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 2)
+                if !facts.otherLabels.isEmpty {
+                    DetailFactRow(name: "Labels") {
+                        WorkItemOtherLabels(labels: facts.otherLabels)
+                    }
+                }
             }
         }
     }
@@ -240,22 +265,20 @@ struct WorkItemDetailContent: View {
         }
     }
 
-    /// "!14 open" in its state's color; shows it in Merge Requests while that list has it, else opens it in GitLab.
+    /// "!14" in the merge request green, whatever its state (it is in the tooltip and in the card); shows it in Merge Requests
+    /// while that list has it, else opens it in GitLab.
     private func mergeRequestChip(_ row: RelatedMergeRequestRow) -> some View {
-        let short = row.reference.components(separatedBy: " · ").first ?? row.reference
-        let word = row.mergeRequest.state == .opened ? "open" : row.mergeRequest.state.rawValue.lowercased()
+        let short = row.reference
         return DetailChip(
-            symbol: row.symbol, tint: row.tint,
-            help: row.showsInMergeRequests ? "Show \(short) in Merge Requests" : "Show \(short) in the app",
+            symbol: nil, tint: ReferenceKind.mergeRequest.tint,
+            help: (row.showsInMergeRequests ? "Show \(short) in Merge Requests" : "Show \(short) in the app") + "\n" + row.help,
             action: {
                 if row.showsInMergeRequests { actions.showInMergeRequests(row.id) } else { actions.follow(row.id) }
             }
         ) {
-            HStack(spacing: 4) {
-                Text(verbatim: short)
-                Text(verbatim: word)
-                    .foregroundStyle(.secondary)
-            }
+            Text(verbatim: short)
+                .monospacedDigit()
+                .foregroundStyle(ReferenceKind.mergeRequest.tint)
         }
         .contextMenu {
             if row.showsInMergeRequests {
@@ -316,6 +339,9 @@ private struct WorkItemMergeRequestsCard: View {
     let model: WorkItemDetailModel
     let actions: GitLabSectionActions
 
+    /// whether the quieter "Mentioned in" group is open while it has more than ``WorkItemDetailModel/mentionedShownOpen``
+    @ViewState private var mentionedOpen = false
+
     var body: some View {
         DetailCard("Merge Requests", symbol: "arrow.triangle.pull") {
             VStack(alignment: .leading, spacing: 10) {
@@ -346,11 +372,14 @@ private struct WorkItemMergeRequestsCard: View {
     @ViewBuilder
     private var content: some View {
         switch model.related {
-        case .rows(let rows):
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(rows) { RelatedMergeRequestRowView(row: $0, actions: actions) }
+        case .rows:
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(model.ownMergeRequests) { RelatedMergeRequestRowView(row: $0, actions: actions) }
+                }
+                .padding(.horizontal, -6)
+                mentionedGroup
             }
-            .padding(.horizontal, -6)
         case .none:
             note(WorkItemDetailModel.noMergeRequests)
         case .loading:
@@ -360,6 +389,44 @@ private struct WorkItemMergeRequestsCard: View {
             note(WorkItemDetailModel.mergeRequestsUnknown)
         case .epic:
             note(WorkItemDetailModel.epicNote)
+        }
+    }
+
+    /// The merge requests that only mention the item: a quiet caption, and the rows under it, folded away when there
+    /// are more than two.
+    @ViewBuilder
+    private var mentionedGroup: some View {
+        let mentioned = model.mentionedMergeRequests
+        if !mentioned.isEmpty {
+            let folds = mentioned.count > WorkItemDetailModel.mentionedShownOpen
+            VStack(alignment: .leading, spacing: 2) {
+                if folds {
+                    Button { mentionedOpen.toggle() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                                .rotationEffect(.degrees(mentionedOpen ? 90 : 0))
+                            Text(verbatim: "Mentioned in \(mentioned.count) more")
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .help(mentionedOpen ? "Hide the merge requests that only mention this work item" : "Show the merge requests that only mention this work item")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(verbatim: "Mentioned in")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if !folds || mentionedOpen {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(mentioned) { RelatedMergeRequestRowView(row: $0, actions: actions) }
+                    }
+                    .padding(.horizontal, -6)
+                    .opacity(0.85)
+                }
+            }
         }
     }
 
@@ -410,24 +477,26 @@ private struct RelatedMergeRequestRowView: View {
         HStack(alignment: .center, spacing: 8) {
             Button { actions.follow(row.id) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Image(systemName: row.symbol)
-                        .foregroundStyle(row.isIgnored ? AnyShapeStyle(.tertiary) : AnyShapeStyle(row.tint))
-                        .frame(width: SectionRowMetrics.symbolColumn)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: row.mergeRequest.title)
-                            .foregroundStyle(row.isIgnored ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(verbatim: row.reference)
+                    // The green chip, the same everywhere; the state is the quiet word after the title, and only
+                    // for a merged or closed one.
+                    MergeRequestNumberChip(text: row.reference)
+                        .opacity(row.isIgnored ? 0.5 : 1)
+                    Text(verbatim: row.mergeRequest.title)
+                        .foregroundStyle(row.isIgnored ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let note = row.stateNote {
+                        Text(verbatim: note)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                     Spacer(minLength: 4)
                 }
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .help(row.openTitle)
+            .help(row.openTitle + "\n" + row.help)
             if let build = row.build {
                 BuildBadge(build: build) { actions.follow($0) }
             }
@@ -519,7 +588,7 @@ private struct WorkItemSlotCard: View {
 // MARK: - Claude
 
 /// Claude about the work item, while the Claude features are on: a field to ask about it (AI-08), whose answer can be
-/// followed up, and Open in Claude Code in the checkout on the item's branch (AI-05); nothing for an epic.
+/// followed up, and Continue in Claude Code in the checkout on the item's branch (AI-05); nothing for an epic.
 private struct WorkItemClaudeCard: View {
     let workItem: WorkItem
 
@@ -548,17 +617,6 @@ private struct WorkItemClaudeCard: View {
 }
 
 // MARK: - Colors
-
-extension RelatedMergeRequestRow {
-    /// the state's color: open green, merged purple, the rest grey
-    var tint: Color {
-        switch mergeRequest.state {
-        case .opened: MergeRequestStatus.Color.green.swiftUI
-        case .merged: .purple
-        default: .secondary
-        }
-    }
-}
 
 extension SlotFlag.Kind {
     /// the flag's color: ready to verify green, a red build red, no merge request orange

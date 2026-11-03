@@ -34,6 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         effects.onRebuild = { [weak self] build in
             self?.shell.rebuild(build)
         }
+        effects.onRebuildWithChanges = { [weak self] build in
+            self?.shell.rebuildWithChanges(build)
+        }
         effects.onHide = { [weak self] build in
             self?.shell.hide(build)
         }

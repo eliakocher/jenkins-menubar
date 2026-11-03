@@ -1,0 +1,55 @@
+{
+  "_class": "org.jenkinsci.plugins.workflow.job.WorkflowJob",
+  "property": [
+    {
+      "_class": "jenkins.branch.BranchJobProperty"
+    },
+    {
+      "_class": "hudson.model.ParametersDefinitionProperty",
+      "parameterDefinitions": [
+        {
+          "_class": "hudson.model.StringParameterDefinition",
+          "defaultParameterValue": { "_class": "hudson.model.StringParameterValue", "name": "TARGET_BRANCH", "value": "main" },
+          "description": "The branch to build",
+          "name": "TARGET_BRANCH",
+          "type": "StringParameterDefinition"
+        },
+        {
+          "_class": "hudson.model.BooleanParameterDefinition",
+          "defaultParameterValue": { "_class": "hudson.model.BooleanParameterValue", "name": "SKIP_UI_TESTS", "value": true },
+          "description": "",
+          "name": "SKIP_UI_TESTS",
+          "type": "BooleanParameterDefinition"
+        },
+        {
+          "_class": "hudson.model.ChoiceParameterDefinition",
+          "choices": ["staging", "qa", "production"],
+          "defaultParameterValue": { "_class": "hudson.model.StringParameterValue", "name": "ENVIRONMENT", "value": "staging" },
+          "name": "ENVIRONMENT",
+          "type": "ChoiceParameterDefinition"
+        },
+        {
+          "_class": "hudson.model.TextParameterDefinition",
+          "defaultParameterValue": { "_class": "hudson.model.TextParameterValue", "name": "NOTES", "value": "line one\nline two" },
+          "name": "NOTES",
+          "type": "TextParameterDefinition"
+        },
+        {
+          "_class": "hudson.model.PasswordParameterDefinition",
+          "defaultParameterValue": { "_class": "hudson.model.PasswordParameterValue", "name": "DEPLOY_PASSWORD" },
+          "name": "DEPLOY_PASSWORD",
+          "type": "PasswordParameterDefinition"
+        },
+        {
+          "_class": "hudson.model.RunParameterDefinition",
+          "name": "UPSTREAM",
+          "type": "RunParameterDefinition"
+        },
+        {
+          "_class": "com.example.plugin.TreeParameterDefinition",
+          "name": "PLUGIN_TREE"
+        }
+      ]
+    }
+  ]
+}

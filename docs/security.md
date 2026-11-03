@@ -45,7 +45,7 @@ already running as you, and a compromised GitLab or Jenkins.
   no link, launch, timer, notification arriving or Claude answer triggers one.
 - The one local git write, Start Work, needs a confirmation and a clean checkout, and never forces anything. Background
   git only reads.
-- Every program is started with an argument list, never a shell string. Open in Claude Code uses a fixed script that
+- Every program is started with an argument list, never a shell string. Continue in Claude Code uses a fixed script that
   reads its values from private temporary files.
 - `megamonitor://` links only navigate, watch a job on the configured Jenkins, or offer a team file import that applies
   nothing before you click Apply.
@@ -57,7 +57,8 @@ already running as you, and a compromised GitLab or Jenkins.
   inside the checkout for code questions, a budget limit and a timeout.
 - "Use My Claude Code Setup" is opt-in and only for chats. It allows only the MCP tools that read, from the servers
   you turned on, and denies every tool that changes or runs something, including servers that weren't connected when
-  the tools were listed.
+  the tools were listed. Before each chat the app also reads the server names in your Claude Code config and denies
+  every one the tool listing didn't know, so a server you add later stays off until the listing is made again.
 
 ## Accepted risks
 
@@ -67,9 +68,12 @@ already running as you, and a compromised GitLab or Jenkins.
 - **Captured requests keep response bodies** (MR text, build logs) in `~/Library/Logs/MegaMonitor`, readable only by
   you, capped in size.
 - **Rebuild builds what is in your checkout.** What you `git pull` is what you run.
-- **Open in Claude Code** starts Claude Code with your own permissions and settings, on a prompt that includes the
+- **Continue in Claude Code** starts Claude Code with your own permissions and settings, on a prompt that includes the
   item's text.
 - **The opt-in Claude setup** uses your own MCP servers and allow rules, and tool output is not redacted.
+  One gap is left: a connector you add on claude.ai that no Claude Code run on this Mac has seen yet isn't in any
+  local file, so it is denied only after the next listing (a quiet refresh in the background at most 15 minutes after
+  a chat, or Refresh in Settings). It matters only if your own allow rules would let that server's tools run.
 - **Ad-hoc signing**, no hardened runtime: fine while everyone builds from source; never share a built bundle.
 
 ## Uninstalling

@@ -45,7 +45,7 @@ public struct AlertContent: Codable, Hashable, Sendable {
     public var headlineParts: HeadlineParts?
     /// the build's title; `nil` when it only repeats the job name
     public var title: String?
-    /// one line each, like `Duration: 0h30m` and `Failed tests: 3 of 1200`
+    /// one line each, like `Duration: 0h30m` and `3 failed tests`
     public var facts: [String]
     /// a banner's body: the title and the facts for a finished build, the failed stages and the title for a stage banner
     public var bannerBody: String

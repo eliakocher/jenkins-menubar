@@ -38,6 +38,45 @@ public struct SlotsView: View {
                     await model.workItems.loadRelatedMergeRequests(of: item)
                 }
             }
+            // The last thing to load, at a low priority: the merge requests of the open cards' items that aren't mine.
+            // The id restarts it (and cancels the run before) when the cards or the chips change; leaving the section
+            // cancels it.
+            .task(id: backgroundLoadKey, priority: .utility) {
+                guard backgroundLoadKey.isSettled else { return }
+                // Let the page draw and the first clicks happen before the requests start.
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                await model.workItems.loadRelatedMergeRequests(of: itemsOfOpenCards(), atOnce: 3)
+            }
+    }
+
+    /// What the background load of the other items' merge requests depends on: whether the page has settled, and the
+    /// chips and cards that decide which items show.
+    private struct BackgroundLoadKey: Hashable {
+        var isSettled: Bool
+        var chips: String
+        var expansion: String
+        var searches: Bool
+        var itemCount: Int
+    }
+
+    private var backgroundLoadKey: BackgroundLoadKey {
+        BackgroundLoadKey(
+            isSettled: model.workItems.lists != nil && !model.workItems.isLoading && !model.slotItems.isLoading
+                && model.slotItems.items.count > 0,
+            chips: storedChip, expansion: storedExpansion, searches: !searchText.isEmpty,
+            itemCount: model.slotItems.items.count)
+    }
+
+    /// The work items of the slots whose cards are open, in the page's order: the current slot's first.
+    private func itemsOfOpenCards() -> [WorkItem] {
+        let chips = model.slotChips
+        let plan = model.slotPlan(chips: selection(among: chips))
+        let expansion = SlotExpansion(id: storedExpansion)
+        let searching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
+        return plan.slots
+            .filter { searching || expansion.isExpanded(name: $0.name.description, state: $0.state) }
+            .flatMap { $0.allItems.map(\.workItem) }
     }
 
     /// The chips to show for the remembered ids. While the items load, the chips don't tell yet whether a squad or a
@@ -327,7 +366,7 @@ struct SlotsContent<Detail: View>: View {
 
 // MARK: - A slot
 
-/// One slot: its header, always shown, and when it is open its dates as steps, its people and its work items in columns.
+/// One slot: its header, always shown, and when it is open its dates as steps and its work items in columns.
 struct SlotCard: View {
     let slot: SlotSummary
     let today: Date
@@ -362,7 +401,7 @@ struct SlotCard: View {
     }
 
     private var content: some View {
-        // No items at all: the dates and people first, then the quiet note; else the summary on top.
+        // No items at all: the dates first, then the quiet note; else the summary on top.
         let isEmpty = slot.allItems.isEmpty && slot.problemCount == 0
         return VStack(alignment: .leading, spacing: 12) {
             if !isEmpty {
@@ -371,14 +410,9 @@ struct SlotCard: View {
                     .foregroundStyle(.secondary)
             }
             if let dates = slot.dates {
-                HStack(alignment: .center, spacing: 6) {
-                    SlotMilestoneRow(dates: dates, today: today, tint: slot.state == .overdue ? .orange : .accentColor)
-                    // The dates come from the slot schedule: the weekdays of the release, the code freeze and early access.
-                    SettingsGearButton(field: .slotSchedule)
-                        .controlSize(.small)
-                }
+                // The dates come from the slot schedule (Settings, opened from the toolbar's Slots Settings).
+                SlotMilestoneRow(dates: dates, today: today, tint: slot.state == .overdue ? .orange : .accentColor)
             }
-            SlotPeopleLine(slot: slot)
             if isEmpty {
                 Text(verbatim: slot.progressText)
                     .font(.subheadline)
@@ -401,9 +435,6 @@ struct SlotCard: View {
 
     private func table(_ layout: SlotRowLayout) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if layout == .regular {
-                SlotColumnHeader()
-            }
             // The commitments first, the tree's top, each with its items here by epic; then the rest.
             ForEach(slot.commitments) { commitment in
                 SlotCommitmentSection(commitment: commitment, actions: actions)

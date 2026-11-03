@@ -787,7 +787,7 @@ public final class MergeRequestChangesStore {
     /// the merge requests whose list of files stays in memory
     public static let kept = 5
 
-    private var entries: [String: Entry] = [:]
+    private let entries = ObservedEntries<String, Entry>()
     /// the selected merge requests, by reference, the newest first; only the first keeps its diffs
     @ObservationIgnored private var recent: [String] = []
     /// the requests on their way, by merge request, to cancel when another is selected

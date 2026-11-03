@@ -4,6 +4,8 @@ import Foundation
 /// look and behavior, the connection and the team's values, the sections' settings, and Advanced last.
 public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     case general
+    /// what the status item shows and what its menu pane lists (APP-11)
+    case menuBar
     case notifications
     case appearance
     case accounts
@@ -26,7 +28,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
 
     /// The sidebar's groups, in their order, each a short list of panes.
     public static let groups: [[SettingsPane]] = [
-        [.general, .notifications, .appearance],
+        [.general, .menuBar, .notifications, .appearance],
         [.accounts, .projects, .team],
         [.pipelines, .workItems, .workspaces, .claude],
         [.advanced],
@@ -36,6 +38,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     public var title: String {
         switch self {
         case .general: "General"
+        case .menuBar: "Menu Bar"
         case .notifications: "Notifications"
         case .appearance: "Appearance"
         case .accounts: "Accounts"
@@ -53,11 +56,14 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     public var keywords: [String] {
         switch self {
         case .general:
-            ["login", "start", "menu bar", "icon", "shortcut", "hotkey", "links", "browser", "copied link", "paste",
-             "easter eggs", "butler"]
+            ["login", "start", "shortcut", "hotkey", "links", "browser", "copied link", "paste", "easter eggs"]
+        case .menuBar:
+            ["menu bar", "status item", "icon", "butler", "color", "monochrome", "counts", "running", "failed",
+             "unstable", "successful", "inbox", "dot", "badge", "number", "review", "slot", "freeze", "order", "zero",
+             "pane", "menu", "flyout", "rows", "width", "compact", "hide"]
         case .notifications:
             ["alert", "banner", "stage", "sound", "notification", "slot", "code freeze", "warning", "preview", "mute",
-             "muted"]
+             "muted", "inbox", "badge", "dot", "mention", "digest", "coffee"]
         case .appearance:
             ["width", "content width", "text size", "reading size", "font", "diff", "side by side", "inline",
              "comments", "sort", "folders", "folded", "layout"]

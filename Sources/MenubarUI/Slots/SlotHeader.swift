@@ -58,7 +58,7 @@ struct SlotHeader: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
         .accessibilityAction { setExpanded(!isExpanded) }
-        .help(isExpanded ? "Collapse \(slot.name.description)" : "Expand \(slot.name.description)")
+        // No "Collapse 2026.48" tooltip: the chevron says it, and it hid the counters' own tooltips (the user, 2026-11-03).
     }
 
     private func row(_ detail: Detail) -> some View {
@@ -120,6 +120,7 @@ struct SlotHeader: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize()
+                        .help("The people with items in this slot")
                 }
             }
             if detail != .minimal, !slot.allItems.isEmpty {
@@ -176,8 +177,9 @@ struct SlotHeader: View {
         }
         if slot.uncommittedCount > 0 {
             SlotCounter(
-                symbol: "tray", text: "\(slot.uncommittedCount)", tint: .secondary,
-                help: "\(slot.uncommittedCount) planned, not committed")
+                symbol: "circle.dashed", text: "\(slot.uncommittedCount)", tint: .secondary,
+                help: slot.uncommittedCount == 1
+                    ? "1 item planned for this slot, not committed yet" : "\(slot.uncommittedCount) items planned for this slot, not committed yet")
         }
     }
 

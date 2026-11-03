@@ -22,7 +22,7 @@ extension WindowRouter {
             case .workspaces: selection.workspaces
             case .slots: selection.slots
             // Activity's entries come and go with the log.
-            case .activity, .digest: nil
+            case .activity, .digest, .inbox: nil
             }
         return NavigationLocation(section: section, item: item)
     }
@@ -98,7 +98,7 @@ extension WindowRouter {
             case .workItems: selection.workItems = location.item
             case .workspaces: selection.workspaces = location.item
             case .slots: selection.slots = location.item
-            case .activity, .digest: break
+            case .activity, .digest, .inbox: break
             }
             section = location.section
         }

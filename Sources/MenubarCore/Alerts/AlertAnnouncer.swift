@@ -56,6 +56,20 @@ public struct AlertAnnouncer: Sendable {
         }
     }
 
+    /// Logs the finished builds of muted jobs, without showing anything (ALERT-09): mute silences the glass alert and the
+    /// banners only, so Activity still says the build finished. A stage banner of a muted job leaves no line, as before.
+    ///
+    /// - Parameter alerts: the alerts of the muted jobs
+    public func logMuted(_ alerts: [BuildAlert]) async {
+        for alert in alerts where alert.kind == .finished {
+            let build = alert.build
+            await log.log(.info, .jenkins, "\(build.id.label) finished", detail: build.title, outcome: alert.outcome)
+            await log.log(
+                .info, .alerts, "\(alert.content.headline) (muted)", detail: alert.content.bannerBodyWithoutEggLine,
+                outcome: alert.outcome)
+        }
+    }
+
     /// Shows a sample alert, as the current style and sound settings choose (ALERT-07).
     ///
     /// - Parameters:

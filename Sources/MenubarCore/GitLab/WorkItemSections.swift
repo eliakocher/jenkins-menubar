@@ -112,7 +112,7 @@ public enum RelatedMergeRequestMarker: String, Hashable, Sendable, CaseIterable 
     /// work item and don't count.
     ///
     /// - Parameters:
-    ///   - mergeRequests: the MRs that mention the work item
+    ///   - mergeRequests: the MRs of the work item that count, see ``WorkItem/shownMergeRequests(from:)``
     ///   - ignoredPrefix: the ignored MR prefix from Team; empty counts every MR
     /// - Returns: the marker, or `nil` for none
     public static func of(_ mergeRequests: [RelatedMergeRequest], ignoredPrefix: String) -> RelatedMergeRequestMarker? {
@@ -160,7 +160,15 @@ public struct RelatedMergeRequestsCache: Codable, Hashable, Sendable {
     ///   - ignoredPrefix: the ignored MR prefix from Team
     /// - Returns: the marker, or `nil` without one or without an answer
     public func marker(of workItem: WorkItem, ignoredPrefix: String) -> RelatedMergeRequestMarker? {
-        entries[workItem.reference].flatMap { RelatedMergeRequestMarker.of($0.mergeRequests, ignoredPrefix: ignoredPrefix) }
+        shownMergeRequests(of: workItem).flatMap { RelatedMergeRequestMarker.of($0, ignoredPrefix: ignoredPrefix) }
+    }
+
+    /// Returns the MRs that count for a work item's chips, marker and slots: its own, or all when none is its own.
+    ///
+    /// - Parameter workItem: the work item
+    /// - Returns: the MRs, or `nil` without an answer
+    public func shownMergeRequests(of workItem: WorkItem) -> [RelatedMergeRequest]? {
+        entries[workItem.reference].map { workItem.shownMergeRequests(from: $0.mergeRequests) }
     }
 
     private enum Key: String, CodingKey {

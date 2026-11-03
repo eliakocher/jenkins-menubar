@@ -35,6 +35,11 @@ public struct Preferences: Codable, Hashable, Sendable {
     /// whether a banner warns before a slot's code freeze while committed work items have no merged MR; off by default
     /// and never with a sound (SLOT-04)
     public var slotAlerts: Bool
+    /// where the Inbox's events go: banner, Inbox, badge per kind, quiet hours, only my projects (INBOX-06); kept as
+    /// JSON text in one key
+    public var inboxNotifications: InboxNotificationRules
+    /// what the status item and the menu pane show, in which order (APP-11); kept as JSON text in one key
+    public var menuBarLayout: MenuBarLayout
 
     public init(
         checkIntervalSeconds: Int = 60,
@@ -51,8 +56,11 @@ public struct Preferences: Codable, Hashable, Sendable {
         fillInCopiedLink: Bool = false,
         globalShortcut: HotkeyShortcut? = nil,
         easterEggs: Bool = true,
-        slotAlerts: Bool = false
+        slotAlerts: Bool = false,
+        inboxNotifications: InboxNotificationRules = InboxNotificationRules(),
+        menuBarLayout: MenuBarLayout = MenuBarLayout()
     ) {
+        self.menuBarLayout = menuBarLayout
         self.checkIntervalSeconds = checkIntervalSeconds
         self.hideSuccessfulAfter = hideSuccessfulAfter
         self.hideFailedAfter = hideFailedAfter
@@ -68,12 +76,13 @@ public struct Preferences: Codable, Hashable, Sendable {
         self.globalShortcut = globalShortcut
         self.easterEggs = easterEggs
         self.slotAlerts = slotAlerts
+        self.inboxNotifications = inboxNotifications
     }
 
     private enum CodingKeys: String, CodingKey {
         case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds, alertStyle
         case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
-        case globalShortcut, easterEggs, slotAlerts
+        case globalShortcut, easterEggs, slotAlerts, inboxNotifications, menuBarLayout
     }
 
     // A value encoded before a field existed decodes with that field's default. One encoded with the dropped
@@ -99,7 +108,11 @@ public struct Preferences: Codable, Hashable, Sendable {
             fillInCopiedLink: try value(.fillInCopiedLink, defaults.fillInCopiedLink),
             globalShortcut: try? container.decodeIfPresent(HotkeyShortcut.self, forKey: .globalShortcut),
             easterEggs: try value(.easterEggs, defaults.easterEggs),
-            slotAlerts: try value(.slotAlerts, defaults.slotAlerts))
+            slotAlerts: try value(.slotAlerts, defaults.slotAlerts),
+            inboxNotifications: (try? container.decodeIfPresent(InboxNotificationRules.self, forKey: .inboxNotifications))
+                ?? defaults.inboxNotifications,
+            menuBarLayout: (try? container.decodeIfPresent(MenuBarLayout.self, forKey: .menuBarLayout))
+                ?? defaults.menuBarLayout)
     }
 
     /// 30 s, 1 min (default), 2, 5 or 10 min

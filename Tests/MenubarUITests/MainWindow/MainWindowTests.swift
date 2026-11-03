@@ -38,6 +38,7 @@ struct MainWindowTests {
             (.slots, false, [.slots]),
             (.slots, true, [.slots, .slotItemDetails]),
             (.workspaces, true, [.workspaces]),
+            (.inbox, false, [.inbox]),
             (.digest, false, []),
             (.activity, true, []),
         ] as [(MainWindowSection, Bool, [MainWindowReload.Step])])

@@ -53,6 +53,17 @@ public struct WatchRequest: Hashable, Sendable, Identifiable {
     public var isRefusal: Bool { reason != nil || refusal != nil }
 }
 
+/// The build "Rebuild with Changes…" starts again (PIPE-09).
+public struct RebuildRequest: Hashable, Sendable, Identifiable {
+    /// a new one for every request
+    public var id = UUID()
+    public var build: BuildID
+
+    public init(build: BuildID) {
+        self.build = build
+    }
+}
+
 /// Opens the main window, the Watch a Build… sheet and Settings for the views, and holds the app-level state they
 /// share across scenes.
 ///
@@ -88,6 +99,10 @@ public final class WindowRouter {
             }
         }
     }
+
+    /// the build whose "Rebuild with Changes…" sheet shows on the main window (PIPE-09); the sheet clears it when it
+    /// closes
+    public var rebuildRequest: RebuildRequest?
 
     /// whether "Open by Link…" shows (⌘⇧O, WIN-06), as a sheet on the main window
     public var isOpeningByLink = false
@@ -172,6 +187,16 @@ public final class WindowRouter {
             watchRequest = request
         }
         opener(route)
+    }
+
+    /// Shows a build in Pipelines and opens the "Rebuild with Changes…" sheet over it (PIPE-09), from the build's detail, the
+    /// pane's and the main window's context menus and the alert window.
+    ///
+    /// - Parameter build: the build to start again
+    public func requestRebuildSheet(for build: BuildID) {
+        selection.pipelines = build.jobKey
+        reveal(section: .pipelines)
+        rebuildRequest = RebuildRequest(build: build)
     }
 
     /// Opens the main window at a section, or brings it forward there: `megamonitor://open/<section>` (APP-03), and

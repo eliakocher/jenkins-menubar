@@ -2,17 +2,24 @@ import Foundation
 import MenubarCore
 
 /// What the app knows of the places in the main window's history (WIN-08): whether the item is still there, and the
-/// symbol and title the Back and Forward menus show. It reads the stores once, so a menu of 50 places is not 50 reads.
+/// symbol and title the Back and Forward menus show. It reads the stores once, so a menu of 50 places is not 50 reads,
+/// and the builds and checkouts only when a place asks for them: the window makes one at each update.
 @MainActor
-struct NavigationResolver {
+final class NavigationResolver {
     private let model: AppModel
-    private let pipelines: PipelinesData
-    private let workspaces: WorkspacesListModel
+    /// the jobs the Pipelines list shows, as ``PipelinesData/jobs`` has them, without making its rows
+    private lazy var pipelineJobs: Set<String> = {
+        let projects = model.projects
+        guard projects.problem != .teamValuesMissing else {
+            return []
+        }
+        let waiting = model.pipelines.watchedJobs.filter(\.isWaiting).map(\.watched.job)
+        return Set(projects.myBuilds.map(\.jobKey) + projects.watchedBuilds.map(\.jobKey) + waiting)
+    }()
+    private lazy var workspaces = WorkspacesListModel(WorkspacesData(model, now: Date()))
 
     init(_ model: AppModel) {
         self.model = model
-        pipelines = PipelinesData(model, now: Date())
-        workspaces = WorkspacesListModel(WorkspacesData(model, now: Date()))
     }
 
     /// Returns whether a place can be shown again: an item under "Opened" that is still open, a row that is still in
@@ -26,7 +33,7 @@ struct NavigationResolver {
         }
         switch location.section {
         case .pipelines:
-            return pipelines.item(item) != nil
+            return pipelineJobs.contains(item)
         case .mergeRequests:
             return model.mergeRequests.list.map { $0.mergeRequests.contains { $0.id.absoluteString == item } } ?? true
         case .workItems:
@@ -36,7 +43,7 @@ struct NavigationResolver {
         case .slots:
             return item.isEmpty || (model.workItems.lists.map { $0.all.contains { $0.id == item } } ?? true)
                 || model.slotItems.items.contains { $0.id == item }
-        case .activity, .digest:
+        case .activity, .digest, .inbox:
             return true
         }
     }
@@ -78,7 +85,7 @@ struct NavigationResolver {
         case .slots:
             let found = (model.slotItems.items + (model.workItems.lists?.all ?? [])).first { $0.id == item }
             return found.map { "\($0.iid.map { "#\($0)" } ?? $0.reference) \($0.displayTitle)" } ?? location.section.title
-        case .activity, .digest:
+        case .activity, .digest, .inbox:
             return location.section.title
         }
     }

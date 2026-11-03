@@ -48,12 +48,12 @@ struct ProjectsSettingsForm: View {
             Section {
                 SettingsTextRow(
                     "Jenkins job", caption: "The multibranch job, as the browser shows it",
-                    text: binding(.jenkinsJobURL), prompt: TeamValueFields.prompt(of: .jenkinsJobURL),
+                    text: binding(.jenkinsJobURL), prompt: TeamValues.Key.jenkinsJobURL.prompt,
                     issue: issues[.jenkinsJobURL], stacked: true)
                 .settingsAnchor(.jenkinsJob)
                 SettingsTextRow(
                     "GitLab project", text: binding(.gitLabProject),
-                    prompt: TeamValueFields.prompt(of: .gitLabProject), issue: issues[.gitLabProject], width: 300)
+                    prompt: TeamValues.Key.gitLabProject.prompt, issue: issues[.gitLabProject], width: 300)
             } header: {
                 SettingsSectionHeader(selectedName, shared: true)
             }
@@ -132,10 +132,10 @@ struct AddProjectSheet: View {
                 Section {
                     SettingsTextRow(
                         "Jenkins job", caption: "The multibranch job that builds it, as the browser shows it",
-                        text: $values.jenkinsJobURL, prompt: TeamValueFields.prompt(of: .jenkinsJobURL), stacked: true)
+                        text: $values.jenkinsJobURL, prompt: TeamValues.Key.jenkinsJobURL.prompt, stacked: true)
                     SettingsTextRow(
                         "GitLab project", caption: "Its path on GitLab", text: $values.gitLabProject,
-                        prompt: TeamValueFields.prompt(of: .gitLabProject), width: 260)
+                        prompt: TeamValues.Key.gitLabProject.prompt, width: 260)
                     if let error {
                         StatusLine(.problem, error)
                     }

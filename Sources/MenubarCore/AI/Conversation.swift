@@ -105,6 +105,10 @@ extension AIAnswer {
             }
             return lines.isEmpty ? "Nothing to summarize." : lines.joined(separator: "\n")
         }
+        // The digest's cards as Markdown; Claude's raw JSON tells less.
+        if let digest {
+            return digest.markdown
+        }
         return text ?? ""
     }
 }
@@ -121,6 +125,7 @@ extension AIUseCase {
         case .askAboutCode: "The developer's first question is at the end of the facts above."
         case .openInClaudeCode: "The developer asked for help with this item."
         case .askAboutItem: "The developer's first question is at the end of the facts above."
+        case .coffeeBreak: "The developer's team has its coffee break."
         }
     }
 }

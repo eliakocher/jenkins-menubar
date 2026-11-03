@@ -638,7 +638,7 @@ public final class MergeRequestDetailsStore {
         var fromDisk = false
     }
 
-    private var entries: [String: Entry] = [:]
+    private let entries = ObservedEntries<String, Entry>()
     /// whether the stored token can write, as GitLab's answer to ``checkWriteAccess()`` says (MR-09)
     public private(set) var writeAccess: WriteAccess = .unknown
     /// the fingerprint of the token ``writeAccess`` was asked with: a token's scopes never change, so it is asked once

@@ -12,9 +12,12 @@ public struct PanelData: Sendable {
     public var workItems: WorkItems
     /// where the app's update stands (APP-05)
     public var update: UpdateState
+    /// the Inbox's pending rows, for the menu pane; empty where the Inbox isn't read (the window's lists)
+    public var inbox: Inbox
 
     public init(now: Date, team: TeamValues, jenkins: Jenkins, mergeRequests: MergeRequests, workItems: WorkItems,
-                update: UpdateState = .upToDate) {
+                update: UpdateState = .upToDate, inbox: Inbox = Inbox()) {
+        self.inbox = inbox
         self.now = now
         self.team = team
         self.jenkins = jenkins
@@ -122,6 +125,28 @@ public struct PanelData: Sendable {
             self.rebuilds = rebuilds
             self.myJobs = myJobs
             self.watchedJobs = watchedJobs
+        }
+    }
+
+    /// The Inbox, from `InboxStore`: the pending rows, newest first, and the badge (INBOX-02).
+    public struct Inbox: Sendable {
+        public var entries: [InboxEntry]
+        /// the pane row's count (`InboxStore.badgeCount`)
+        public var badgeCount: Int
+        /// whether the to-dos loaded at least once
+        public var hasLoaded: Bool
+        public var isLoading: Bool
+        public var problem: Problem?
+
+        public init(
+            entries: [InboxEntry] = [], badgeCount: Int = 0, hasLoaded: Bool = true, isLoading: Bool = false,
+            problem: Problem? = nil
+        ) {
+            self.entries = entries
+            self.badgeCount = badgeCount
+            self.hasLoaded = hasLoaded
+            self.isLoading = isLoading
+            self.problem = problem
         }
     }
 

@@ -57,7 +57,7 @@ struct InlineClaudeChat<Footer: View>: View {
                     send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
                 ) { answer in
                     if let text = answer.text {
-                        MarkdownView(document: MarkdownDocument(parsing: text, base: base))
+                        MarkdownView(markdown: text, base: base)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

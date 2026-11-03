@@ -121,7 +121,7 @@ public final class WorkspacesStore {
         }
     }
 
-    /// Keeps the terminal Open in Terminal and Open in Claude Code use.
+    /// Keeps the terminal Open in Terminal and Continue in Claude Code use.
     ///
     /// - Parameter id: the terminal's bundle identifier; `nil` for Default
     public func setTerminal(_ id: String?) {

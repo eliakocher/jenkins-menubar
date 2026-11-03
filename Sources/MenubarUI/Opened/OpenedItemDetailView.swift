@@ -71,10 +71,12 @@ public struct OpenedItemDetailView: View {
         let jobURL = model.team.project(build.project)?.team.jenkinsJob
         var row = BuildRowModel(build: build, now: date, jobURL: jobURL)
         row.offersRebuild = false
-        row.rebuildWithChanges = nil
         var detail = BuildDetailModel(row: row, now: date)
         detail.canHide = false
         detail.canStopWatching = false
+        // Without it the Recent Builds tiles do nothing: a build opened from a tile couldn't open the next (the user,
+        // 2026-11-03).
+        detail.jobURL = jobURL
         detail.mergeRequest = model.mergeRequest(ofBuild: build)
         detail.workItems = model.workItems(ofBuild: build)
         return detail

@@ -89,6 +89,59 @@ extension JenkinsClient {
     public func rebuild(job: String, number: Int) async throws -> QueueItem {
         let parameters = try await rebuildStep { try await self.parameters(job: job, number: number) }
         let parameterized = try await rebuildStep { try await self.isParameterized(job: job) }
+        return try await start(job: job, parameters: parameters, parameterized: parameterized)
+    }
+
+    /// Starts a build's job with parameters the user edited (PIPE-09), instead of the build's own.
+    ///
+    /// - Parameters:
+    ///   - job: the job's name as in Jenkins URLs
+    ///   - form: the edited form; its ``RebuildForm/parameters`` are sent
+    /// - Returns: the queue item the new build waits in
+    public func rebuild(job: String, form: RebuildForm) async throws -> QueueItem {
+        try await start(job: job, parameters: form.parameters, parameterized: form.isParameterized)
+    }
+
+    /// Returns what "Rebuild with Changes…" shows: the job's parameter definitions filled with the build's values.
+    ///
+    /// - Parameters:
+    ///   - job: the job's name as in Jenkins URLs
+    ///   - number: the build to start again
+    public func rebuildForm(job: String, number: Int) async throws -> RebuildForm {
+        let original = try await rebuildStep { try await self.parameters(job: job, number: number) }
+        let definitions = try await rebuildStep { try await self.parameterDefinitions(job: job) }
+        return RebuildForm(definitions: definitions, original: original)
+    }
+
+    /// Returns the job's parameter definitions, from `property[parameterDefinitions[name,type,description,choices,
+    /// defaultParameterValue[value]]]`.
+    ///
+    /// - Parameter job: the job's name as in Jenkins URLs
+    /// - Returns: the definitions, in the job's order; empty for a job without
+    public func parameterDefinitions(job: String) async throws -> [ParameterDefinition] {
+        let tree = "property%5BparameterDefinitions%5Bname,type,description,choices,defaultParameterValue%5Bvalue%5D%5D%5D"
+        let answer: DefinitionsAnswer = try await get(
+            "/job/\(Self.safe(job))/api/json?tree=\(tree)",
+            timeout: timeouts.jenkins, notFound: .gone, timedOut: .unreachable(.jenkins))
+        var definitions: [ParameterDefinition] = []
+        for definition in (answer.property ?? []).compactMap({ $0?.parameterDefinitions }).joined().compactMap({ $0 }) {
+            guard let name = definition.name, !name.isEmpty, !definitions.contains(where: { $0.name == name }) else {
+                continue
+            }
+            // `type` is what the tree asks for; `_class` comes with every object and names the type as well.
+            let kind = (definition.type ?? definition.className).map(ParameterDefinition.kind(ofJenkinsType:)) ?? .unsupported
+            definitions.append(
+                ParameterDefinition(
+                    name: name, kind: kind, choices: (definition.choices ?? []).compactMap { $0 },
+                    defaultValue: definition.defaultParameterValue?.value?.text,
+                    details: definition.description.flatMap { $0.isEmpty ? nil : $0 }))
+        }
+        return definitions
+    }
+
+    /// Posts the build request: `buildWithParameters` with the parameters form-encoded for a parameterized job, `build`
+    /// for one without.
+    private func start(job: String, parameters: [BuildParameter], parameterized: Bool) async throws -> QueueItem {
         let page = parameterized ? "buildWithParameters" : "build"
         let response = try await post(jobPage(job, page), form: parameterized ? Self.form(parameters) : nil)
         switch response.status {
@@ -322,6 +375,32 @@ private struct DefinitionsAnswer: Decodable {
     struct Property: Decodable {
         struct Definition: Decodable {
             var name: String?
+            /// the exported `type`, like `StringParameterDefinition`
+            var type: String?
+            var className: String?
+            var description: String?
+            var choices: [String?]?
+            var defaultParameterValue: DefaultValue?
+
+            private enum CodingKeys: String, CodingKey {
+                case name, type, description, choices, defaultParameterValue
+                case className = "_class"
+            }
+
+            // Each field is read on its own, so that one of an unexpected shape doesn't lose the definition.
+            init(from decoder: any Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                name = try? container.decode(String.self, forKey: .name)
+                type = try? container.decode(String.self, forKey: .type)
+                className = try? container.decode(String.self, forKey: .className)
+                description = try? container.decode(String.self, forKey: .description)
+                choices = try? container.decode([String?].self, forKey: .choices)
+                defaultParameterValue = try? container.decode(DefaultValue.self, forKey: .defaultParameterValue)
+            }
+        }
+
+        struct DefaultValue: Decodable {
+            var value: ParametersAnswer.Value?
         }
 
         var parameterDefinitions: [Definition?]?

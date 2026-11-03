@@ -1,0 +1,131 @@
+{
+  "data": {
+    "currentUser": {
+      "username": "alex.doe",
+      "pending": {
+        "count": 6,
+        "nodes": [
+          {
+            "id": "gid://gitlab/Todo/905",
+            "action": "mentioned",
+            "targetType": "MERGEREQUEST",
+            "state": "pending",
+            "body": "@alex.doe could you look at the retry loop?",
+            "createdAt": "2026-10-30T14:05:11Z",
+            "snoozedUntil": null,
+            "author": { "username": "sam.rivera", "name": "Sam Rivera" },
+            "project": { "fullPath": "acme/web/app" },
+            "targetEntity": {
+              "webUrl": "https://gitlab.example.com/acme/web/app/-/merge_requests/41",
+              "name": "Retry the upload when the network drops",
+              "iid": "41",
+              "reference": "acme/web/app!41"
+            }
+          },
+          {
+            "id": "gid://gitlab/Todo/904",
+            "action": "review_requested",
+            "targetType": "MERGEREQUEST",
+            "state": "pending",
+            "body": "Review requested",
+            "createdAt": "2026-10-30T11:20:00.123Z",
+            "snoozedUntil": null,
+            "author": { "username": "kim.lee", "name": "Kim Lee" },
+            "project": { "fullPath": "acme/web/app" },
+            "targetEntity": {
+              "webUrl": "https://gitlab.example.com/acme/web/app/-/merge_requests/39",
+              "name": "Move the settings into one file",
+              "iid": "39",
+              "reference": "acme/web/app!39"
+            }
+          },
+          {
+            "id": "gid://gitlab/Todo/903",
+            "action": "assigned",
+            "targetType": "WORKITEM",
+            "state": "pending",
+            "body": "Assigned to you",
+            "createdAt": "2026-10-29T09:00:00Z",
+            "snoozedUntil": null,
+            "author": { "username": "kim.lee", "name": "Kim Lee" },
+            "project": { "fullPath": "acme/tools/cli" },
+            "targetEntity": {
+              "webUrl": "https://gitlab.example.com/acme/tools/cli/-/work_items/7",
+              "name": "The export forgets the last line",
+              "iid": "7",
+              "reference": "acme/tools/cli#7"
+            }
+          },
+          {
+            "id": "gid://gitlab/Todo/902",
+            "action": "build_failed",
+            "targetType": "MERGEREQUEST",
+            "state": "pending",
+            "body": "The pipeline failed",
+            "createdAt": "2026-10-28T16:45:00Z",
+            "snoozedUntil": null,
+            "author": { "username": "alex.doe", "name": "Alex Doe" },
+            "project": { "fullPath": "acme/web/app" },
+            "targetEntity": {
+              "webUrl": "https://gitlab.example.com/acme/web/app/-/merge_requests/37",
+              "name": "Draw the chart with fewer points",
+              "iid": "37",
+              "reference": "acme/web/app!37"
+            }
+          },
+          {
+            "id": "gid://gitlab/Todo/901",
+            "action": "duo_workflow_input_required",
+            "targetType": "PROJECT",
+            "state": "pending",
+            "body": "A workflow waits for you",
+            "createdAt": "2026-10-27T08:00:00Z",
+            "snoozedUntil": null,
+            "author": { "username": "kim.lee", "name": "Kim Lee" },
+            "project": { "fullPath": "acme/web/app" },
+            "targetEntity": null
+          },
+          {
+            "id": "gid://gitlab/Todo/900",
+            "action": "directly_addressed",
+            "targetType": "ISSUE",
+            "state": "pending",
+            "body": "@alex.doe this one is yours now",
+            "createdAt": "2026-10-26T10:10:10Z",
+            "snoozedUntil": null,
+            "author": null,
+            "project": { "fullPath": "acme/tools/cli" },
+            "targetEntity": {
+              "webUrl": "https://gitlab.example.com/acme/tools/cli/-/issues/5",
+              "name": "Add a dry run",
+              "iid": "5",
+              "reference": "acme/tools/cli#5"
+            }
+          }
+        ]
+      },
+      "snoozed": {
+        "count": 1,
+        "nodes": [
+          {
+            "id": "gid://gitlab/Todo/899",
+            "action": "review_requested",
+            "targetType": "MERGEREQUEST",
+            "state": "pending",
+            "body": "Review requested",
+            "createdAt": "2026-10-25T12:00:00Z",
+            "snoozedUntil": "2026-11-03T09:00:00Z",
+            "author": { "username": "sam.rivera", "name": "Sam Rivera" },
+            "project": { "fullPath": "acme/web/app" },
+            "targetEntity": {
+              "webUrl": "https://gitlab.example.com/acme/web/app/-/merge_requests/35",
+              "name": "Cache the avatars",
+              "iid": "35",
+              "reference": "acme/web/app!35"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

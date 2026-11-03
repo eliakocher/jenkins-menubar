@@ -83,13 +83,18 @@ struct MenuFlyout: Sendable {
         entries.map { .entry($0.id) } + commands.map(Item.command)
     }
 
+    /// the most entries this flyout lists: ``cap``, or fewer from Settings → Menu Bar (APP-11)
+    var limit = Self.cap
+
     /// Returns the flyout of an area.
     ///
     /// - Parameters:
     ///   - data: the stores' values
     ///   - area: the area
-    init(_ data: PanelData, area: MainWindowSection) {
+    ///   - limit: the most entries it lists, ``cap`` at most
+    init(_ data: PanelData, area: MainWindowSection, limit: Int = Self.cap) {
         self.area = area
+        self.limit = min(max(limit, 1), Self.cap)
         sections = []
         note = nil
         isPlaceholder = false
@@ -105,6 +110,30 @@ struct MenuFlyout: Sendable {
             fillMergeRequests(data)
         } else if area == .workItems {
             fillWorkItems(data)
+        } else if area == .inbox {
+            fillInbox(data)
+        }
+    }
+
+    /// The newest pending to-dos, the window and GitLab's To-Do List (INBOX-02). The Inbox needs no team values, but the
+    /// pane shows nothing of it without them, as for the other areas.
+    private mutating func fillInbox(_ data: PanelData) {
+        let state = data.inbox
+        let rows = state.entries.map { InboxRowModel($0, now: data.now) }
+        if state.problem == .noToken(.gitLab), rows.isEmpty {
+            note = PanelModel.SetupText.needsToken
+            commands = [.settings(.accounts)]
+            return
+        }
+        isPlaceholder = !state.hasLoaded && state.problem == nil && rows.isEmpty
+        if rows.isEmpty, state.hasLoaded {
+            note = "Inbox Zero"
+        }
+        let shown = rows.count > limit ? "\(limit) of \(rows.count)" : String(rows.count)
+        cap(rows.isEmpty ? [] : [Section(title: "Pending", count: shown, entries: rows.map { MenuEntry(inbox: $0) })])
+        commands.append(.showInWindow(all: total > limit ? total : nil))
+        if let url = data.team.gitLab.map({ GitLabLinks.todos(gitLab: $0) }) {
+            commands.append(.link("All To-Dos in GitLab", url))
         }
     }
 
@@ -143,7 +172,7 @@ struct MenuFlyout: Sendable {
         if let hidden = list.showHiddenTitle ?? list.empty?.showHiddenTitle {
             commands.append(.showHidden(hidden))
         }
-        commands.append(.showInWindow(all: total > Self.cap ? total : nil))
+        commands.append(.showInWindow(all: total > limit ? total : nil))
         if let url = list.allBuilds ?? list.empty?.allBuilds {
             commands.append(.link("All Builds in Jenkins", url))
         }
@@ -169,7 +198,7 @@ struct MenuFlyout: Sendable {
                 MenuEntry(mergeRequest: $0, now: data.now)
             })
         })
-        commands.append(.showInWindow(all: total > Self.cap ? total : nil))
+        commands.append(.showInWindow(all: total > limit ? total : nil))
         if let url = list.link ?? list.emptyLink {
             commands.append(.link("All Merge Requests in GitLab", url))
         }
@@ -197,16 +226,16 @@ struct MenuFlyout: Sendable {
                 })
             })
         }
-        commands.append(.showInWindow(all: total > Self.cap ? total : nil))
+        commands.append(.showInWindow(all: total > limit ? total : nil))
         if let url = list.link ?? list.empty?.link {
             commands.append(.link("All Work Items in GitLab", url))
         }
     }
 
-    /// Keeps the first ``cap`` entries, section by section, and counts them all.
+    /// Keeps the first ``limit`` entries, section by section, and counts them all.
     private mutating func cap(_ all: [Section]) {
         total = all.reduce(0) { $0 + $1.entries.count }
-        var room = Self.cap
+        var room = limit
         sections = all.compactMap { section in
             guard room > 0 else {
                 return nil
@@ -230,10 +259,13 @@ enum MenuSelection: Hashable, Sendable {
     case build(job: String)
     case mergeRequest(MergeRequest.ID)
     case workItem(WorkItem.ID)
+    /// the Inbox, which has no selection of its own: a row opens its target
+    case inbox
 
     /// the section that shows it
     var section: MainWindowSection {
         switch self {
+        case .inbox: .inbox
         case .build: .pipelines
         case .mergeRequest: .mergeRequests
         case .workItem: .workItems
@@ -247,6 +279,8 @@ enum MenuEntryDestination: Hashable, Sendable {
     case window(MenuSelection)
     /// Jenkins or GitLab in the browser
     case browser(URL)
+    /// an Inbox entry's target, shown in the app: its list, or "Opened"
+    case item(URL)
 }
 
 /// One entry of a flyout: the colored status symbol, the title (cut by width), the grey line that tells entries apart,
@@ -257,6 +291,8 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
         case build(BuildRowModel)
         case mergeRequest(MergeRequestRowModel)
         case workItem(WorkItemRowModel)
+        /// a pending to-do or a thing of this app (INBOX-02)
+        case inbox(InboxRowModel)
     }
 
     var kind: Kind
@@ -336,6 +372,25 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
         id = "wi:\(item.id)"
     }
 
+    /// An Inbox entry: the kind's symbol in its color, "Mentioned you: Fix the login redirect" and the grey line "!12 ·
+    /// Alex Doe · 5m ago", which the row draws with the window's own chip and avatar (INBOX-02). A click shows the target in
+    /// the app, ⌥ in GitLab.
+    init(inbox row: InboxRowModel) {
+        let entry = row.entry
+        kind = .inbox(row)
+        title = row.title
+        subtitle = [row.reference?.text, row.author?.name, "\(row.age) ago"].compactMap { $0 }.joined(separator: " · ")
+        symbol = row.symbol
+        tint = row.tint.menuTint
+        progress = nil
+        pill = nil
+        url = entry.targetURL
+        openTitle = InboxOpening.isLocal(entry) ? "Show in App" : "Open in GitLab"
+        selection = .inbox
+        problem = nil
+        id = "inbox:\(entry.id)"
+    }
+
     /// Returns where a click or Return on the entry goes: the app's own window, or with ⌥ the page in the browser.
     /// An entry without a page has no browser to go to, so ⌥ shows it in the window too.
     ///
@@ -343,6 +398,9 @@ struct MenuEntry: Hashable, Sendable, Identifiable {
     func destination(option: Bool) -> MenuEntryDestination {
         if option, let url {
             return .browser(url)
+        }
+        if case .inbox = kind, let url {
+            return .item(url)
         }
         return .window(selection)
     }

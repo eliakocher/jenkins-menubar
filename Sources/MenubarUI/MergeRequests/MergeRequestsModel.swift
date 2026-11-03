@@ -164,7 +164,7 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
     var shortReference: String
     /// "!21 · Ready to merge"
     var lead: String
-    /// "by Sam Lee · updated 5m ago · 3 files +10 −2 · pipeline success"
+    /// "by Sam Lee · updated 5m ago · pipeline canceled"
     var rest: String
     /// "Open Merge Request !21 in GitLab"
     var openTitle: String
@@ -172,8 +172,8 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
     var isMine: Bool
     /// "5m ago", at the right end of the row's first line
     var age: String
-    /// what follows ``lead`` on the row's second line, least important last: "by Sam Lee" (not for mine),
-    /// "3 files +10 −2" and "pipeline success" (none without a pipeline, or when the badge names it); with the age they are ``rest``
+    /// what follows ``lead`` on the row's second line, least important last: "by Sam Lee" (not for mine) and
+    /// "pipeline canceled" (none without a pipeline, for a green one, or when the badge names it); with the age they are ``rest``
     var more: [String]
 
     var id: MergeRequest.ID { mergeRequest.id }
@@ -203,9 +203,7 @@ struct MergeRequestRowModel: Hashable, Sendable, Identifiable {
         if !isMine, !mergeRequest.author.name.isEmpty {
             more.append("by \(mergeRequest.author.name)")
         }
-        let stats = mergeRequest.diffStats ?? MergeRequest.DiffStats(additions: 0, deletions: 0, fileCount: 0)
-        more.append("\(stats.fileCount) file\(stats.fileCount == 1 ? "" : "s") +\(stats.additions) −\(stats.deletions)")
-        if let pipeline = mergeRequest.pipelineStatus, !MergeRequestStatus.textNamesPipeline(status.text) {
+        if let pipeline = mergeRequest.pipelineStatus, pipeline != .success, !MergeRequestStatus.textNamesPipeline(status.text) {
             more.append("pipeline \(pipeline.rawValue.lowercased())")
         }
         self.more = more

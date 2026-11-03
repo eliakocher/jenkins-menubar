@@ -1,7 +1,7 @@
 import MenubarCore
 import SwiftUI
 
-/// The work item rows' symbols and caps, shared by the list and the detail.
+/// The work item rows' caps, shared by the list and the detail.
 enum WorkItemRowStyle {
     /// the most of the line the reference takes when the line is short of room
     static let referenceCap: CGFloat = 0.3
@@ -9,14 +9,6 @@ enum WorkItemRowStyle {
     static let slotCap: CGFloat = 0.3
     /// the most of the line the merge request chip takes when the line is short of room
     static let chipCap: CGFloat = 0.4
-
-    /// The symbols of the markers: two shapes, an open and a merged MR.
-    static func symbol(of marker: RelatedMergeRequestMarker) -> String {
-        switch marker {
-        case .open: "arrow.triangle.pull"
-        case .merged: "arrow.triangle.merge"
-        }
-    }
 }
 
 /// A work item's row in the window's list, in the shape the three lists share (``ListRow``; `docs/design/work-items.md`,
@@ -56,8 +48,8 @@ struct WorkItemDetailsLine: View {
             Text(verbatim: Self.plainText(of: row))
         } else {
             PanelLineLayout {
-                Text(verbatim: row.reference)
-                    .truncationMode(.middle)
+                // The number as a small blue chip (the user, 2026-11-03).
+                WorkItemNumberChip(text: row.reference)
                     .panelLineCap(WorkItemRowStyle.referenceCap)
                 if let slot = row.slotLabel {
                     Text(verbatim: " ")
@@ -71,7 +63,8 @@ struct WorkItemDetailsLine: View {
                         .panelLineCap(WorkItemRowStyle.chipCap)
                 }
                 if let second = row.secondLine {
-                    Text(verbatim: " · \(second)")
+                    // After the chips no dot: the chips already set the facts apart.
+                    Text(verbatim: "  \(second)")
                 } else {
                     Text(verbatim: "")
                 }
@@ -81,35 +74,12 @@ struct WorkItemDetailsLine: View {
     }
 }
 
-/// The merge request chip: the merge glyph and "!14 +1" in the state's color (open green, a draft grey, merged purple) on
-/// a faint fill of it; the tooltip lists the MRs with their states and titles.
+/// The merge request chip: "!14 +1" in the merge request green, whatever the state (the user, 2026-11-03); the tooltip
+/// lists the MRs with their states and titles. Chip and number are ``MergeRequestNumberChip``'s.
 struct WorkItemMergeRequestChipView: View {
     let chip: WorkItemMergeRequestChip
-    /// set by a menu row while it is highlighted: the chip then draws white on a lighter fill, as the row's text
-    @Environment(\.menuHighlighted) private var isHighlighted
 
     var body: some View {
-        HStack(spacing: 2) {
-            Image(systemName: chip.symbol)
-            if let text = chip.text {
-                Text(verbatim: text)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        }
-        .font(.caption)
-        .foregroundStyle(isHighlighted ? Color.white : tint)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 1)
-        .background(isHighlighted ? Color.white.opacity(0.22) : tint.opacity(0.14), in: Capsule())
-        .help(chip.help)
-    }
-
-    private var tint: Color {
-        switch chip.kind {
-        case .open: MergeRequestStatus.Color.green.swiftUI
-        case .draft: .secondary
-        case .merged: .purple
-        }
+        MergeRequestNumberChip(text: chip.text ?? "!", help: chip.help)
     }
 }

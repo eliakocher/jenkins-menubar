@@ -38,6 +38,9 @@ final class MenuPaneController {
     @ObservationIgnored private var contentHeight: CGFloat = 0
     /// the area the panel was last put beside, whose content the height is
     @ObservationIgnored private var placedArea: MainWindowSection?
+    /// Places the flyout again when the pane's window resizes: a child window keeps its offset from the parent's
+    /// origin, so without it a pane that shrinks under the menu bar pushes the flyout up and off the screen.
+    @ObservationIgnored private var paneResizeObserver: (any NSObjectProtocol)?
     /// whether the pane is on screen; the flyout never shows without it
     @ObservationIgnored private(set) var isPaneVisible = false
 
@@ -85,7 +88,8 @@ final class MenuPaneController {
             navigation.focus = .pane
         }
         let target: MenuHover.Target
-        if case .area(let section) = row {
+        // An area without a flyout is like a footer row: it closes the open flyout (APP-11).
+        if case .area(let section) = row, !navigation.flyoutless.contains(section) {
             target = .area(section)
         } else {
             target = .otherRow
@@ -254,6 +258,7 @@ final class MenuPaneController {
         let placement = MenuFlyoutPlacement.frame(
             row: row, pane: window.frame, size: size, visible: visible, topInset: MenuMetrics.edge)
         panel.setFrame(placement.frame, display: true)
+        observeResize(of: window)
         guard panel.parent !== window || !panel.isVisible else {
             return
         }
@@ -278,6 +283,9 @@ final class MenuPaneController {
         }
         let panel = MenuFlyoutPanel()
         let hosting = MenuFlyoutHostingView(rootView: root)
+        // Only `place` sizes the panel, inside the screen; a hosting view that resized its window would keep the
+        // bottom edge and grow the flyout up past the menu bar.
+        hosting.sizingOptions = []
         panel.setContent(hosting)
         self.panel = panel
         self.hosting = hosting
@@ -292,6 +300,27 @@ final class MenuPaneController {
         panel.orderOut(nil)
         contentHeight = 0
         placedArea = nil
+        if let paneResizeObserver {
+            NotificationCenter.default.removeObserver(paneResizeObserver)
+            self.paneResizeObserver = nil
+        }
+    }
+
+    /// Starts placing the flyout again whenever the pane's window resizes, once per showing.
+    private func observeResize(of window: NSWindow) {
+        guard paneResizeObserver == nil else {
+            return
+        }
+        paneResizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResizeNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.panel?.isVisible == true else {
+                    return
+                }
+                self.place(fade: false)
+            }
+        }
     }
 
     /// Returns the height of a flyout's content, measured before the panel shows, so it opens at its size.

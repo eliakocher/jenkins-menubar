@@ -58,8 +58,8 @@ struct MenuFlyoutTests {
         let rows = flyout.entries.compactMap { entry -> WorkItemRowModel? in
             if case .workItem(let row) = entry.kind { row } else { nil }
         }
-        // The chip counts the related MRs of the panel's data: #31 has !14 open and !11 merged.
-        #expect(rows.first?.mergeRequestChip?.text == "!14 +1")
+        // The chip counts the item's own MRs of the panel's data: #31 has !14 open, and !11 only mentions it.
+        #expect(rows.first?.mergeRequestChip?.text == "!14")
         #expect(rows.last?.secondLine?.contains("Closed") == true)
     }
 }

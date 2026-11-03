@@ -10,7 +10,12 @@ import Markdown
 /// - raw HTML shows as text, never rendered. HTML comments are left out, as GitLab hides them (the templates' hints),
 ///   and `<br>` breaks the line, as it does in GitLab's table cells.
 ///
-/// The inline text carries Foundation's attributes only: `link` and `inlinePresentationIntent`. The view styles them.
+/// GitLab's short references are links when the item's page tells the project: `!12` a merge request, `#34` a work item,
+/// `group/project!12` one of another project; an `@username` links to the user's page on the same GitLab. Both carry a
+/// ``MarkdownRoleAttribute`` so that the view draws them as chips.
+///
+/// The inline text carries Foundation's attributes only: `link` and `inlinePresentationIntent`, and the role. The view
+/// styles them; ``MarkdownDocument/rendered(_:base:)`` parses and styles once per text.
 struct MarkdownDocument: Hashable, Sendable {
     var blocks: [MarkdownBlock]
 
@@ -61,10 +66,35 @@ indirect enum MarkdownBlock: Hashable, Sendable {
     /// a fenced or indented code block, without its last line break
     case code(language: String?, String)
     case quote([MarkdownBlock])
+    /// a quote that starts with `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]`, as GitLab and GitHub
+    /// draw them, without that marker
+    case callout(MarkdownCallout, [MarkdownBlock])
     case table(MarkdownTable)
     /// raw HTML, shown as text
     case rawText(String)
     case rule
+}
+
+/// The kind of a callout, from its `[!KIND]` marker.
+enum MarkdownCallout: String, Hashable, Sendable, CaseIterable {
+    case note, tip, important, warning, caution
+
+    /// "Note", "Warning"
+    var title: String { rawValue.capitalized }
+}
+
+/// What a piece of inline text stands for, beyond a link: the view draws both as chips.
+enum MarkdownRole: Hashable, Sendable {
+    /// `!12`, `#34`, `group/project!12`
+    case reference
+    /// `@username`
+    case mention
+}
+
+/// The ``MarkdownRole`` of a run of inline text.
+enum MarkdownRoleAttribute: AttributedStringKey {
+    typealias Value = MarkdownRole
+    static let name = "MegaMonitor.markdownRole"
 }
 
 /// A bulleted, numbered or task list.
@@ -97,6 +127,24 @@ struct MarkdownTable: Hashable, Sendable {
 /// Turns swift-markdown's tree into ``MarkdownBlock`` values.
 private struct MarkdownConverter {
     let base: URL?
+    /// `https://host/group/project` of an item's page, which `!12` and `#34` belong to; `nil` without one
+    private let project: String?
+    /// `https://host` of a GitLab page, which `group/project!12` and `@username` belong to; `nil` without one
+    private let host: String?
+
+    init(base: URL?) {
+        self.base = base
+        // Only a GitLab page (`…/-/merge_requests/5`) tells the project; a Jenkins build's page doesn't.
+        let page = base?.absoluteString ?? ""
+        if let base, let marker = page.range(of: "/-/"), let scheme = base.scheme, let name = base.host() {
+            let root = String(page[..<marker.lowerBound])
+            host = "\(scheme)://\(name)" + (base.port.map { ":\($0)" } ?? "")
+            project = (URL(string: root)?.path() ?? "").hasPrefix("/groups/") ? nil : root
+        } else {
+            host = nil
+            project = nil
+        }
+    }
 
     func blocks(_ children: MarkupChildren) -> [MarkdownBlock] {
         children.compactMap(block)
@@ -122,6 +170,9 @@ private struct MarkdownConverter {
             return .code(language: language, text)
         case let quote as BlockQuote:
             let inner = blocks(quote.children)
+            if let (kind, rest) = Self.callout(inner) {
+                return .callout(kind, rest)
+            }
             return inner.isEmpty ? nil : .quote(inner)
         case let table as Markdown.Table:
             return .table(self.table(table))
@@ -135,6 +186,27 @@ private struct MarkdownConverter {
             let text = markup.format().trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : .rawText(text)
         }
+    }
+
+    /// The callout a quote's blocks make when the first paragraph starts with `[!KIND]`, and the blocks without it.
+    private static func callout(_ blocks: [MarkdownBlock]) -> (MarkdownCallout, [MarkdownBlock])? {
+        guard case .paragraph(let text)? = blocks.first else {
+            return nil
+        }
+        let characters = text.characters
+        guard characters.first == "[", let close = characters.firstIndex(of: "]") else {
+            return nil
+        }
+        let marker = String(characters[characters.index(after: characters.startIndex)..<close])
+        guard marker.hasPrefix("!"), let kind = MarkdownCallout(rawValue: marker.dropFirst().lowercased()) else {
+            return nil
+        }
+        var start = characters.index(after: close)
+        while start < characters.endIndex, characters[start].isWhitespace {
+            start = characters.index(after: start)
+        }
+        let rest = AttributedString(text[start...])
+        return (kind, (rest.characters.isEmpty ? [] : [.paragraph(rest)]) + blocks.dropFirst())
     }
 
     private func item(_ item: ListItem) -> MarkdownList.Item {
@@ -169,7 +241,7 @@ private struct MarkdownConverter {
     private func inline(_ markup: any Markup) -> AttributedString {
         switch markup {
         case let text as Markdown.Text:
-            return Self.linkingWebAddresses(in: text.string)
+            return linkingAddresses(in: text.string)
         case is SoftBreak:
             return AttributedString(" ")
         case is LineBreak:
@@ -257,12 +329,12 @@ private struct MarkdownConverter {
         return URL(string: destination, relativeTo: URL(string: root + "/"))?.absoluteURL
     }
 
-    /// Plain text with its `http` and `https` addresses as links, as GitLab links them.
-    private static func linkingWebAddresses(in string: String) -> AttributedString {
+    /// Plain text with its `http` and `https` addresses as links, as GitLab links them, and its references and mentions.
+    private func linkingAddresses(in string: String) -> AttributedString {
         guard string.contains("http") || string.contains("www."),
             let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
         else {
-            return AttributedString(string)
+            return referencing(string[...])
         }
         var text = AttributedString()
         var rest = string.startIndex
@@ -272,9 +344,57 @@ private struct MarkdownConverter {
             else {
                 continue
             }
-            text += AttributedString(string[rest..<range.lowerBound])
+            text += referencing(string[rest..<range.lowerBound])
             var linked = AttributedString(string[range])
             linked.link = url
+            text += linked
+            rest = range.upperBound
+        }
+        text += referencing(string[rest...])
+        return text
+    }
+
+    /// `!12`, `#34`, `group/project!12` or `@username`, not inside a word, a path or an e-mail address.
+    nonisolated(unsafe) private static let reference =
+        /(?:((?:[\w.\-]+\/)+[\w.\-]+)?([!#])(\d+)(?!\w))|@([A-Za-z0-9_](?:[A-Za-z0-9_.\-]*[A-Za-z0-9_])?)/
+
+    /// Plain text with GitLab's references as links to the item, and mentions as links to the user, when the page
+    /// tells the GitLab; without one, a mention is still marked and a reference stays text.
+    private func referencing(_ string: Substring) -> AttributedString {
+        guard string.contains(where: { $0 == "!" || $0 == "#" || $0 == "@" }) else {
+            return AttributedString(string)
+        }
+        var text = AttributedString()
+        var rest = string.startIndex
+        for match in string.matches(of: Self.reference) {
+            let range = match.range
+            if range.lowerBound > string.startIndex {
+                let before = string[string.index(before: range.lowerBound)]
+                if before.isLetter || before.isNumber || "_/.!#&@-".contains(before) {
+                    continue
+                }
+            }
+            var linked = AttributedString(string[range])
+            if let username = match.output.4 {
+                linked[MarkdownRoleAttribute.self] = .mention
+                if let host, username != "all" {
+                    linked.link = URL(string: "\(host)/\(username)")
+                }
+            } else {
+                let path = match.output.2 == "!" ? "merge_requests" : "issues"
+                let root: String?
+                if let qualified = match.output.1 {
+                    root = host.map { "\($0)/\(qualified)" }
+                } else {
+                    root = project
+                }
+                guard let root, let number = match.output.3, let url = URL(string: "\(root)/-/\(path)/\(number)") else {
+                    continue
+                }
+                linked[MarkdownRoleAttribute.self] = .reference
+                linked.link = url
+            }
+            text += AttributedString(string[rest..<range.lowerBound])
             text += linked
             rest = range.upperBound
         }

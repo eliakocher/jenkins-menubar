@@ -92,8 +92,9 @@ extension MergeRequest {
     }
 
     /// Returns the details of the MR, joined with " · ": the short reference, the badge text, "by <author>" when it
-    /// isn't mine, "updated 5m ago", "3 files +10 −2", and "pipeline success" when there is a pipeline and the badge
-    /// doesn't already name it ("Pipeline failed") (MR-03).
+    /// isn't mine, "updated 5m ago", and "pipeline canceled" and the like when the pipeline isn't green and the badge
+    /// doesn't already name it ("Pipeline failed"). A green pipeline isn't news and the diff stats are in the detail, so
+    /// neither shows (MR-03; the user, 2026-11-02: "trim both").
     ///
     /// - Parameters:
     ///   - me: my GitLab username
@@ -107,9 +108,7 @@ extension MergeRequest {
             parts.append("by \(author.name)")
         }
         parts.append("updated \(GitLabText.age(since: updatedAt, now: now)) ago")
-        let stats = diffStats ?? DiffStats(additions: 0, deletions: 0, fileCount: 0)
-        parts.append("\(stats.fileCount) file\(stats.fileCount == 1 ? "" : "s") +\(stats.additions) −\(stats.deletions)")
-        if let pipelineStatus, !MergeRequestStatus.textNamesPipeline(status.text) {
+        if let pipelineStatus, pipelineStatus != .success, !MergeRequestStatus.textNamesPipeline(status.text) {
             parts.append("pipeline \(pipelineStatus.rawValue.lowercased())")
         }
         return parts.joined(separator: " · ")

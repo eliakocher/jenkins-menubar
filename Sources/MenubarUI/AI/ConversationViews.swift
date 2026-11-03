@@ -93,7 +93,7 @@ private struct ClaudeReply: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            MarkdownView(document: MarkdownDocument(parsing: text, base: nil))
+            MarkdownView(markdown: text, base: nil)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
                 Image(systemName: "sparkles")

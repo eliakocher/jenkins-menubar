@@ -1,0 +1,11 @@
+{
+  "data": {
+    "users": {
+      "nodes": [
+        { "username": "slee", "name": "Sam Lee", "state": "active" },
+        { "username": "bkhan", "name": "Bo Khan", "state": "deactivated" },
+        { "username": "tgreen", "name": "Tess Green", "state": "active" }
+      ]
+    }
+  }
+}

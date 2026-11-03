@@ -55,9 +55,12 @@ struct MergeRequestsModelTests {
         var parts = [row.lead] + row.more
         parts.insert("updated \(row.age)", at: 1 + byCount)
         #expect(parts.joined(separator: " · ") == row.details)
-        // "pipeline success" shows when the badge doesn't name the pipeline; "Pipeline failed" already does.
+        // A pipeline shows when it isn't green and the badge doesn't name it ("Pipeline failed" already does); never the
+        // diff stats.
         let namesPipeline = MergeRequestStatus.textNamesPipeline(row.status.text)
-        #expect(row.more.contains { $0.hasPrefix("pipeline ") } == (mergeRequest.pipelineStatus != nil && !namesPipeline))
+        let showsPipeline = mergeRequest.pipelineStatus.map { $0 != .success } == true && !namesPipeline
+        #expect(row.more.contains { $0.hasPrefix("pipeline ") } == showsPipeline)
+        #expect(!row.details.contains(" files +") && !row.details.contains("pipeline success"))
         if index == 4 {
             #expect(row.details.lowercased().components(separatedBy: "pipeline").count == 2)
         }

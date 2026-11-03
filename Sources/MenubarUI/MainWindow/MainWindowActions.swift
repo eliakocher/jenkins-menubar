@@ -34,6 +34,8 @@ extension PanelActions {
             copy: { MainWindowLinks.copy($0) },
             close: {},
             rebuildBuild: { model.projects.rebuild($0) },
+            // The sheet shows on the main window, over the build's detail.
+            rebuildBuildWithChanges: { router.requestRebuildSheet(for: $0) },
             cancelRebuild: { job in
                 let projects = model.projects
                 Task { await projects.cancelRebuild(jobKey: job) }
@@ -87,7 +89,7 @@ enum MainWindowLinks {
                 return nil
             }
             return (model.slotItems.items + (model.workItems.lists?.all ?? [])).first { $0.id == id }?.webURL
-        case .activity, .digest:
+        case .activity, .digest, .inbox:
             return nil
         case .workspaces:
             // The checkout's merge request, else its work item (WS-04).

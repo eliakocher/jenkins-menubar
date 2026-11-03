@@ -47,3 +47,11 @@ The logs had no such answers.
 |---|---|---|
 | `merge-request-closes-issues.json` | MergeRequestClosesIssues (REST `closes_issues`) | GitLab's REST reference, "List issues that close on merge": the fields the app reads, made-up values; not taken from a real server |
 | `merge-request-related-issues.json` | MergeRequestRelatedIssues (REST `related_issues`) | the reference, "List issues related to the merge request"; one issue has `references.full` and one lives in another project |
+
+## Comment writes and members (written from GitLab's reference, never from a real answer)
+
+| File | Operation | Source |
+|---|---|---|
+| `comment-target-merge-request.json` | CommentTargetMergeRequest | made up from the reference: the global id and `diffRefs` |
+| `comment-note-created.json` | CommentCreateNote | made up from the reference: a created note with its discussion |
+| `project-members-page1.json`, `project-members-page2.json` | ProjectMembers | made up from the reference: two pages, one member without a user, one blocked |

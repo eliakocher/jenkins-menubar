@@ -31,6 +31,8 @@ public struct MainWindowCommands: Commands {
     @FocusedValue(\.activityCommands) private var activityCommands
     /// the reading size of rendered Markdown (WIN-02), in the same preferences the views' `@AppStorage` use
     @AppStorage(MarkdownReadingSize.key) private var readingSizeStep = MarkdownReadingSize.defaultStep
+    /// the sidebar's order of the sections, which ⌘1 and on follow (WIN-01)
+    @AppStorage(SectionOrder.key) private var sectionOrder = ""
 
     /// - Parameters:
     ///   - model: the app's model
@@ -47,6 +49,7 @@ public struct MainWindowCommands: Commands {
         self.handOver = handOver
         _readingSizeStep = AppStorage(
             wrappedValue: MarkdownReadingSize.defaultStep, MarkdownReadingSize.key, store: model.dependencies.preferences)
+        _sectionOrder = AppStorage(wrappedValue: "", SectionOrder.key, store: model.dependencies.preferences)
     }
 
     /// Shows the standard About panel with the credits as the easter eggs setting has them.
@@ -169,7 +172,10 @@ public struct MainWindowCommands: Commands {
             .disabled(activityCommands == nil)
             Divider()
             ForEach(
-                Array(MainWindowSection.sidebarSections(claudeIsOffered: model.ai.isOffered, shown: router.section).enumerated()),
+                Array(
+                    MainWindowSection.sidebarSections(
+                        claudeIsOffered: model.ai.isOffered, shown: router.section, order: sectionOrder
+                    ).enumerated()),
                 id: \.element
             ) { index, section in
                 Button(section.title) {
@@ -302,9 +308,9 @@ public struct MainWindowCommands: Commands {
         NewWorkItemLauncher.action(model: model) { [router] in router.browse($0) }?(source)
     }
 
-    /// whether the Watch a Build… sheet is up, which is modal
+    /// whether the Watch a Build… or the Rebuild with Changes… sheet is up, which are modal
     private var sheetIsUp: Bool {
-        router.watchRequest != nil
+        router.watchRequest != nil || router.rebuildRequest != nil
     }
 
     /// the item selected under "Opened" while the main window is key

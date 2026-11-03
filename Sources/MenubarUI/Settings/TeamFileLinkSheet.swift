@@ -322,7 +322,7 @@ private struct ChangeRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(TeamValueFields.label(of: change.key))
+            Text(change.key.label)
                 .font(.callout)
                 .foregroundStyle(.secondary)
             HStack(spacing: 6) {

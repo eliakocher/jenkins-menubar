@@ -1,0 +1,10 @@
+{
+  "errors": [
+    {
+      "message": "Field 'todos' doesn't accept argument 'isSnoozed'",
+      "locations": [{ "line": 25, "column": 51 }],
+      "path": ["query InboxTodos", "currentUser", "snoozed", "isSnoozed"],
+      "extensions": { "code": "argumentNotAccepted", "name": "todos", "typeName": "Field", "argumentName": "isSnoozed" }
+    }
+  ]
+}

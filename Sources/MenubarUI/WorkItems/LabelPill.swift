@@ -108,12 +108,25 @@ struct PillFlowLayout: Layout {
     var spacing: CGFloat = 6
     var lineSpacing: CGFloat = 6
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(width: proposal.width, subviews: subviews).size
+    /// The pills' ideal sizes, measured once per layout pass rather than for each width asked.
+    struct Cache {
+        var ideal: [CGSize]?
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let frames = arrange(width: proposal.width ?? bounds.width, subviews: subviews).frames
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache()
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache = Cache()
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        arrange(width: proposal.width, subviews: subviews, cache: &cache).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let frames = arrange(width: proposal.width ?? bounds.width, subviews: subviews, cache: &cache).frames
         for (subview, frame) in zip(subviews, frames) {
             subview.place(
                 at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
@@ -125,15 +138,18 @@ struct PillFlowLayout: Layout {
     /// - Parameters:
     ///   - width: the room in a line; `nil` puts every pill on one line
     ///   - subviews: the pills
-    private func arrange(width: CGFloat?, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
+    ///   - cache: the pills' ideal sizes, filled at the first call
+    private func arrange(width: CGFloat?, subviews: Subviews, cache: inout Cache) -> (frames: [CGRect], size: CGSize) {
+        let ideal = cache.ideal ?? subviews.map { $0.sizeThatFits(.unspecified) }
+        cache.ideal = ideal
         let room = width ?? .infinity
         var frames: [CGRect] = []
         var x: CGFloat = 0
         var y: CGFloat = 0
         var lineHeight: CGFloat = 0
         var widest: CGFloat = 0
-        for subview in subviews {
-            var size = subview.sizeThatFits(.unspecified)
+        for (subview, idealSize) in zip(subviews, ideal) {
+            var size = idealSize
             if size.width > room {
                 // A pill wider than the row is cut to the row.
                 size = subview.sizeThatFits(ProposedViewSize(width: room, height: nil))

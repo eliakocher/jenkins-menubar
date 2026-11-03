@@ -23,8 +23,11 @@ struct GitLabSearchRows: Equatable, Sendable {
         /// the full reference, like `group/project#12`, which is a work item row's tag
         var reference: String
         var title: String
-        /// "!12 · Open · by Sam Lee · group/project · updated 5m ago"
+        /// "Open · by Sam Lee · group/project · updated 5m ago", after the reference's chip
         var detail: String
+        /// the reference as its chip shows it, "!12" or "#31"; `nil` for a row without one
+        var shortReference: String?
+        var referenceKind: ReferenceKind = .mergeRequest
         var symbol: String
         /// "Open Merge Request !12 in GitLab"
         var openTitle: String
@@ -98,7 +101,7 @@ struct GitLabSearchRows: Equatable, Sendable {
 
 extension GitLabSearchRows.Row {
     init(_ hit: GitLabSearchHit, now: Date) {
-        var parts = [hit.shortReference, hit.isDraft && hit.isOpen ? "Draft" : hit.stateText]
+        var parts = [hit.isDraft && hit.isOpen ? "Draft" : hit.stateText]
         if let type = hit.type, type != WorkItemType.issue.rawValue {
             parts.append(type.capitalized)
         }
@@ -109,6 +112,7 @@ extension GitLabSearchRows.Row {
         let isMergeRequest = hit.kind == .mergeRequest
         self.init(
             id: hit.id, url: hit.webURL, reference: hit.reference, title: hit.title, detail: parts.joined(separator: " · "),
+            shortReference: hit.shortReference, referenceKind: isMergeRequest ? .mergeRequest : .workItem,
             symbol: Self.symbol(of: hit), openTitle: "Open \(isMergeRequest ? "Merge Request" : "Work Item") \(hit.shortReference) in GitLab",
             isDirect: false)
     }
@@ -176,10 +180,16 @@ struct GitLabSearchRowContent: View {
                 Text(verbatim: row.title)
                     .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                     .help(row.title)
-                Text(verbatim: row.detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    if let short = row.shortReference {
+                        ReferenceChip(kind: row.referenceKind, text: short)
+                            .fixedSize()
+                    }
+                    Text(verbatim: row.detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                }
             }
         }
     }

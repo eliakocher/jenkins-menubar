@@ -1,0 +1,10 @@
+{
+  "errors": [
+    {
+      "message": "Field 'todoSnooze' doesn't exist on type 'Mutation'",
+      "locations": [{ "line": 2, "column": 3 }],
+      "path": ["mutation TodoSnooze", "todoSnooze"],
+      "extensions": { "code": "undefinedField", "typeName": "Mutation", "fieldName": "todoSnooze" }
+    }
+  ]
+}

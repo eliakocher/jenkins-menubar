@@ -218,17 +218,6 @@ public enum PipelineRules {
         return links
     }
 
-    /// Returns Jenkins's own Build with Parameters page of a job, which "Rebuild with Changes…" opens (PIPE-09). It
-    /// shows the job's parameters to change before Jenkins builds.
-    ///
-    /// - Parameters:
-    ///   - job: the job's name as in Jenkins URLs
-    ///   - jobURL: the team's multibranch job
-    /// - Returns: `<job URL>/job/<job>/build?delay=0sec`
-    public static func buildWithParametersURL(job: String, jobURL: URL) -> URL {
-        URL(string: Self.jobURL(job: job, jobURL: jobURL).absoluteString + "build?delay=0sec") ?? jobURL
-    }
-
     /// Returns the URL of a job's page, `<job URL>/job/<job>/`.
     ///
     /// - Parameters:

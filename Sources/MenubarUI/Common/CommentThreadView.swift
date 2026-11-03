@@ -5,6 +5,9 @@ import SwiftUI
 /// take little room: the first comment cut at about four lines, the replies folded behind one quiet line ("3 replies ·
 /// last by Sam, 2h ago") that opens them in place, and a resolved thread folded to one line ("Resolved · Sam ·
 /// file:line") that opens the whole thread.
+///
+/// A comment that mentions the signed-in user (`@username`, see ``Mentions``) stands out (Task 7.03): an accent bar on
+/// its left edge and a small "@you" badge, and a thread with one opens with its replies unfolded.
 struct CommentThreadView: View {
     let thread: CommentThread
     /// the item's page, which the Markdown's relative links resolve against
@@ -12,20 +15,28 @@ struct CommentThreadView: View {
     let now: Date
     /// the ids of the threads the user opened, kept by the card while its item stays selected
     var expanded: Binding<Set<String>>?
+    /// the signed-in user's GitLab username, whose mentions stand out; the model's own when `nil`
+    var me: String?
     let open: (URL) -> Void
 
+    @Environment(AppModel.self) private var model: AppModel?
     @ViewState private var localExpanded: Set<String> = []
     @ViewState private var isHovering = false
 
     init(
-        thread: CommentThread, base: URL?, now: Date = .now, expanded: Binding<Set<String>>? = nil,
+        thread: CommentThread, base: URL?, now: Date = .now, expanded: Binding<Set<String>>? = nil, me: String? = nil,
         open: @escaping (URL) -> Void
     ) {
         self.thread = thread
         self.base = base
         self.now = now
         self.expanded = expanded
+        self.me = me
         self.open = open
+    }
+
+    private var username: String? {
+        me ?? model?.mergeRequests.list?.username
     }
 
     // One set holds both folds, with a prefix: a thread that changes state (resolved, reopened) starts folded again.
@@ -57,15 +68,20 @@ struct CommentThreadView: View {
     // MARK: - An open thread
 
     private var openThread: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            CommentNoteView(note: thread.first, location: thread.location, base: base, now: now, avatarSize: 20, open: open)
+        let username = username
+        // A thread that mentions me starts unfolded: the fold's key then says "the user closed it".
+        let startsOpen = thread.mentions(username)
+        return VStack(alignment: .leading, spacing: 6) {
+            CommentNoteView(
+                note: thread.first, location: thread.location, base: base, now: now, avatarSize: 20,
+                mentionsMe: thread.first.mentions(username), open: open)
             if !thread.replies.isEmpty || thread.hasMoreReplies {
                 let summary = ReplySummary(thread)
-                let isOpen = isOpened(foldKey)
+                let isOpen = isOpened(foldKey) != startsOpen
                 ReplyToggle(summary: summary, now: now, isOpen: isOpen) { toggle(foldKey) }
                     .padding(.leading, 26)
                 if isOpen {
-                    replies
+                    replies(mentioning: username)
                         .padding(.leading, 26)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
@@ -78,10 +94,12 @@ struct CommentThreadView: View {
             .quaternary.opacity(isHovering ? 0.7 : 0.35), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private var replies: some View {
+    private func replies(mentioning username: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(thread.replies) { reply in
-                CommentNoteView(note: reply, location: nil, base: base, now: now, avatarSize: 16, open: open)
+                CommentNoteView(
+                    note: reply, location: nil, base: base, now: now, avatarSize: 16, mentionsMe: reply.mentions(username),
+                    open: open)
             }
             if thread.hasMoreReplies, let url = thread.first.url {
                 Button("More Replies in GitLab") { open(url) }
@@ -140,9 +158,12 @@ struct CommentThreadView: View {
             if isOpen {
                 VStack(alignment: .leading, spacing: 6) {
                     CommentNoteView(
-                        note: thread.first, location: thread.location, base: base, now: now, avatarSize: 20, open: open)
+                        note: thread.first, location: thread.location, base: base, now: now, avatarSize: 20,
+                        mentionsMe: thread.first.mentions(username), open: open)
                     ForEach(thread.replies) { reply in
-                        CommentNoteView(note: reply, location: nil, base: base, now: now, avatarSize: 16, open: open)
+                        CommentNoteView(
+                            note: reply, location: nil, base: base, now: now, avatarSize: 16,
+                            mentionsMe: reply.mentions(username), open: open)
                             .padding(.leading, 26)
                     }
                     if thread.hasMoreReplies, let url = thread.first.url {
@@ -274,6 +295,8 @@ private struct CommentNoteView: View {
     let base: URL?
     let now: Date
     let avatarSize: CGFloat
+    /// whether the comment mentions the signed-in user: an accent bar and the "@you" badge
+    var mentionsMe = false
     let open: (URL) -> Void
 
     @ViewState private var isHovering = false
@@ -285,6 +308,9 @@ private struct CommentNoteView: View {
                 Text(verbatim: note.author?.displayName ?? "Someone")
                     .font(.callout.weight(.semibold))
                     .lineLimit(1)
+                if mentionsMe {
+                    MentionBadge()
+                }
                 if let createdAt = note.createdAt {
                     Text(verbatim: Self.age(of: createdAt, now: now))
                         .font(.caption)
@@ -319,6 +345,16 @@ private struct CommentNoteView: View {
                     .padding(.leading, avatarSize + 6)
             }
         }
+        .overlay(alignment: .leading) {
+            if mentionsMe {
+                // In the thread's padding, so the text keeps its place.
+                Capsule()
+                    .fill(.tint)
+                    .frame(width: 3)
+                    .padding(.vertical, -2)
+                    .offset(x: -9)
+            }
+        }
         .onHover { isHovering = $0 }
     }
 
@@ -328,13 +364,28 @@ private struct CommentNoteView: View {
     }
 }
 
-/// The comment's Markdown, cut at about four lines with "Show More", and parsed again only when its text changes (the
-/// detail's clock redraws it every few seconds).
+/// The comment's Markdown, cut at about four lines with "Show More", parsed once per text (``MarkdownCache``) and drawn
+/// again only when its text changes (the detail's clock redraws the thread every few seconds).
 private struct CommentBody: View, Equatable {
     let text: String
     let base: URL?
 
     var body: some View {
-        CollapsibleMarkdown(document: MarkdownDocument(parsing: text, base: base), startsExpanded: false, lines: 4)
+        CollapsibleMarkdown(document: MarkdownDocument.rendered(text, base: base), startsExpanded: false, lines: 4)
+    }
+}
+
+/// The small "@you" badge on a comment that mentions the signed-in user.
+private struct MentionBadge: View {
+    var body: some View {
+        Text(verbatim: "@you")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(.tint, in: Capsule())
+            .fixedSize()
+            .help("This comment mentions you")
+            .accessibilityLabel("Mentions you")
     }
 }

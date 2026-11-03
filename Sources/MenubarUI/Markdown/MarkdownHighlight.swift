@@ -40,6 +40,8 @@ extension MarkdownDocument {
                 return .list(list)
             case .quote(let blocks):
                 return .quote(blocks.map { mark($0) })
+            case .callout(let kind, let blocks):
+                return .callout(kind, blocks.map { mark($0) })
             case .table(var table):
                 table.header = table.header.map { mark($0) }
                 table.rows = table.rows.map { $0.map { mark($0) } }

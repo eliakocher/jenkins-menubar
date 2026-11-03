@@ -109,41 +109,99 @@ struct CardColumnsLayout: Layout {
     var minColumnWidth: CGFloat = 330
     var spacing: CGFloat = 22
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        arrange(width: proposal.width ?? minColumnWidth, subviews: subviews).size
+    /// The arrangement for the last width asked, so the size and the placement of one layout pass measure the cards
+    /// once: a detail page's cards are its most expensive views to measure.
+    struct Cache {
+        var width: CGFloat?
+        var frames: [CGRect] = []
+        var size: CGSize = .zero
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let frames = arrange(width: bounds.width, subviews: subviews).frames
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache()
+    }
+
+    func updateCache(_ cache: inout Cache, subviews: Subviews) {
+        cache = Cache()
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
+        arrange(width: proposal.width ?? minColumnWidth, subviews: subviews, cache: &cache).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        let frames = arrange(width: bounds.width, subviews: subviews, cache: &cache).frames
         for (subview, frame) in zip(subviews, frames) {
             subview.place(
                 at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
         }
     }
 
+    /// No alignment guides of the cards' own: the default merges them, which places every card once more.
+    func explicitAlignment(
+        of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache
+    ) -> CGFloat? {
+        nil
+    }
+
+    func explicitAlignment(
+        of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache
+    ) -> CGFloat? {
+        nil
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews, cache: inout Cache) -> (frames: [CGRect], size: CGSize) {
+        if cache.width == width {
+            return (cache.frames, cache.size)
+        }
+        // A stack around the page's scroll view asks it for its size at a width of zero, to learn how far it shrinks.
+        // Measured there, every card laid its text out a character per line, the most expensive layout of a click;
+        // the page never gets that narrow, so the cards answer at once.
+        guard width > 0 else {
+            return (Array(repeating: .zero, count: subviews.count), .zero)
+        }
+        let arranged = arrange(width: width, subviews: subviews)
+        cache = Cache(width: width, frames: arranged.frames, size: arranged.size)
+        return arranged
+    }
+
     private func arrange(width: CGFloat, subviews: Subviews) -> (frames: [CGRect], size: CGSize) {
-        let isCompact = { (subview: LayoutSubview) in subview[DetailCardWidthKey.self] == .compact }
-        // A lone compact card takes the full width rather than half of it.
-        let compactCount = subviews.filter {
-            isCompact($0) && $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height > 0
-        }.count
-        let columns = width >= minColumnWidth * 2 + spacing && compactCount >= 2 ? 2 : 1
-        let columnWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
-        var heights = Array(repeating: CGFloat(0), count: columns)
-        var frames = Array(repeating: CGRect.zero, count: subviews.count)
-        for (index, subview) in subviews.enumerated() where isCompact(subview) {
-            let height = subview.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil)).height
-            let column = heights.indices.min { heights[$0] < heights[$1] } ?? 0
-            frames[index] = CGRect(
-                x: CGFloat(column) * (columnWidth + spacing), y: heights[column], width: columnWidth, height: height)
-            // An empty card takes no room and no gap.
-            if height > 0 {
-                heights[column] += height + spacing
+        let compact = subviews.indices.filter { subviews[$0][DetailCardWidthKey.self] == .compact }
+        // Two columns when there is room for them and at least two compact cards that aren't empty; a lone compact card
+        // takes the full width rather than half of it. The cards are measured at the column's width, and again at the
+        // full width only when one column it is.
+        let twoColumnWidth = (width - spacing) / 2
+        var columns = 1
+        var heights: [Int: CGFloat] = [:]
+        if width >= minColumnWidth * 2 + spacing {
+            for index in compact {
+                heights[index] = subviews[index].sizeThatFits(ProposedViewSize(width: twoColumnWidth, height: nil)).height
+            }
+            if heights.values.count(where: { $0 > 0 }) >= 2 {
+                columns = 2
             }
         }
-        var bottom = heights.max() ?? 0
-        for (index, subview) in subviews.enumerated() where !isCompact(subview) {
-            let height = subview.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+        let columnWidth = columns == 2 ? twoColumnWidth : width
+        if columns == 1 {
+            for index in compact {
+                heights[index] = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+            }
+        }
+        var bottoms = Array(repeating: CGFloat(0), count: columns)
+        var frames = Array(repeating: CGRect.zero, count: subviews.count)
+        for index in compact {
+            let height = heights[index] ?? 0
+            let column = bottoms.indices.min { bottoms[$0] < bottoms[$1] } ?? 0
+            frames[index] = CGRect(
+                x: CGFloat(column) * (columnWidth + spacing), y: bottoms[column], width: columnWidth, height: height)
+            // An empty card takes no room and no gap.
+            if height > 0 {
+                bottoms[column] += height + spacing
+            }
+        }
+        var bottom = bottoms.max() ?? 0
+        for index in subviews.indices where subviews[index][DetailCardWidthKey.self] != .compact {
+            let height = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil)).height
             frames[index] = CGRect(x: 0, y: bottom, width: width, height: height)
             if height > 0 {
                 bottom += height + spacing

@@ -11,7 +11,12 @@ public final class MergeRequestsStore {
     public nonisolated static let problemKey = "gitlab.mergeRequests"
 
     /// my open MRs and my username, as last loaded; `nil` before the first load, and after the GitLab token is removed
-    public private(set) var list: MergeRequestList?
+    public private(set) var list: MergeRequestList? {
+        didSet { updateReviewCount() }
+    }
+    /// how many of them wait for my review (MR-01's Review Requested), kept apart so the menu bar's count observes only
+    /// a number that rarely changes (APP-11)
+    public private(set) var reviewCount = 0
     /// when ``list`` was loaded
     public private(set) var fetchedAt: Date?
     /// when the last load ended, whether it worked or not: "Last checked HH:MM" (WI-07)
@@ -39,6 +44,14 @@ public final class MergeRequestsStore {
             fetchedAt = cached.fetchedAt
             lastLoadAt = cached.fetchedAt
             problem = cached.problem
+        }
+        updateReviewCount()
+    }
+
+    private func updateReviewCount() {
+        let count = sections?.reviewRequested.count ?? 0
+        if count != reviewCount {
+            reviewCount = count
         }
     }
 

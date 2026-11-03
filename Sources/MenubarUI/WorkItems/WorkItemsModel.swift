@@ -218,7 +218,7 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
         workItem = item
         marker = data.marker(of: item)
         mergeRequestChip = WorkItemMergeRequestChip.make(
-            data.related.entries[item.reference]?.mergeRequests ?? [], marker: marker, project: data.team.gitLabProject,
+            data.related.shownMergeRequests(of: item) ?? [], marker: marker, project: data.team.gitLabProject,
             ignoredPrefix: data.team.ignoredMergeRequestPrefix)
         reference = data.shortReference(of: item)
         slot = item.slot(prefix: data.team.slotPrefix)
@@ -293,28 +293,14 @@ struct WorkItemRowModel: Hashable, Sendable, Identifiable {
 }
 
 /// The chip on a work item row's second line for its merge requests (Task 7.x, the user, 2026-11-02: the symbol column
-/// wasted the row's left): the merge glyph and the first MR's reference, "!14", with "+1" for each further one. Only the
-/// MRs that count make it, the open ones first, then the merged ones; closed MRs and the ignored prefix (cascade MRs)
-/// don't, as for the marker (WI-05).
+/// wasted the row's left): the first MR's reference, "!14", with "+1" for each further one, in the merge request green
+/// whatever the state (the user, 2026-11-03). Only the MRs that count make it, the open ones first, then the merged ones;
+/// closed MRs and the ignored prefix (cascade MRs) don't, as for the marker (WI-05).
 struct WorkItemMergeRequestChip: Hashable, Sendable {
-    /// What the first MR is, which tints the chip.
-    enum Kind: Hashable, Sendable {
-        case open
-        /// open, with a title starting `Draft:`, `[Draft]` or `WIP:`
-        case draft
-        case merged
-    }
-
     /// "!14", "web!8 +2"; `nil` when only the marker is known
     var text: String?
-    var kind: Kind
     /// the MRs, one per line: "!14 · open · Rework the color tokens"
     var help: String
-
-    /// "arrow.triangle.pull" for an open MR, "arrow.triangle.merge" for a merged one
-    var symbol: String {
-        WorkItemRowStyle.symbol(of: kind == .merged ? .merged : .open)
-    }
 
     /// The chip's text with the count: "!14" for one MR, "!14 +2" for three.
     static func text(first: String, count: Int) -> String {
@@ -324,7 +310,7 @@ struct WorkItemMergeRequestChip: Hashable, Sendable {
     /// Returns the chip of a work item.
     ///
     /// - Parameters:
-    ///   - mergeRequests: the MRs that mention the work item, in GitLab's order
+    ///   - mergeRequests: the MRs that count for the work item (its own, else all), in GitLab's order
     ///   - marker: the item's marker, for a chip when the MRs themselves are not known
     ///   - project: the team's project path, for the short reference
     ///   - ignoredPrefix: the ignored MR prefix from Team; empty counts every MR
@@ -338,17 +324,16 @@ struct WorkItemMergeRequestChip: Hashable, Sendable {
         let ordered = counted.filter { $0.state == .opened } + counted.filter { $0.state == .merged }
         guard let first = ordered.first else {
             return marker.map {
-                WorkItemMergeRequestChip(text: nil, kind: $0 == .merged ? .merged : .open, help: $0.text)
+                WorkItemMergeRequestChip(text: nil, help: $0.text)
             }
         }
-        let kind: Kind = first.state == .merged ? .merged : (isDraft(first.title) ? .draft : .open)
         let lines = ordered.map { request in
             let word = request.state == .merged ? "merged" : (isDraft(request.title) ? "draft" : "open")
-            return "\(GitLabText.shortReference(request.reference, project: project)) · \(word) · \(request.title)"
+            return ReferenceKind.tooltip(GitLabText.shortReference(request.reference, project: project), state: word, title: request.title)
         }
         return WorkItemMergeRequestChip(
             text: text(first: GitLabText.shortReference(first.reference, project: project), count: ordered.count),
-            kind: kind, help: lines.joined(separator: "\n"))
+            help: lines.joined(separator: "\n"))
     }
 
     /// Returns whether an MR title marks a draft, as GitLab does.
@@ -435,6 +420,8 @@ struct WorkItemDetailModel: Sendable {
     var eggLine: String?
     /// every label in GitLab's order; empty shows "No labels"
     var labels: [LabelPillModel]
+    /// the header's facts panel: the scoped labels as lines, the rest behind "+N labels" (WI-04)
+    var facts: WorkItemFacts
     var related: Related
     /// "GitLab lists at most 10 related merge requests", "Merge requests starting with [cascade] don't count for the
     /// marker"
@@ -508,12 +495,13 @@ struct WorkItemDetailModel: Sendable {
         type = WorkItemText.type(item.type)
         updated = "\(GitLabText.age(since: item.updatedAt, now: data.now)) ago"
         labels = item.labels.map { LabelPillModel($0, colors: data.labelColors) }
+        facts = WorkItemFacts(labels: labels, team: team)
         relatedFooters = []
         if item.isEpic {
             related = .epic
         } else if let entry = data.related.entries[item.reference] {
             let builds = reality?.id == item.id ? reality?.mergeRequests ?? [] : []
-            let rows = RelatedMergeRequestRow.rows(entry.mergeRequests, data: data).map { row in
+            let rows = RelatedMergeRequestRow.rows(entry.mergeRequests, of: item, data: data).map { row in
                 var row = row
                 row.build = builds.first { $0.id == row.id }?.build
                 return row
@@ -542,28 +530,56 @@ struct WorkItemDetailModel: Sendable {
             name: name, dates: dates, countdown: dates.countdown(from: now, calendar: calendar), isOverdue: isOverdue, today: now)
     }
 
-    /// the merge requests that count, open first: those of the header's chips
+    /// the item's own merge requests that count, open first: those of the header's chips. When none is its own, every
+    /// one that mentions it, as before
     var countedMergeRequests: [RelatedMergeRequestRow] {
         guard case .rows(let rows) = related else {
             return []
         }
-        return rows.filter { !$0.isIgnored && $0.mergeRequest.state != .closed }
+        return rows.filter { $0.isOwn && !$0.isIgnored && $0.mergeRequest.state != .closed }
     }
+
+    /// the rows of the card's first group: the item's own merge requests, or all of them when none is its own
+    var ownMergeRequests: [RelatedMergeRequestRow] {
+        guard case .rows(let rows) = related else {
+            return []
+        }
+        return rows.filter(\.isOwn)
+    }
+
+    /// the rows of the card's quieter "Mentioned in" group: the merge requests that only mention the item; empty when
+    /// none is its own
+    var mentionedMergeRequests: [RelatedMergeRequestRow] {
+        guard case .rows(let rows) = related else {
+            return []
+        }
+        return rows.filter { !$0.isOwn }
+    }
+
+    /// how many merge requests "Mentioned in" shows at most before it is collapsed
+    static let mentionedShownOpen = 2
 }
 
 /// A related merge request in the work item detail: its state's symbol, its title, "!14 · open", and "Show in Merge
 /// Requests" while the Merge Requests store has it.
 struct RelatedMergeRequestRow: Hashable, Sendable, Identifiable {
     var mergeRequest: RelatedMergeRequest
-    var symbol: String
-    /// whether the symbol is `.secondary` (closed and other states) rather than the label color
-    var isSymbolSecondary: Bool
-    /// "!14 · open", "web!8 · merged"
+    /// "!14", "web!8": the reference as the chip shows it
     var reference: String
+    /// "open", "merged", "closed": GitLab's word, for the tooltips
+    var stateWord: String
+    /// "Merged", "Closed": what the card's row says beside the chip; `nil` for an open one, which needs no word (the user,
+    /// 2026-11-03: the state "only where it's needed and makes sense")
+    var stateNote: String?
+    /// "!14 · merged · Title", the tooltip of its chips and its row
+    var help: String
     /// "Show Merge Request !14", which opens in the app
     var openTitle: String
     /// whether its title starts with Team's ignored prefix, like "[cascade] …": listed last, greyed (WI-05)
     var isIgnored: Bool
+    /// whether it is the item's own MR, or counts as one because none is (see ``WorkItem/shownMergeRequests(from:)``),
+    /// not one that only mentions the item
+    var isOwn: Bool
     /// whether the Merge Requests store's last load has it (same web URL)
     var showsInMergeRequests: Bool
     /// the build the app knows of it (SLOT-03): Jenkins' `MR-<iid>` job, else GitLab's head pipeline of my MR
@@ -571,32 +587,34 @@ struct RelatedMergeRequestRow: Hashable, Sendable, Identifiable {
 
     var id: URL { mergeRequest.webURL }
 
-    /// Returns the rows of an answer: the counted MRs, open first, then merged, closed and others, each in GitLab's
-    /// order; then the ignored ones in the same order.
+    /// Returns the rows of an answer: the item's own MRs first, then those that only mention it; in each group the
+    /// counted MRs, open first, then merged, closed and others, each in GitLab's order; then the ignored ones in the same
+    /// order.
     ///
     /// - Parameters:
     ///   - mergeRequests: the answer's MRs, in GitLab's order
+    ///   - workItem: the work item, for which MRs are its own
     ///   - data: the section's values, for the team and the Merge Requests store's MRs
     /// - Returns: the rows
-    static func rows(_ mergeRequests: [RelatedMergeRequest], data: WorkItemsData) -> [RelatedMergeRequestRow] {
-        let rows = mergeRequests.map { RelatedMergeRequestRow($0, data: data) }
+    static func rows(_ mergeRequests: [RelatedMergeRequest], of workItem: WorkItem, data: WorkItemsData) -> [RelatedMergeRequestRow] {
+        let shown = Set(workItem.shownMergeRequests(from: mergeRequests).map(\.id))
+        let rows = mergeRequests.map { RelatedMergeRequestRow($0, isOwn: shown.contains($0.id), data: data) }
+        func key(_ row: RelatedMergeRequestRow) -> [Int] { [row.isOwn ? 0 : 1, row.isIgnored ? 1 : 0, row.rank] }
         return rows.enumerated()
-            .sorted { ($0.element.isIgnored ? 1 : 0, $0.element.rank, $0.offset) < ($1.element.isIgnored ? 1 : 0, $1.element.rank, $1.offset) }
+            .sorted { key($0.element) == key($1.element) ? $0.offset < $1.offset : key($0.element).lexicographicallyPrecedes(key($1.element)) }
             .map(\.element)
     }
 
-    init(_ mergeRequest: RelatedMergeRequest, data: WorkItemsData) {
+    init(_ mergeRequest: RelatedMergeRequest, isOwn: Bool = true, data: WorkItemsData) {
         self.mergeRequest = mergeRequest
+        self.isOwn = isOwn
         let short = GitLabText.shortReference(mergeRequest.reference, project: data.team.gitLabProject)
         let word = mergeRequest.state == .opened ? "open" : mergeRequest.state.rawValue.lowercased()
-        reference = "\(short) · \(word)"
+        reference = short
+        stateWord = word
+        stateNote = mergeRequest.state == .opened ? nil : word.prefix(1).uppercased() + word.dropFirst()
+        help = ReferenceKind.tooltip(short, state: word, title: mergeRequest.title)
         openTitle = "Show Merge Request \(short)"
-        switch mergeRequest.state {
-        case .opened: (symbol, isSymbolSecondary) = ("arrow.triangle.pull", false)
-        case .merged: (symbol, isSymbolSecondary) = ("arrow.triangle.merge", false)
-        case .closed: (symbol, isSymbolSecondary) = ("stop.circle", true)
-        default: (symbol, isSymbolSecondary) = ("questionmark.circle", true)
-        }
         let prefix = data.team.ignoredMergeRequestPrefix
         isIgnored = !prefix.isEmpty && mergeRequest.title.hasPrefix(prefix)
         showsInMergeRequests = data.mergeRequestIDs.contains(mergeRequest.webURL)

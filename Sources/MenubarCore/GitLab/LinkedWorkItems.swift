@@ -416,7 +416,7 @@ public final class LinkedWorkItemsStore {
         var failedAt: Date?
     }
 
-    private var entries: [String: Entry] = [:]
+    private let entries = ObservedEntries<String, Entry>()
     @ObservationIgnored private let services: GitLabServices
 
     /// - Parameter services: the transport, the token and the team values; the logs record the requests

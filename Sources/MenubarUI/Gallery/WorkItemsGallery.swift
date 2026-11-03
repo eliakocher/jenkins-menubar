@@ -30,6 +30,8 @@ struct WorkItemDetailGalleryView: View {
     let size: CGSize
     /// the item's own text, discussion and merge requests still on their way: skeleton cards
     var loading = false
+    /// the typical item with many labels, scoped and plain: the facts panel's "+N" (WI-04)
+    var manyLabels = false
 
     var body: some View {
         let w = fixtures.workItemsScreen
@@ -43,7 +45,7 @@ struct WorkItemDetailGalleryView: View {
         ]
         let lists = WorkItemLists(
             committed: WorkItemList(count: 1, items: sparse ? [] : [item]), others: WorkItemList(count: 1, items: sparse ? [item] : []))
-        let data = w.data(lists, related: related, mergeRequests: fixtures.mergeRequestsScreen.sections).data
+        let data = w.data(lists, related: related, mergeRequests: fixtures.mergeRequestsScreen.sections, team: team).data
         let builds: [Int: BuildReality] = [
             14: BuildReality(signal: .red, url: URL(string: "https://jenkins.example.com/job/project/job/MR-14/215/"), label: "#215"),
             11: BuildReality(signal: .green, url: URL(string: "https://jenkins.example.com/job/project/job/MR-11/198/"), label: "#198"),
@@ -64,13 +66,26 @@ struct WorkItemDetailGalleryView: View {
             .background(.windowBackground)
     }
 
+    /// Team with the label prefixes the facts panel names (WI-04)
+    private var team: TeamValues {
+        var team = fixtures.team
+        team.statusLabelPrefix = "status::"
+        team.typeLabelPrefix = "type::"
+        team.priorityLabelPrefix = "priority::"
+        team.squadLabelPrefix = "squad::"
+        return team
+    }
+
     /// #31, committed to the slot whose release is five weeks ahead, by Sam Lee for Jane Doe and Alex Kim
     private var typicalItem: WorkItem {
         let w = fixtures.workItemsScreen
         var item = w.item(31, "Rework the color tokens so the badges, the panel and the main window share one source of truth", labels: [
             "workflow::committed", Self.slotLabel(now: fixtures.now), "type::feature", "priority::high", "design", "frontend",
-            "team::web::frontend",
-        ])
+            "team::web::frontend", "status::InProgress",
+        ] + (manyLabels ? [
+            "squad::Alpha", "release-train::north", "xReviewStage::Ready", "xSquad::Alpha", "backend", "docs", "needs-review",
+            "performance", "regression",
+        ] : []))
         // GitLab's slot color, as `WorkItemsFixtures.colors` has it for the other slots.
         item.labels = item.labels.map { $0.title.hasPrefix("slot::") ? MenubarCore.Label(title: $0.title, color: "#9B59B6") : $0 }
         item.author = MergeRequest.Person(username: "slee", name: "Sam Lee")
@@ -114,6 +129,20 @@ extension GalleryCatalog {
             },
             GalleryEntry(screen: "work-items", state: "detail-typical-narrow", size: narrow) { f in
                 WorkItemDetailGalleryView(fixtures: f, sparse: false, size: narrow)
+            },
+            // The header at the width a detail column usually has, just above two columns; and many labels (WI-04).
+            GalleryEntry(screen: "work-items", state: "detail-typical", size: CGSize(width: 820, height: 1300)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 820, height: 1300))
+            },
+            // The facts panel in as many columns as keep it no taller than the left part: three at 1400, two at 1000.
+            GalleryEntry(screen: "work-items", state: "detail-many-labels-wide", size: CGSize(width: 1400, height: 640)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 1400, height: 640), manyLabels: true)
+            },
+            GalleryEntry(screen: "work-items", state: "detail-many-labels-1000", size: CGSize(width: 1000, height: 640)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 1000, height: 640), manyLabels: true)
+            },
+            GalleryEntry(screen: "work-items", state: "detail-many-labels-narrow", size: CGSize(width: 600, height: 900)) { f in
+                WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 600, height: 900), manyLabels: true)
             },
             // The description and the discussion still loading: their cards as skeletons, the header and the rest real.
             GalleryEntry(screen: "work-items", state: "detail-loading", size: CGSize(width: 1100, height: 900)) { f in

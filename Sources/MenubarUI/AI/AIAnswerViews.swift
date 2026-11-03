@@ -52,16 +52,19 @@ struct AIAnswerRows<Answer: View, Actions: View>: View {
     }
 
     var body: some View {
-        if let subject, model?.ai.stoppedSubjects.contains(subject) == true {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Stopped", systemImage: "stop.circle")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+        Group {
+            if let subject, model?.ai.stoppedSubjects.contains(subject) == true {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Stopped", systemImage: "stop.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    rows
+                }
+            } else {
                 rows
             }
-        } else {
-            rows
         }
+        .marksClaudeCardVisible(subject)
     }
 
     @ViewBuilder

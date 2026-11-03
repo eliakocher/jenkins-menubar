@@ -13,6 +13,7 @@ struct WorkItemsFixtures {
         "workflow::committed": "#6F42C1", "slot::Q1": "#9B59B6", "slot::Q2": "#9B59B6", "type::feature": "#5CB85C",
         "type::bug": "#D9534F", "design": "#330066", "frontend": "#F0AD4E", "backend": "#8E44AD", "docs": "#FFFFFF",
         "priority::high": "#D9534F", "team::web::frontend": "#5CB85C", "release": "#000000",
+        "status::InProgress": "#428BCA", "squad::Alpha": "#E67E22", "release-train::north": "#1ABC9C", "xReviewStage::Ready": "#F39C12", "xSquad::Alpha": "#E67E22",
     ]
 
     /// "Assigned to me · Open · +frontend · −wontfix"
@@ -35,10 +36,14 @@ struct WorkItemsFixtures {
     }
 
     /// A merge request that mentions a work item.
-    func related(_ iid: Int, _ title: String, _ state: RelatedMergeRequest.State, project: String = "group/subgroup/project") -> RelatedMergeRequest {
+    func related(
+        _ iid: Int, _ title: String, _ state: RelatedMergeRequest.State, project: String = "group/subgroup/project",
+        branch: String? = nil
+    ) -> RelatedMergeRequest {
         RelatedMergeRequest(
             iid: iid, state: state, title: title,
-            webURL: URL(string: "https://gitlab.example.com/\(project)/-/merge_requests/\(iid)")!, reference: "\(project)!\(iid)")
+            webURL: URL(string: "https://gitlab.example.com/\(project)/-/merge_requests/\(iid)")!, reference: "\(project)!\(iid)",
+            sourceBranch: branch)
     }
 
     // MARK: - The items
@@ -153,11 +158,16 @@ struct WorkItemsFixtures {
     /// closed; web#34 web!8 open; #40 none
     var relatedAnswers: [String: [RelatedMergeRequest]] {
         [
-            item31.reference: [related(14, "Rework the color tokens", .opened), related(11, "Move the color values into one file", .merged)],
+            // !14 is the item's own (its branch starts with the number), !11 only mentions it.
+            item31.reference: [
+                related(14, "Rework the color tokens", .opened, branch: "31-rework-the-color-tokens"),
+                related(11, "Move the color values into one file", .merged, branch: "9-color-values"),
+            ],
             item28.reference: [
                 related(44, "[cascade] Merge release/2.4 into main", .opened),
-                related(43, "Speed up the search index rebuild", .merged),
-                related(42, "Cache the search index between runs", .closed),
+                related(43, "Speed up the search index rebuild", .merged, branch: "28-speed-up-the-search-index-rebuild"),
+                related(42, "Cache the search index between runs", .closed, branch: "30-cache-the-search-index"),
+                related(41, "Show the index size in the settings", .merged, branch: "27-index-size"),
             ],
             web34.reference: [related(8, "Fix the date format in the export dialog", .opened, project: "group/subgroup/web")],
             item40.reference: [],

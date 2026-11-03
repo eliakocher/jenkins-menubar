@@ -1,0 +1,14 @@
+# Owners of the made-up project
+* @fallback
+
+[core] @slee
+*.java
+/core/security/ @akim @group/security
+core/src/**/*Test.java @tgreen
+
+^[Docs][2] @docs-team-lead
+/docs/
+!/docs/generated/
+
+[Docs]
+README.md @jdoe

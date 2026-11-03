@@ -19,7 +19,7 @@ public enum FailedTestsState: Hashable, Sendable {
 /// shows in Activity like the checks' requests.
 @Observable @MainActor
 public final class FailedTestsStore {
-    private var states: [BuildID: FailedTestsState] = [:]
+    private let states = ObservedEntries<BuildID, FailedTestsState>()
     /// the builds whose request is under way, so that a second selection doesn't send another
     @ObservationIgnored private var asking: Set<BuildID> = []
     @ObservationIgnored private let services: PipelinesServices

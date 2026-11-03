@@ -17,7 +17,7 @@ extension AppModel {
         let stores = projects.stores
         return SlotPlan.make(
             workItems: workItems.lists?.all ?? [],
-            mergeRequests: { related.entries[$0.reference]?.mergeRequests },
+            mergeRequests: { related.shownMergeRequests(of: $0) },
             build: { mergeRequest in
                 Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
             },
@@ -46,7 +46,7 @@ extension AppModel {
         let squads = SlotChip.squads(of: source, prefix: team.squadLabelPrefix)
         return SlotPlan.make(
             workItems: source.filter { chips.matches($0, team: team, me: me) },
-            mergeRequests: { related.entries[$0.reference]?.mergeRequests },
+            mergeRequests: { related.shownMergeRequests(of: $0) },
             build: { mergeRequest in
                 Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
             },
@@ -122,7 +122,7 @@ extension AppModel {
         let myMergeRequests = mergeRequests.list?.mergeRequests ?? []
         let stores = projects.stores
         return SlotPlan.item(
-            workItem, mergeRequests: { related.entries[$0.reference]?.mergeRequests },
+            workItem, mergeRequests: { related.shownMergeRequests(of: $0) },
             build: { Self.slotBuild(of: $0, stores: stores, myMergeRequests: myMergeRequests) },
             team: pipelines.project.team)
     }

@@ -39,6 +39,10 @@ public enum PersonalSettingsBackup {
         return preferences + [
             // kept as JSON text by `PreferencesStore.notificationPolicy`
             Entry(PreferencesStore.notificationPolicyKey, .string),
+            // the Inbox's routing, quiet hours and sound, as JSON text (`PreferencesStore.inboxNotificationsKey`)
+            Entry(PreferencesStore.inboxNotificationsKey, .string),
+            // what the menu bar shows: the item's parts and the pane's rows, as JSON text (APP-11)
+            Entry(PreferencesStore.menuBarLayoutKey, .string),
             // `RepositorySettings`, `TerminalChoice` and `AISettings` (MCP choices, no secret) in their own keys
             Entry(RepositorySettings.defaultsKey, .data),
             Entry(TerminalChoice.defaultsKey, .string),
@@ -52,6 +56,8 @@ public enum PersonalSettingsBackup {
             Entry("changes.foldersOpen", .bool),
             Entry(CommentThreadOrder.sortKey, .string),
             Entry(CommentThreadOrder.openFirstKey, .bool),
+            // the sidebar's order of the sections: link names joined by commas, empty is the default
+            Entry(SectionOrder.key, .string),
         ]
     }()
 

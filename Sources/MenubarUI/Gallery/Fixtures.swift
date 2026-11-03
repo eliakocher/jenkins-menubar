@@ -191,6 +191,18 @@ public struct Fixtures: Sendable {
         return alert(build)
     }
 
+    /// Five alerts of different shapes, the oldest first: an MR job's failure with stages and tests, a branch's success,
+    /// an unstable one, an aborted one and a branch's failure.
+    var pagedAlerts: [BuildAlert] {
+        [
+            mergeRequestAlert(.failure, minutes: 12, failedStages: ["tests", "deploy"], tests: TestCounts(failed: 3, total: 1200)),
+            branchAlert(.success, minutes: 30),
+            mergeRequestAlert(.unstable, minutes: 42, title: "Speed up the search index rebuild", failedStages: ["tests"], tests: TestCounts(failed: 2, total: 1200)),
+            mergeRequestAlert(.aborted, minutes: 5, title: "Clean up the old report exporter"),
+            branchAlert(.failure, minutes: 12, failedStages: ["build"]),
+        ]
+    }
+
     // MARK: - Long texts
 
     /// a 200-character title

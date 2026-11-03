@@ -83,6 +83,9 @@ public final class URLSessionTransport: HTTPTransport {
         let outcome: Result<(Data, URLResponse), any Error>? = await withTaskGroup(of: Result<(Data, URLResponse), any Error>?.self) { group in
             group.addTask {
                 do {
+                    if let limit = request.bodyLimit {
+                        return .success(try await Self.data(for: urlRequest, upTo: limit, session: session, delegate: metrics))
+                    }
                     return .success(try await session.data(for: urlRequest, delegate: metrics))
                 } catch {
                     return .failure(error)
@@ -123,6 +126,25 @@ public final class URLSessionTransport: HTTPTransport {
         case nil:
             throw CancellationError()
         }
+    }
+
+    /// Reads at most `limit` bytes of the body, then cancels the task, so the rest never comes over the wire.
+    private static func data(
+        for request: URLRequest, upTo limit: Int, session: URLSession, delegate: MetricsCollector
+    ) async throws -> (Data, URLResponse) {
+        let (bytes, response) = try await session.bytes(for: request, delegate: delegate)
+        var body: [UInt8] = []
+        body.reserveCapacity(min(limit, 4 << 20))
+        if limit > 0 {
+            for try await byte in bytes {
+                body.append(byte)
+                if body.count >= limit {
+                    break
+                }
+            }
+        }
+        bytes.task.cancel()
+        return (Data(body), response)
     }
 
     private static func urlRequest(for request: HTTPRequest) -> URLRequest {

@@ -10,6 +10,8 @@ enum MainWindowReload {
     enum Step: Hashable {
         /// the Jenkins builds of all projects
         case builds
+        /// GitLab's to-dos for the Inbox
+        case inbox
         case mergeRequestList
         /// the selected merge request's description, details with discussions, and changes outline
         case mergeRequestDetails
@@ -41,6 +43,8 @@ enum MainWindowReload {
         return switch section {
         case .pipelines:
             [.builds]
+        case .inbox:
+            [.inbox]
         case .mergeRequests:
             selection.mergeRequests == nil ? [.mergeRequestList] : [.mergeRequestList, .mergeRequestDetails]
         case .workItems:
@@ -91,6 +95,8 @@ enum MainWindowReload {
             switch step {
             case .builds:
                 model.checkBuilds()
+            case .inbox:
+                Task { await model.inbox.load() }
             case .mergeRequestList:
                 model.reloadList(.mergeRequests)
             case .mergeRequestDetails:

@@ -436,7 +436,7 @@ private struct WelcomeTeamFields: View {
     private func field(_ key: TeamValues.Key, _ title: String) -> some View {
         TextField(
             title, text: Binding(get: { values[key] }, set: { values[key] = $0 }),
-            prompt: Text(verbatim: TeamValueFields.prompt(of: key))
+            prompt: Text(verbatim: key.prompt)
         )
         .labelsHidden()
         .textFieldStyle(.roundedBorder)

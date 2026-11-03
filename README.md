@@ -20,7 +20,7 @@ It needs macOS 26 and the Xcode Command Line Tools (`xcode-select --install`); n
 
 `./install.sh --dry-run` prints what would change and changes nothing.
 
-For the team values, **Settings → Projects** can import and export a file without tokens: see `team.example.json`. The
+For the team values, **Settings → Team** can import and export a file without tokens: see `team.example.json`. The
 tokens go into the login keychain, **Settings → Accounts** checks that Jenkins and GitLab take them. Jenkins needs your
 user and an API token, GitLab a token with the `api` scope (`read_api` is enough to read, but Re-request Review writes).
 
@@ -36,12 +36,12 @@ Nothing is rebuilt without that click.
   problems. Its glass pane is a short overview: one row each for Pipelines, Merge Requests and Work Items, with counts
   and a summary. Hover a row (or press →) and a flyout beside the pane lists the items; a click opens one in Jenkins or
   GitLab, and its menu has **Show in Window**. **Check Now**, **Open Window**, Settings and Quit sit at the bottom.
-- **Global hotkey**: Settings → General can set a shortcut that opens the main window from any app (and hides it
+- **Global hotkey**: **Settings → General** can set a shortcut that opens the main window from any app (and hides it
   again). Off by default.
 - **Alerts**: a big alert window or a banner (your choice) when a build you follow finishes, and optionally a banner
   when a stage fails while the build goes on. **Rebuild** starts a finished build again with the same parameters, in
   one click; **Open Console** and **Hide Until the Next Build** are in the alert's menu and on the banner.
-- **Main window** (⌘0, sections with ⌘1 to ⌘6):
+- **Main window** (⌘0; ⌘1 and on pick the sidebar's sections, in order):
   - **Pipelines**: your builds and the ones you watch, with stages, failed tests and links. A failed build shows its
     failed test names, and a stage that passed on the same commit is marked **likely flaky**.
   - **Merge Requests**: yours, review requested and reviewed, each with a status badge in GitLab's colors and its
@@ -52,27 +52,30 @@ Nothing is rebuilt without that click.
     browser.
   - **Activity**: a log of every request, build, alert and problem, with search, filters and a chart of the check times.
     No token is ever kept in it.
-  - **Workspaces**: your local checkouts, found in the folders of Settings → Repositories, with their branch, state and
+  - **Workspaces**: your local checkouts, found in the folders of **Settings → Workspaces**, with their branch, state and
     the merge request or work item behind them. Open one in your IDE (your own command), in Terminal or in Finder.
     The app only reads git; the one write is **Start Work Here** on a clean checkout of its base branch: it fetches,
     then creates the branch named after a work item, after you confirm. A local branch without a merge request offers
-    **Create Merge Request**. Terminal opens in the default terminal, or the one you pick in Repositories.
+    **Create Merge Request**. Terminal opens in the default terminal, or the one you pick in Settings → Workspaces.
   - **Slots**: the release slots of your work items (labels like `2026.51`), with their release, code freeze and early
     access dates computed from the slot's name, a countdown, and the committed items with the state of their merge
     requests and builds, flagged where they are at risk. It is growing into a full slot planning view. An optional
     banner warns before a code freeze.
+  - **Digest** (only with Claude on, see below): a summary of what needs you today, a section of its own.
 - **Watch a Build…** (⌘L) takes a Jenkins build link (of a merge request or of a branch like `develop`), a GitLab merge
   request link or `!123`, and follows all its builds, the next ones too. A merge request's detail has **Watch Builds**
   for the same. Watched builds alert and hide like yours.
-- **Several projects**: Settings → Projects adds more Jenkins jobs (same Jenkins and GitLab, same tokens). One check
+- **Several projects**: **Settings → Projects** adds more Jenkins jobs (same Jenkins and GitLab, same tokens). One check
   covers all of them, the counts are summed, and with more than one project the rows, alerts and the log name theirs.
-- **Claude** (optional, off by default, needs Claude Code installed): with **Use Claude** on in Settings → General,
+- **Claude** (optional, off by default, needs Claude Code installed): with **Use Claude** on in **Settings → Claude**,
   a failed build gets **Why Did It Fail?** (a verdict, the root cause with its evidence, suspect commits, a next step),
-  a merge request or work item gets **Summarize Discussion**, the window gets a **Digest**, and **Open in Claude Code**
-  starts it in a checkout. It runs your own Claude Code login, sends only what you click (the first answer of each kind
-  shows what goes), removes tokens and keys first, and stops at a monthly cap you set ($10 by default).
-- **Easter eggs**: the butler sometimes has something to say. One switch in Settings → General turns them off.
-- **Settings** (⌘,): General, Jenkins, GitLab, Repositories, Projects and Accounts.
+  a merge request or work item gets **Summarize Discussion**, the window gets the **Digest** section, and
+  **Continue in Claude Code**, in a chat, starts it in a checkout. It runs your own Claude Code login, sends only what you click (the
+  first answer of each kind shows what goes; the morning digest is the one thing you can turn on to run by itself)
+  and removes tokens and keys first.
+- **Easter eggs**: the butler sometimes has something to say. One switch in **Settings → General** turns them off.
+- **Settings** (⌘,): General, Notifications, Appearance, Accounts, Projects, Team, Pipelines, Work Items, Workspaces,
+  Claude and Advanced.
 - Jenkins is checked all the time; merge requests and work items load while you look at them, plus a few small
   background requests.
 
@@ -108,6 +111,9 @@ scripts/smoke.sh                   # runs the built app once against a local stu
 scripts/gallery-shots.sh all       # screenshots of the design gallery (not committed)
 ```
 
+With Xcode installed, point both scripts at the Command Line Tools to build the way everyone else does:
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools ./build.sh`.
+
 Everything builds with only the Command Line Tools, which limits the Swift in use. Swift 6, and no macro that needs
 Xcode: views use `@ViewState` instead of `@State` (since the macOS 27 SDK, `@State` is a macro that only compiles with
 Xcode), and `build.sh` refuses `@State`, `#Preview`, `@Entry`, `#Predicate`, SwiftData and the like.
@@ -120,7 +126,8 @@ Xcode), and `build.sh` refuses `@State`, `#Preview`, `@Entry`, `#Predicate`, Swi
 
 The debug build has a design gallery (`MegaMonitor --gallery`) that shows every screen with fixtures, in each
 appearance, without touching real data. The repository is public, and `scripts/check-names.sh` (run by `build.sh`)
-keeps a company name out of its files.
+keeps a company name out of its files. How the app handles tokens and what it may do on your behalf is in
+[docs/security.md](docs/security.md).
 
 ## License and credits
 

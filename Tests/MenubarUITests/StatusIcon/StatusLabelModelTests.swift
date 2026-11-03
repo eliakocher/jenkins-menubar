@@ -27,3 +27,21 @@ struct StatusLabelModelTests {
         #expect(StatusLabelModel.kind(of: nil) == nil)
     }
 }
+
+/// The red dot of the Inbox (Task 7.03, INBOX-09).
+@Suite("StatusLabelModel Inbox dot")
+struct StatusLabelInboxDotTests {
+    @Test("INBOX-09 the menu bar shows a red dot, never a number, while the Inbox has items that count")
+    func dot() {
+        // Alone it joins the butler; with counts it comes last.
+        let idle = StatusLabelModel(hasInboxItems: true)
+        #expect(idle.parts == [.identity, .inboxDot])
+        #expect(idle.rendering == .image)
+        let busy = StatusLabelModel(counts: BuildCounts(failed: 1), hasInboxItems: true)
+        #expect(busy.parts == [.count(.failed, 1), .inboxDot])
+        // Nothing in the Inbox: the butler alone, as before.
+        #expect(StatusLabelModel().parts == [.identity])
+        #expect(StatusLabelModel().rendering == .identity)
+        #expect(StatusLabelModel.symbol(of: .inboxDot) == nil)
+    }
+}

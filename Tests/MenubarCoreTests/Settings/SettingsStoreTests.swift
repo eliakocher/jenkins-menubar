@@ -128,6 +128,27 @@ struct SettingsStoreTests {
         #expect(harness.store.preferences.checkIntervalSeconds == 60)
     }
 
+    @Test("INBOX-08 a change to the Inbox's routing alone is saved, logged and handed to the app")
+    func routingAloneIsSaved() async throws {
+        let harness = try Harness()
+        var handedOn: [InboxNotificationRules] = []
+        harness.store.preferencesChanged = { handedOn.append($0.inboxNotifications) }
+
+        var rules = harness.store.preferences.inboxNotifications
+        rules.set(.badge, false, for: .assigned)
+        rules.onlyMyProjects = true
+        harness.store.preferences.inboxNotifications = rules
+        // The same routing again changes nothing.
+        harness.store.preferences.inboxNotifications = rules
+
+        #expect(harness.store.preferences.inboxNotifications == rules)
+        #expect(PreferencesStore(defaults: harness.suite.defaults).load().inboxNotifications == rules)
+        #expect(handedOn == [rules])
+        let messages = await harness.messages()
+        #expect(messages.count == 1)
+        #expect(messages.first?.hasPrefix("inboxNotifications: ") == true)
+    }
+
     @Test("SET-02 Settings opens at the pane it showed last, also after a restart")
     func remembersThePane() throws {
         let harness = try Harness()

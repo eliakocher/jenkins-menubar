@@ -19,7 +19,7 @@ struct MergeRequestRowContent: View {
             WorkspaceTag(subject: .mergeRequest(row.mergeRequest))
             ListRowTime(text: row.age, help: "Updated \(row.age)")
         } details: {
-            DetailsLine(lead: row.lead, more: row.more, reference: row.shortReference)
+            DetailsLine(lead: row.lead, more: row.more, reference: row.shortReference, chip: true)
                 .help(row.details)
         }
     }

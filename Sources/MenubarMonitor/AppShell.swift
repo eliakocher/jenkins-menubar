@@ -124,8 +124,6 @@ final class AppShell {
             effects: effects, systemEvents: WorkspaceSystemEvents(), loginItem: MainAppLoginItem(),
             hotkeys: CarbonHotkeys())
         let model = AppModel(dependencies: dependencies)
-        // The morning digest, when the user turns it on, comes as a banner (AI-04).
-        model.ai.notify = { text in await effects.postDigest(text) }
         let shell = AppShell(model: model, legacySources: .standard(), identityMigration: IdentityMigrationLaunch.pending)
         shell.askNotificationPermission = {
             if await effects.notificationPermission() == .notAsked {
@@ -290,6 +288,17 @@ final class AppShell {
         Task {
             await launching?.value
             model.projects.rebuild(build)
+        }
+    }
+
+    /// Shows a build in Pipelines with the "Rebuild with Changes…" sheet over it, for the alert window's Rebuild menu
+    /// (PIPE-09).
+    ///
+    /// - Parameter build: the build to start again
+    func rebuildWithChanges(_ build: BuildID) {
+        Task {
+            await launching?.value
+            router.requestRebuildSheet(for: build)
         }
     }
 

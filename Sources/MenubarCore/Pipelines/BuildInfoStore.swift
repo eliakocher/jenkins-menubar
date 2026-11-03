@@ -26,8 +26,8 @@ public enum JobHistoryState: Hashable, Sendable {
 /// recorder, so they show in Activity like the checks'.
 @Observable @MainActor
 public final class BuildInfoStore {
-    private var infos: [BuildID: BuildInfoState] = [:]
-    private var histories: [BuildID: JobHistoryState] = [:]
+    private let infos = ObservedEntries<BuildID, BuildInfoState>()
+    private let histories = ObservedEntries<BuildID, JobHistoryState>()
     /// the builds whose answers were loaded while they still ran
     @ObservationIgnored private var loadedRunning: Set<BuildID> = []
     @ObservationIgnored private var asking: Set<BuildID> = []

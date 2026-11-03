@@ -59,7 +59,9 @@ public struct RequestRecorder: HTTPTransport {
         let outcome: ActivityEntry.Outcome
         switch result {
         case .success(let response):
-            record = RequestRecord(request: request, response: response, seconds: seconds)
+            record = RequestRecord(
+                request: request, response: response, seconds: seconds,
+                bodyLimit: request.keepsBody ? RequestRecord.defaultBodyLimit : 0)
             if (200..<300).contains(response.status) {
                 (level, message, outcome) = (.debug, "\(name) in \(took)", .ok(String(response.status)))
             } else {

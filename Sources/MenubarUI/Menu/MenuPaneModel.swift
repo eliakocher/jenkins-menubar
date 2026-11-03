@@ -12,6 +12,8 @@ struct MenuPaneModel: Sendable {
     var footer: Footer
     /// whether the easter eggs are on, for Option's Quit title (EGG-10)
     var easterEggs = false
+    /// the pane's width from Settings → Menu Bar (APP-11)
+    var width = MenuBarLayout.PaneWidth.regular
 
     /// The footer's rows that depend on the state: Check Now's second line (APP-06, PIPE-07).
     struct Footer: Hashable, Sendable {
@@ -30,8 +32,11 @@ struct MenuPaneModel: Sendable {
 
     /// Returns what the pane shows.
     ///
-    /// - Parameter data: the stores' values
-    init(_ data: PanelData) {
+    /// - Parameters:
+    ///   - data: the stores' values
+    ///   - layout: which areas show, in which order, with or without their flyouts (APP-11); the default is all four
+    init(_ data: PanelData, layout: MenuBarLayout = MenuBarLayout()) {
+        width = layout.paneWidth
         let jenkins = data.jenkins
         problem = jenkins.problemItem
         footer = Footer(isChecking: jenkins.isChecking, lastChecked: jenkins.lastCheckedAt.map { Formatting.lastChecked($0) })
@@ -41,7 +46,25 @@ struct MenuPaneModel: Sendable {
             return
         }
         let offline = jenkins.problem == .offline
-        areas = [Self.pipelines(data), Self.mergeRequests(data, offline: offline), Self.workItems(data, offline: offline)]
+        // Only the rows that are on are computed, in the layout's order.
+        areas = layout.shownRows.compactMap { row in
+            var area: MenuArea
+            switch row.section {
+            case .pipelines: area = Self.pipelines(data)
+            case .inbox: area = Self.inbox(data, offline: offline)
+            case .mergeRequests: area = Self.mergeRequests(data, offline: offline)
+            case .workItems: area = Self.workItems(data, offline: offline)
+            default: return nil
+            }
+            area.hasFlyout = row.showsFlyout
+            area.flyoutRows = row.flyoutRows
+            return area
+        }
+    }
+
+    /// the areas whose rows open the main window instead of a flyout
+    var flyoutless: Set<MainWindowSection> {
+        Set(areas.filter { !$0.hasFlyout }.map(\.section))
     }
 
     /// Returns the area of a section.
@@ -96,6 +119,46 @@ struct MenuPaneModel: Sendable {
         case .noJobs(let user)?: "No builds by \(user)"
         case .noBuilds?, nil: PipelinesEmptyState.noBuilds.message
         }
+    }
+
+    /// Inbox: what waits, by group, in the colors of the window's symbols: "2 mentions · 1 to review · 3 other"; "Inbox zero"
+    /// when nothing does. Its count is the badge (INBOX-02, INBOX-06). A missing token says so, unless local entries wait.
+    static func inbox(_ data: PanelData, offline: Bool) -> MenuArea {
+        let state = data.inbox
+        var area = MenuArea(section: .inbox)
+        let needsToken = state.problem == .noToken(.gitLab)
+        area.isLoading = state.isLoading && !state.hasLoaded && !offline && !needsToken
+        area.problem = offline || needsToken ? nil : state.problem.map { PanelModel.problemItem($0).text }
+        area.count = state.badgeCount > 0 ? state.badgeCount : nil
+        guard !state.entries.isEmpty else {
+            if needsToken {
+                area.summary = [.note(PanelModel.SetupText.summaryNeedsToken)]
+            } else if state.hasLoaded {
+                area.summary = [.note("Inbox zero")]
+            } else {
+                area.summary = [.note(area.problem == nil ? "Loading…" : "Not loaded")]
+            }
+            return area
+        }
+        let counts = Dictionary(grouping: state.entries, by: \.group).mapValues(\.count)
+        for group in InboxGroup.displayOrder {
+            guard let count = counts[group] else {
+                continue
+            }
+            switch group {
+            case .mentions:
+                area.summary.append(.count(symbol: "at", tint: .gitLab(.blue), text: "\(count) \(count == 1 ? "mention" : "mentions")"))
+            case .reviewRequests:
+                area.summary.append(.count(symbol: "eye.circle.fill", tint: .gitLab(.orange), text: "\(count) to review"))
+            case .assigned:
+                area.summary.append(.count(symbol: "person.crop.circle.fill", tint: .gitLab(.blue), text: "\(count) assigned"))
+            case .claude:
+                area.summary.append(.count(symbol: "sparkles", tint: .secondary, text: "\(count) from Claude"))
+            default:
+                area.summary.append(.count(symbol: nil, tint: nil, text: "\(count) \(group.title.lowercased())"))
+            }
+        }
+        return area
     }
 
     /// The MR-02 states that ask something of the author: a failed pipeline, conflicts, a rebase, requested changes.
@@ -233,6 +296,10 @@ struct MenuArea: Hashable, Sendable, Identifiable {
     var isLoading = false
     /// the problem's text, which shows as the red marker and its tooltip; `nil` without one (MR-05)
     var problem: String?
+    /// whether hovering the row opens its flyout; without one, the row has no chevron and a click opens the window
+    var hasFlyout = true
+    /// the most entries its flyout lists
+    var flyoutRows = MenuFlyout.cap
 
     var id: MainWindowSection { section }
 

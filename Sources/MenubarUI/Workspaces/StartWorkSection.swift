@@ -68,9 +68,8 @@ struct StartWorkSection: View {
                         draft.query = String(item.number)
                     } label: {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(verbatim: "#\(item.number)")
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
+                            WorkItemNumberChip(text: "#\(item.number)")
+                                .fixedSize()
                             Text(verbatim: item.title)
                                 .lineLimit(1)
                             Spacer(minLength: 0)

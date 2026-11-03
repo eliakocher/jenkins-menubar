@@ -9,6 +9,8 @@ public enum Surface: String, Hashable, Sendable, CaseIterable {
     case mergeRequests
     /// the work items, with their related merge requests (WI-01, OD-03)
     case workItems
+    /// GitLab's to-dos, for the Inbox and its badge; always counts as shown (INBOX-01)
+    case inbox
 }
 
 /// A GitLab load that the ``Scheduler`` runs while its surface is shown (OD-02): ``MergeRequestsStore`` and

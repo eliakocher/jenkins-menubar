@@ -6,6 +6,15 @@ import SwiftUI
 enum MenuMetrics {
     /// the pane's fixed width: an area's summary line fits without cutting in the usual states
     static let paneWidth: CGFloat = 384
+
+    /// Returns the pane's width for Settings → Menu Bar's choice (APP-11): regular is ``paneWidth``.
+    static func paneWidth(_ width: MenuBarLayout.PaneWidth) -> CGFloat {
+        switch width {
+        case .compact: 336
+        case .regular: paneWidth
+        case .wide: 440
+        }
+    }
     /// the flyout's fixed width: about 50 characters of a title
     static let flyoutWidth: CGFloat = 388
     /// the room between a window's edge and a row's highlight, as a native menu's

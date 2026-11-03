@@ -13,6 +13,28 @@ public enum AISubject: Hashable, Sendable {
     case workItem(String)
 }
 
+/// An answer or a failure that landed while its subject's card wasn't on screen (``AIStore/onAnswerLanded``).
+public struct AILanding: Sendable {
+    public var subject: AISubject
+    public var useCase: AIUseCase
+    /// Claude's answer; `nil` for a failure and for a follow-up
+    public var answer: AIAnswer?
+    /// the text of a follow-up's answer
+    public var text: String?
+    /// why there is no answer; `nil` for an answer
+    public var failure: String?
+    public var at: Date
+
+    public init(subject: AISubject, useCase: AIUseCase, answer: AIAnswer?, text: String?, failure: String?, at: Date) {
+        self.subject = subject
+        self.useCase = useCase
+        self.answer = answer
+        self.text = text
+        self.failure = failure
+        self.at = at
+    }
+}
+
 /// A first answer in progress, and where its subject stood before it began.
 struct FirstRun {
     var task: Task<Void, Never>
@@ -32,8 +54,11 @@ public struct AIAnswer: Hashable, Sendable {
     public var explanation: BuildExplanation?
     /// "Summarize Discussion"'s answer
     public var summary: ThreadsSummary?
-    /// the digest's text
+    /// the text of the digest and the chats: Markdown; for a digest, Claude's raw answer
     public var text: String?
+    /// the digest's cards: the app's items with Claude's priorities (AI-04); `nil` when Claude's answer wasn't the
+    /// digest's JSON, which shows ``text`` as Markdown instead
+    public var digest: DigestReport?
     /// the model that answered, like `claude-opus-5-5`
     public var model: String
     /// what was sent
@@ -41,12 +66,13 @@ public struct AIAnswer: Hashable, Sendable {
     public var answeredAt: Date
 
     public init(
-        explanation: BuildExplanation? = nil, summary: ThreadsSummary? = nil, text: String? = nil, model: String,
-        prompt: ClaudePrompt, answeredAt: Date
+        explanation: BuildExplanation? = nil, summary: ThreadsSummary? = nil, text: String? = nil,
+        digest: DigestReport? = nil, model: String, prompt: ClaudePrompt, answeredAt: Date
     ) {
         self.explanation = explanation
         self.summary = summary
         self.text = text
+        self.digest = digest
         self.model = model
         self.prompt = prompt
         self.answeredAt = answeredAt
@@ -74,7 +100,7 @@ public enum AIAnswerState: Hashable, Sendable {
 }
 
 /// The Claude features (the plan's Phase 15, AI-01 to AI-06): "Why Did It Fail?", "Summarize Discussion", the daily
-/// digest, and "Open in Claude Code", through the developer's own Claude Code (`claude`).
+/// digest, and "Continue in Claude Code", through the developer's own Claude Code (`claude`).
 ///
 /// The rules it keeps:
 /// - off by default, one switch in Settings → General; hidden entirely while `claude` isn't installed;
@@ -90,9 +116,12 @@ public final class AIStore {
 
     public private(set) var settings: AISettings
     public private(set) var availability: ClaudeAvailability = .unknown
+    /// whether a digest was written, in the morning or by a click, that the Digest section hasn't shown yet: the dot on the
+    /// sidebar's row. One Bool, so the sidebar reads nothing else of the store.
+    public internal(set) var hasUnreadDigest = false
     /// each subject's answer
-    public private(set) var states: [AISubject: AIAnswerState] = [:]
-    /// what the last Open in Claude Code did, or why it failed, and for what; replaced by the next
+    public let states = ObservedEntries<AISubject, AIAnswerState>()
+    /// what the last Continue in Claude Code did, or why it failed, and for what; replaced by the next
     public private(set) var lastLaunch: ClaudeCodeLaunchResult?
     /// what the next question of a merge request's chat is about, by its reference: a removable chip above the field;
     /// none means the whole merge request (AI-07)
@@ -115,8 +144,11 @@ public final class AIStore {
     /// the user's slash commands and skills for the "/" list; empty until read
     public internal(set) var slashCommands: [SlashCommand] = []
 
-    /// posts the morning digest as a notification, with its text; the app sets it
-    @ObservationIgnored public var notify: (@Sendable (String) async -> Void)?
+    /// Called when an answer or a failure landed while no card of its subject was on screen, so the Inbox can say so
+    /// (Task 7.03). The app sets it; nothing is called while the card is visible, as the answer is right there.
+    @ObservationIgnored public var onAnswerLanded: (@MainActor (AILanding) -> Void)?
+    /// how many cards show each subject right now; the cards say so (``cardAppeared(_:)``)
+    @ObservationIgnored private var visibleCards: [AISubject: Int] = [:]
     /// loads the merge requests and work items before the digest is written; the app sets it
     @ObservationIgnored public var refreshBeforeDigest: (@MainActor () async -> Void)?
     /// the digest's facts from the app's stores; the app sets it
@@ -124,7 +156,9 @@ public final class AIStore {
 
     /// the model chosen for an answer that waits in review, until it is sent
     @ObservationIgnored private var reviewModels: [AISubject: ClaudeModel] = [:]
-    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored let defaults: UserDefaults
+    /// where the last digest is kept for the next launch; `nil` keeps none
+    @ObservationIgnored let digestFile: URL?
     @ObservationIgnored let engine: ClaudeEngine
     @ObservationIgnored private let launcher: any ProgramLauncher
     @ObservationIgnored private let terminals: any TerminalDirectory
@@ -148,16 +182,24 @@ public final class AIStore {
     @ObservationIgnored private var detecting: Task<Void, Never>?
     /// the setup listing in progress, so that two chats waiting for it share one
     @ObservationIgnored var listing: Task<Void, Never>?
+    /// when the setup was last listed, for the refresh of a listing that has grown old
+    @ObservationIgnored var setupListedAt: Date?
+    /// reads the keys of the MCP servers the Claude Code config names, for a run in a folder (AI-09); the app sets it.
+    /// Without it nothing is added to what the listing knows.
+    @ObservationIgnored public var configuredMcpServers: (@Sendable (_ folder: String?) async -> Set<String>)?
     /// the folder the slash commands were read for
     @ObservationIgnored var slashCommandsProject: String??
     @ObservationIgnored private var digestLoop: Task<Void, Never>?
+    /// the facts the last digest was written from, which its answer's cards are made of (AI-04)
+    @ObservationIgnored var digestSent: DigestFacts?
 
     /// - Parameters:
     ///   - defaults: the preferences' suite, where the settings are kept
+    ///   - digestFile: the file that keeps the last digest for the next launch (``FileLocations/applicationSupport``); `nil` keeps none
     ///   - runner: runs `claude` and the login shell
-    ///   - launcher: opens the terminal for Open in Claude Code
+    ///   - launcher: opens the terminal for Continue in Claude Code
     ///   - terminals: where the user's terminal is looked up
-    ///   - launchFolder: where Open in Claude Code's launch folders go
+    ///   - launchFolder: where Continue in Claude Code's launch folders go
     ///   - log: the Activity log
     ///   - clock: the clock of the morning digest
     ///   - now: the current time
@@ -165,13 +207,14 @@ public final class AIStore {
     ///   - gitLab: the GitLab services, for a merge request's threads
     ///   - resolver: finds `claude`; one of its own by default
     public init(
-        defaults: UserDefaults, runner: any ProcessRunner, launcher: any ProgramLauncher = SystemProgramLauncher(),
+        defaults: UserDefaults, digestFile: URL? = nil, runner: any ProcessRunner, launcher: any ProgramLauncher = SystemProgramLauncher(),
         terminals: any TerminalDirectory = SystemTerminalDirectory(),
         launchFolder: URL = FileManager.default.temporaryDirectory.appending(path: "megamonitor-claude", directoryHint: .isDirectory),
         log: ActivityLog? = nil, clock: any Clock<Duration> = ContinuousClock(), now: @escaping @Sendable () -> Date = { Date() },
         jenkins: PipelinesServices? = nil, gitLab: GitLabServices? = nil, resolver: ProgramResolver? = nil
     ) {
         self.defaults = defaults
+        self.digestFile = digestFile
         self.runner = runner
         engine = ClaudeEngine(runner: runner, resolver: resolver)
         self.launcher = launcher
@@ -183,6 +226,7 @@ public final class AIStore {
         self.jenkins = jenkins
         self.gitLab = gitLab
         settings = AISettings.load(from: defaults)
+        restoreDigest()
         // The monthly spend of earlier versions is gone.
         defaults.removeObject(forKey: "ai.usage")
         scheduleDigest()
@@ -254,9 +298,40 @@ public final class AIStore {
         states[subject] ?? .idle
     }
 
+    /// A card of a subject came on screen: its answer needs no entry in the Inbox while it shows.
+    ///
+    /// - Parameter subject: the subject
+    public func cardAppeared(_ subject: AISubject) {
+        visibleCards[subject, default: 0] += 1
+    }
+
+    /// A card of a subject left the screen.
+    ///
+    /// - Parameter subject: the subject
+    public func cardDisappeared(_ subject: AISubject) {
+        let count = (visibleCards[subject] ?? 0) - 1
+        visibleCards[subject] = count > 0 ? count : nil
+    }
+
+    /// whether a card of the subject is on screen
+    public func isCardVisible(_ subject: AISubject) -> Bool {
+        visibleCards[subject] != nil
+    }
+
+    /// Tells the app that an answer or a failure landed, unless its card is on screen.
+    func landed(_ subject: AISubject, _ useCase: AIUseCase, answer: AIAnswer? = nil, text: String? = nil, failure: String? = nil) {
+        guard !isCardVisible(subject) else {
+            return
+        }
+        onAnswerLanded?(AILanding(subject: subject, useCase: useCase, answer: answer, text: text, failure: failure, at: now()))
+    }
+
     /// Forgets a subject's answer or failure, or cancels its review.
     public func dismiss(_ subject: AISubject) {
         states[subject] = nil
+        if subject == .digest {
+            forgetStoredDigest()
+        }
         reviewModels[subject] = nil
         clearConversation(of: subject)
         openingQuestions[subject] = nil
@@ -337,7 +412,9 @@ public final class AIStore {
             guard !facts.isEmpty else {
                 throw AIGatherError("No merge requests, builds or work items to write about yet")
             }
-            return .digest(facts)
+            self?.digestSent = facts
+            let history = self.map { DigestHistory.load(from: $0.defaults) } ?? DigestHistory()
+            return .digest(facts, changes: history.changes(for: facts))
         }
     }
 
@@ -533,11 +610,16 @@ public final class AIStore {
             // A new first answer starts the conversation anew.
             clearConversation(of: subject)
             count(run, prompt: prompt, model: model)
-            guard let answer = Self.answer(of: run, prompt: prompt, model: model, at: now()) else {
-                states[subject] = .failed(ClaudeFailure.unreadableAnswer(run).message, prompt)
+            guard let answer = Self.answer(of: run, prompt: prompt, model: model, at: now()).flatMap({
+                prompt.useCase == .digest ? completeDigest($0, run: run) : $0
+            }) else {
+                let message = ClaudeFailure.unreadableAnswer(run).message
+                states[subject] = .failed(message, prompt)
+                landed(subject, prompt.useCase, failure: message)
                 return
             }
             states[subject] = .answered(answer)
+            landed(subject, prompt.useCase, answer: answer)
         } catch {
             guard !Task.isCancelled else { return }
             clearConversation(of: subject)
@@ -548,6 +630,7 @@ public final class AIStore {
                 record("Claude: \(prompt.useCase.logName) failed, \(status)", level: .warning, source: .app)
             }
             states[subject] = .failed(error.message, prompt)
+            landed(subject, prompt.useCase, failure: error.message)
         }
     }
 
@@ -562,7 +645,12 @@ public final class AIStore {
         case .summarizeThreads:
             guard let summary = run.decoded(ThreadsSummary.self) else { return nil }
             answer.summary = summary
-        case .digest, .openInClaudeCode, .askAboutCode, .askAboutItem:
+        case .digest:
+            // The digest's JSON, or Markdown when Claude answered in words (AI-04): completed by ``completeDigest``.
+            let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            answer.text = text?.isEmpty == false ? text : nil
+            guard answer.text != nil || run.structured != nil else { return nil }
+        case .openInClaudeCode, .askAboutCode, .askAboutItem, .coffeeBreak:
             guard let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             answer.text = text
         }
@@ -651,8 +739,8 @@ public final class AIStore {
         return .seconds(max(next.timeIntervalSince(date), 1))
     }
 
-    /// Writes the digest the user scheduled, without a click, and posts it. A Mac that slept through the time writes it
-    /// at wake only within three hours of it.
+    /// Writes the digest the user scheduled, without a click. It lands in the Inbox like any answer whose card isn't on
+    /// screen (``onAnswerLanded``). A Mac that slept through the time writes it at wake only within three hours of it.
     private func writeMorningDigest() async {
         let date = now()
         let scheduled = Self.nextDigest(after: date.addingTimeInterval(-86_400), minutes: settings.digestMinutes)
@@ -667,9 +755,6 @@ public final class AIStore {
         next.confirmedUseCases.insert(.digest)
         update(next)
         await writeDigest()
-        if case .answered(let answer) = state(of: .digest), let text = answer.text {
-            await notify?(text)
-        }
     }
 
     func record(_ message: String, level: ActivityEntry.Level, source: ActivityEntry.Source) {
@@ -680,7 +765,7 @@ public final class AIStore {
     }
 }
 
-/// What an Open in Claude Code did, or why it failed, for the detail it was clicked in.
+/// What a Continue in Claude Code did, or why it failed, for the chat it was clicked in.
 public struct ClaudeCodeLaunchResult: Hashable, Sendable {
     public var context: ClaudeCodeContext
     public var message: String

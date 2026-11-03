@@ -28,6 +28,9 @@ public enum AppRoute: Hashable, Sendable {
     /// A section of the main window's sidebar, named as in its link.
     public enum Section: String, Hashable, Sendable, CaseIterable {
         case pipelines
+        /// GitLab's To-Do List with Snooze, and the changes of my merge requests (Task 7.03, INBOX-02); second, so ⌘1
+        /// stays Pipelines
+        case inbox
         case mergeRequests = "merge-requests"
         case workItems = "work-items"
         case activity

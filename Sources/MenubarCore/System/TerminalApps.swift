@@ -112,7 +112,7 @@ public struct SystemTerminalDirectory: TerminalDirectory {
     }
 }
 
-/// What the terminal opens: a folder (Open in Terminal) or a script (Open in Claude Code).
+/// What the terminal opens: a folder (Open in Terminal) or a script (Continue in Claude Code).
 public enum TerminalTask: Hashable, Sendable {
     case folder
     case script
@@ -126,7 +126,7 @@ public enum TerminalTask: Hashable, Sendable {
     }
 }
 
-/// The terminal Open in Terminal and Open in Claude Code use: the one chosen in Settings → Repositories, else the one
+/// The terminal Open in Terminal and Continue in Claude Code use: the one chosen in Settings → Repositories, else the one
 /// that opens `.command` files; Terminal when that one isn't there or can't do the task, with the reason.
 public struct TerminalChoice: Hashable, Sendable {
     public var app: TerminalApp

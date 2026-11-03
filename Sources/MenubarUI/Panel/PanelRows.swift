@@ -34,6 +34,8 @@ public struct PanelActions {
     public var close: @MainActor () -> Void
     /// starts a build's job again with its parameters (PIPE-09)
     public var rebuildBuild: @MainActor (BuildID) -> Void
+    /// opens the sheet of "Rebuild with Changes…" for a build, in the main window (PIPE-09)
+    public var rebuildBuildWithChanges: @MainActor (BuildID) -> Void
     /// removes a job's queued rebuild from Jenkins's queue (PIPE-09)
     public var cancelRebuild: @MainActor (String) -> Void
     /// watches the builds of an MR, by its number, in one click and without the sheet (WATCH-01)
@@ -54,6 +56,7 @@ public struct PanelActions {
         hide: @escaping @MainActor (Build) -> Void, stopWatching: @escaping @MainActor (String) -> Void,
         copy: @escaping @MainActor (URL) -> Void, close: @escaping @MainActor () -> Void,
         rebuildBuild: @escaping @MainActor (BuildID) -> Void = { _ in },
+        rebuildBuildWithChanges: @escaping @MainActor (BuildID) -> Void = { _ in },
         cancelRebuild: @escaping @MainActor (String) -> Void = { _ in },
         watchBuilds: @escaping @MainActor (MergeRequest) -> Void = { _ in },
         openSection: @escaping @MainActor (MainWindowSection) -> Void = { _ in },
@@ -78,6 +81,7 @@ public struct PanelActions {
         self.copy = copy
         self.close = close
         self.rebuildBuild = rebuildBuild
+        self.rebuildBuildWithChanges = rebuildBuildWithChanges
         self.cancelRebuild = cancelRebuild
         self.watchBuilds = watchBuilds
         self.openSection = openSection
@@ -178,16 +182,13 @@ struct BuildRowContent: View {
     private func factsLine(byline showsByline: Bool = true, stages: Stages = .none, timing: Bool = true, fits: Bool = true)
         -> some View
     {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             if showsByline, let byline = model.byline {
                 Text(verbatim: byline)
                     .fixedSize()
                 separator
             }
-            // An MR's reference is never cut; a branch's is, in the middle.
-            Text(verbatim: model.buildName)
-                .truncationMode(.middle)
-                .fixedSize(horizontal: model.build.mergeRequestIID != nil, vertical: false)
+            buildName
                 .layoutPriority(2)
             if let status = model.status {
                 if !model.build.isRunning {
@@ -215,6 +216,22 @@ struct BuildRowContent: View {
     private var separator: some View {
         Text(verbatim: " · ")
             .fixedSize()
+    }
+
+    /// An MR's reference is the small green MR chip, "!12" and then the build's "#7" as text, and is never cut; a branch's
+    /// is text, cut in the middle.
+    @ViewBuilder private var buildName: some View {
+        if model.build.mergeRequestIID != nil, model.buildName.hasPrefix(model.build.label) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                MergeRequestNumberChip(text: model.build.label)
+                Text(verbatim: String(model.buildName.dropFirst(model.build.label.count)))
+            }
+            .fixedSize()
+        } else {
+            Text(verbatim: model.buildName)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: model.build.mergeRequestIID != nil, vertical: false)
+        }
     }
 
     @ViewBuilder private var thirdLine: some View {
@@ -289,8 +306,8 @@ struct RebuildLine: View {
     }
 }
 
-/// A build's context menu: its links, Copy Link, Rebuild (or Cancel Rebuild while queued) and Rebuild with Changes…
-/// for a finished build, Hide Until the Next Build and, for a watched build, Stop Watching. The panel's rows and the
+/// A build's context menu: its links, Copy Link, Rebuild Identically and Rebuild with Changes… (or Cancel Rebuild while
+/// queued) for a finished build, Hide Until the Next Build and, for a watched build, Stop Watching. The panel's rows and the
 /// main window's Pipelines list share it.
 struct BuildRowMenu: View {
     let model: BuildRowModel
@@ -314,11 +331,10 @@ struct BuildRowMenu: View {
             if model.rebuild?.canCancel == true {
                 Button("Cancel Rebuild") { actions.cancelRebuild(model.build.jobKey) }
             } else {
-                Button("Rebuild") { actions.rebuildBuild(model.build.id) }
+                Button("Rebuild Identically") { actions.rebuildBuild(model.build.id) }
                     .disabled(model.rebuild?.isUnderWay == true)
-            }
-            if let url = model.rebuildWithChanges {
-                Button("Rebuild with Changes…") { actions.open(url) }
+                Button("Rebuild with Changes…") { actions.rebuildBuildWithChanges(model.build.id) }
+                    .disabled(model.rebuild?.isUnderWay == true)
             }
         }
         Divider()

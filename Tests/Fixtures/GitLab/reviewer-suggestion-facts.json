@@ -1,0 +1,51 @@
+{
+  "data": {
+    "project": {
+      "mergeRequest": {
+        "targetBranch": "main",
+        "author": { "username": "jdoe" },
+        "reviewers": { "nodes": [ { "username": "akim" } ] },
+        "approvedBy": { "nodes": [ { "username": "rmeyer" } ] },
+        "diffStats": [
+          { "path": "core/src/Main.java" },
+          { "path": "docs/index.md" }
+        ],
+        "approvalState": {
+          "rules": [
+            {
+              "name": "*.java",
+              "type": "CODE_OWNER",
+              "section": "core",
+              "approvalsRequired": 1,
+              "approved": false,
+              "eligibleApprovers": [
+                { "username": "slee", "name": "Sam Lee", "state": "active" },
+                { "username": "cnovak", "name": "Chris Novak", "state": "blocked" },
+                { "username": "project_12_bot_abc", "name": "Token", "state": "active" }
+              ],
+              "approvedBy": { "nodes": [] }
+            },
+            {
+              "name": "Security",
+              "type": "REGULAR",
+              "section": null,
+              "approvalsRequired": 2,
+              "approved": false,
+              "eligibleApprovers": [ { "username": "pwu", "name": "Pat Wu", "state": "active" } ],
+              "approvedBy": { "nodes": [ { "username": "rmeyer" } ] }
+            },
+            {
+              "name": "All Members",
+              "type": "ANY_APPROVER",
+              "section": null,
+              "approvalsRequired": 1,
+              "approved": false,
+              "eligibleApprovers": [],
+              "approvedBy": { "nodes": [] }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

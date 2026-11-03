@@ -20,7 +20,7 @@ public final class OpenedItemsStore {
     /// the opened items, the one opened last first
     public private(set) var items: [OpenedItem]
     /// the state of each item's load
-    public private(set) var states: [OpenedItem.ID: LoadState] = [:]
+    public let states = ObservedEntries<OpenedItem.ID, LoadState>()
     /// the merge requests as loaded
     public private(set) var mergeRequests: [OpenedItem.ID: MergeRequest] = [:]
     /// the work items as loaded

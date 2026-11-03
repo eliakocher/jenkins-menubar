@@ -1,110 +1,6 @@
 import MenubarCore
 import SwiftUI
 
-/// One token's section of Settings → Accounts (ACC-02, ACC-03, ACC-05, ACC-06, `docs/design/settings-accounts.md`):
-/// where the token comes from, the fields of a new one, the link that creates one, Remove and Save, and why a token
-/// couldn't be saved. The welcome flow's Accounts step can show the same sections. Put it inside a grouped `Form`.
-public struct TokenSection: View {
-    /// a field of the section, for its first keyboard focus
-    public enum Field: Hashable, Sendable {
-        /// the Jenkins user
-        case user
-        /// the new token
-        case token
-    }
-
-    private let account: TokenAccount
-    private let source: TokenSource
-    private let user: Binding<String>?
-    private let token: Binding<String>
-    private let link: TokenLink?
-    private let error: String?
-    private let save: () -> Void
-    private let remove: () -> Void
-    private let initialFocus: Field?
-    @FocusState private var focused: Field?
-
-    /// - Parameters:
-    ///   - account: Jenkins, with the user and the API token, or GitLab, with the personal access token
-    ///   - source: `SettingsStore.tokenSource(_:)`
-    ///   - user: the Jenkins user, filled from the stored token; ignored for GitLab
-    ///   - token: the new token as typed; emptied after a Save
-    ///   - link: `SettingsStore.tokenLink(_:)`; nil while the team value it needs is missing
-    ///   - error: `SettingsStore.tokenErrors[account]`
-    ///   - save: Save, and Return in the section's fields while Save is enabled
-    ///   - remove: Remove, at once, without confirmation
-    ///   - initialFocus: the field that takes the keyboard focus when the section appears (review WELCOME-05)
-    public init(
-        _ account: TokenAccount, source: TokenSource, user: Binding<String>? = nil, token: Binding<String>,
-        link: TokenLink?, error: String?, save: @escaping () -> Void, remove: @escaping () -> Void,
-        initialFocus: Field? = nil
-    ) {
-        self.account = account
-        self.source = source
-        self.user = user
-        self.token = token
-        self.link = link
-        self.error = error
-        self.save = save
-        self.remove = remove
-        self.initialFocus = initialFocus
-    }
-
-    public var body: some View {
-        Section {
-            LabeledContent("Token") {
-                StatusLine(source.isStored ? .ok : .note, source.text)
-            }
-            if account == .jenkins, let user {
-                TextField("User", text: user, prompt: Text("Your Jenkins user"))
-                    .focused($focused, equals: .user)
-                    .onSubmit(submit)
-                SecureField("New API token", text: token, prompt: Text("Paste the API token from your Jenkins user page"))
-                    .focused($focused, equals: .token)
-                    .onSubmit(submit)
-            } else {
-                SecureField("New token", text: token, prompt: Text("Paste a personal access token with the api scope"))
-                    .focused($focused, equals: .token)
-                    .onSubmit(submit)
-            }
-            HStack {
-                if let link {
-                    Link(link.title, destination: link.url)
-                }
-                Spacer()
-                if source.isStored {
-                    Button("Remove", role: .destructive, action: remove)
-                }
-                Button("Save", action: save)
-                    .disabled(!canSave)
-            }
-            if let error {
-                StatusLine(.problem, error)
-            }
-        } header: {
-            // On the header, a single view: a modifier on the section may go to each of its rows (inferred).
-            Text(account == .jenkins ? "Jenkins" : "GitLab")
-                .task {
-                    if let initialFocus {
-                        focused = initialFocus
-                    }
-                }
-        }
-    }
-
-    private var canSave: Bool {
-        account == .jenkins
-            ? SettingsStore.canSaveJenkinsToken(user: user?.wrappedValue ?? "", apiToken: token.wrappedValue)
-            : SettingsStore.canSaveGitLabToken(token.wrappedValue)
-    }
-
-    private func submit() {
-        if canSave {
-            save()
-        }
-    }
-}
-
 /// The account check's section (ACC-04): Check, a spinner in its place while it runs, and what each server said.
 public struct AccountCheckSection: View {
     private let isChecking: Bool
@@ -205,7 +101,7 @@ struct AccountsSettingsForm: View {
             Section {
                 SettingsTextRow(
                     "GitLab URL", text: $gitLabURL,
-                    prompt: TeamValueFields.prompt(of: .gitLabURL), issue: model.gitLabURLIssue, width: 260, shared: true)
+                    prompt: TeamValues.Key.gitLabURL.prompt, issue: model.gitLabURLIssue, width: 260, shared: true)
                     .settingsAnchor(.gitLabURL)
                 statusRow(.gitlab, source: model.gitLabSource)
                 LabeledContent {

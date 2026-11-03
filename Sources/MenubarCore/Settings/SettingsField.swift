@@ -5,18 +5,26 @@ import Foundation
 public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     // General
     case openAtLogin
-    case menuBarIcon
     case shortcut
     case linkRouting
+    // Menu Bar
+    case showInMenuBar
+    case menuBarIcon
+    case menuBarParts
+    case menuPaneRows
+    case menuPaneWidth
     // Notifications
     case buildAlerts
     case mutedJobs
     case slotWarning
+    case inboxNotifications
+    case coffeeBreak
     // Appearance
     case contentWidth
     case textSize
     case diffLayout
     case discussions
+    case sidebarOrder
     // Accounts
     case gitLabURL
     case gitLabToken
@@ -37,6 +45,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     // Work Items
     case workItemFilters
     case workItemLabels
+    case workItemRowLabels
     // Workspaces
     case repositoryFolders
     case ideCommand
@@ -54,14 +63,15 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     /// the pane the field lives in
     public var pane: SettingsPane {
         switch self {
-        case .openAtLogin, .menuBarIcon, .shortcut, .linkRouting: .general
-        case .buildAlerts, .mutedJobs, .slotWarning: .notifications
-        case .contentWidth, .textSize, .diffLayout, .discussions: .appearance
+        case .openAtLogin, .shortcut, .linkRouting: .general
+        case .showInMenuBar, .menuBarIcon, .menuBarParts, .menuPaneRows, .menuPaneWidth: .menuBar
+        case .buildAlerts, .mutedJobs, .slotWarning, .inboxNotifications, .coffeeBreak: .notifications
+        case .contentWidth, .textSize, .diffLayout, .discussions, .sidebarOrder: .appearance
         case .gitLabURL, .gitLabToken, .jenkinsToken, .accountCheck: .accounts
         case .projects, .jenkinsJob: .projects
         case .teamFile, .labels, .slotSchedule, .slotPlanning, .squads: .team
         case .checkInterval, .hideBuilds: .pipelines
-        case .workItemFilters, .workItemLabels: .workItems
+        case .workItemFilters, .workItemLabels, .workItemRowLabels: .workItems
         case .repositoryFolders, .ideCommand, .terminal: .workspaces
         case .claude, .claudeModel, .claudeSetup, .morningDigest: .claude
         case .gitLabDataAge, .backup, .welcome: .advanced
@@ -72,16 +82,23 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     public var title: String {
         switch self {
         case .openAtLogin: "Open at login"
+        case .showInMenuBar: "Show in menu bar"
         case .menuBarIcon: "Menu bar icon"
+        case .menuBarParts: "What the menu bar shows"
+        case .menuPaneRows: "Rows of the menu"
+        case .menuPaneWidth: "Menu width"
         case .shortcut: "Open the window with"
         case .linkRouting: "Open GitLab and Jenkins links in MegaMonitor"
         case .buildAlerts: "When a build finishes"
         case .mutedJobs: "Which builds alert"
         case .slotWarning: "Warn before a code freeze"
+        case .inboxNotifications: "What lands in the Inbox"
+        case .coffeeBreak: "Coffee break"
         case .contentWidth: "Content width"
         case .textSize: "Text size"
         case .diffLayout: "Code changes layout"
         case .discussions: "Discussions order"
+        case .sidebarOrder: "Order of the sidebar"
         case .gitLabURL: "GitLab server"
         case .gitLabToken: "GitLab token"
         case .jenkinsToken: "Jenkins token"
@@ -97,6 +114,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .hideBuilds: "Hide finished builds"
         case .workItemFilters: "Work item filters"
         case .workItemLabels: "Work item labels"
+        case .workItemRowLabels: "Labels on rows"
         case .repositoryFolders: "Repository folders"
         case .ideCommand: "Open in IDE"
         case .terminal: "Terminal"
@@ -114,16 +132,23 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     public var keywords: [String] {
         switch self {
         case .openAtLogin: ["login", "start", "startup", "launch", "boot"]
-        case .menuBarIcon: ["menu bar", "icon", "color", "monochrome", "show in menu bar"]
+        case .showInMenuBar: ["menu bar", "hide", "status item", "icon"]
+        case .menuBarIcon: ["menu bar", "icon", "butler", "color", "colour", "monochrome", "style"]
+        case .menuBarParts: ["counts", "running", "failed", "unstable", "successful", "passed", "problem", "inbox", "dot", "red dot", "badge", "number", "review", "merge requests", "slot", "freeze", "countdown", "order", "drag", "zero"]
+        case .menuPaneRows: ["pane", "menu", "rows", "flyout", "order", "drag", "pipelines", "inbox", "merge requests", "work items", "entries"]
+        case .menuPaneWidth: ["width", "compact", "regular", "wide", "pane", "menu"]
         case .shortcut: ["hotkey", "keyboard", "global", "shortcut", "key"]
         case .linkRouting: ["links", "browser", "route", "gitlab", "jenkins", "hold option"]
         case .buildAlerts: ["alert", "banner", "window", "notification", "sound", "stage", "preview"]
         case .mutedJobs: ["mute", "muted", "quiet", "my builds", "watched builds", "job", "notify"]
         case .slotWarning: ["slot", "code freeze", "warning", "committed", "merge request"]
+        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "to-do", "todo", "unread", "only my projects", "notification"]
+        case .coffeeBreak: ["coffee", "break", "haiku", "daily", "08:59", "joke", "fun", "time", "reminder", "inbox"]
         case .contentWidth: ["width", "wide", "narrow", "cards", "window"]
         case .textSize: ["reading size", "font", "bigger", "smaller", "descriptions", "comments"]
         case .diffLayout: ["diff", "side by side", "inline", "layout", "folders", "folded"]
         case .discussions: ["comments", "sort", "threads", "open first", "order"]
+        case .sidebarOrder: ["sidebar", "sections", "tabs", "order", "reorder", "drag", "move", "pipelines", "merge requests", "digest", "reset"]
         case .gitLabURL: ["url", "server", "host", "gitlab", "address"]
         case .gitLabToken: ["token", "keychain", "api", "scope", "sign in", "gitlab", "password"]
         case .jenkinsToken: ["token", "keychain", "api", "sign in", "jenkins", "user", "password"]
@@ -139,6 +164,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .hideBuilds: ["hide", "successful", "failed", "merged", "finished", "builds"]
         case .workItemFilters: ["filters", "assigned", "scope", "type", "state", "sort", "limit", "must have"]
         case .workItemLabels: ["labels", "label", "filter", "must have", "pills"]
+        case .workItemRowLabels: ["labels", "label", "hide", "hidden", "scoped", "scope", "prefix", "value only", "rows", "pills"]
         case .repositoryFolders: ["repositories", "folders", "checkouts", "base branch", "local", "clone"]
         case .ideCommand: ["ide", "editor", "command", "open in ide", "intellij", "vs code"]
         case .terminal: ["terminal", "iterm", "shell", "console", "default terminal"]

@@ -18,6 +18,8 @@ public struct MainWindowRoot: View {
     @AppStorage("mainWindow.sidebarVisible") private var sidebarVisible = true
     /// whether Activity's inspector shows; its toolbar toggle, View › Show Inspector and the rows' ⓘ share it (LOG-04)
     @AppStorage("activity.inspectorShown") private var activityInspectorShown = false
+    /// the sidebar's order of the sections, which Settings → Appearance and a drag in the sidebar change (WIN-01)
+    @AppStorage(SectionOrder.key) private var sectionOrder = ""
     /// whether "Clear all activity?" shows; Activity's toolbar and File › Clear Activity… share the section's one alert
     @ViewState private var isConfirmingClearActivity = false
     @ViewState private var searchText = ""
@@ -63,6 +65,12 @@ public struct MainWindowRoot: View {
         .onChange(of: isOnScreen) {
             reportSurfaces()
         }
+        // The Digest section showing a digest the sidebar's dot was for: the dot goes.
+        .onChange(of: isShowingUnreadDigest, initial: true) { _, isShowing in
+            if isShowing {
+                model.ai.markDigestSeen()
+            }
+        }
         .onChange(of: searchIsSpellcheck) { _, isSpellcheck in
             // The demo counts once each time the search turns to "spellcheck", not per keystroke.
             spellcheckDemo = isSpellcheck ? model.pipelines.countSpellcheckDemo() : nil
@@ -80,6 +88,13 @@ public struct MainWindowRoot: View {
         .sheet(isPresented: isOpeningByLink) {
             OpenByLinkSheet()
         }
+        .sheet(item: rebuildRequest) { request in
+            RebuildSheet(
+                build: request.build.label,
+                load: { [model] in await model.projects.rebuildForm(for: request.build) },
+                rebuild: { [model] in model.projects.rebuild(request.build, with: $0) },
+                close: { [router] in router.rebuildRequest = nil })
+        }
         // A link to a merge request or work item in a description or a comment opens in the app (WIN-06).
         .environment(\.openItemLink, OpenItemLink { [model, router] url in router.openItemLink(url, model: model) })
     }
@@ -87,12 +102,18 @@ public struct MainWindowRoot: View {
     /// The shell, filled from the stores.
     private var shell: some View {
         @Bindable var router = router
+        // The subtitles and spinners of the other sections are neither shown nor read: reading them made every change
+        // of the log or the checkouts draw the whole window again.
+        let section = router.section
         let model: MainWindowShellModel = MainWindowShellModel(
-            PanelView.data(self.model, now: self.model.pipelines.now), section: router.section,
-            activitySubtitle: activitySubtitle, workspacesSubtitle: workspacesSubtitle,
-            workspacesBusy: self.model.workspaces.isRefreshing,
-            slotsBusy: self.model.slotLabels.isLoading || self.model.slotItems.isLoading,
-            digestSubtitle: DigestPage.subtitle(state: digestState), digestBusy: digestState.isBusy)
+            PanelView.data(self.model, now: self.model.pipelines.now), section: section,
+            activitySubtitle: section == .activity ? activitySubtitle : nil,
+            workspacesSubtitle: section == .workspaces ? workspacesSubtitle : nil,
+            workspacesBusy: section == .workspaces && self.model.workspaces.isRefreshing,
+            slotsBusy: section == .slots && (self.model.slotLabels.isLoading || self.model.slotItems.isLoading),
+            digestSubtitle: section == .digest ? DigestPage.subtitle(state: digestState) : nil,
+            digestBusy: section == .digest && digestState.isBusy, digestUnread: self.model.ai.hasUnreadDigest,
+            inbox: inboxShell(section))
         let actions: PanelActions = PanelActions.mainWindow(self.model, router: router, openURL: openURL)
         let ai = self.model.ai
         return MainWindowShell(
@@ -101,7 +122,8 @@ public struct MainWindowRoot: View {
                 MainWindowReload.run(router.section, selection: router.selection, opened: router.opened, model: model)
             }, searchFocusRequest: router.searchFocusRequest, searchNote: eggNote, opened: openedSidebar,
             navigation: navigation, detailLink: DetailLink.current(self.model, router: router),
-            sections: MainWindowSection.sidebarSections(claudeIsOffered: ai.isOffered, shown: router.section)
+            sections: MainWindowSection.sidebarSections(claudeIsOffered: ai.isOffered, shown: router.section, order: sectionOrder),
+            moveSections: { moveSections(from: $0, to: $1) }
         ) {
             content(selection: $router.selection)
                 .id(revealedList)
@@ -114,6 +136,30 @@ public struct MainWindowRoot: View {
                 section: router.section, watchBuild: actions.watchBuild, activityInspectorShown: $activityInspectorShown,
                 isConfirmingClearActivity: $isConfirmingClearActivity)
         }
+    }
+
+    /// What the Inbox adds to the shell: the badge and the problem always, since the sidebar shows them; the subtitle and the
+    /// spinner only while it is shown. The rows aren't read here, so a change of the to-dos doesn't draw the window.
+    private func inboxShell(_ section: MainWindowSection) -> InboxShell {
+        let inbox = model.inbox
+        return InboxShell(
+            badge: inbox.badgeCount, problem: inbox.problem,
+            subtitle: section == .inbox ? inbox.fetchedAt.map { Formatting.lastChecked($0) } : nil,
+            isBusy: section == .inbox && inbox.isLoading)
+    }
+
+    /// Saves the order after a drag of the sidebar's rows; a section the sidebar hides keeps its place.
+    private func moveSections(from source: IndexSet, to destination: Int) {
+        let shown = MainWindowSection.sidebarSections(
+            claudeIsOffered: model.ai.isOffered, shown: router.section, order: sectionOrder)
+        let moved = SectionOrder.moving(
+            SectionOrder.merged(stored: sectionOrder), shown: shown, from: source, to: destination)
+        sectionOrder = SectionOrder.stored(moved)
+    }
+
+    /// whether the window shows the Digest section, with something the sidebar's dot was for
+    private var isShowingUnreadDigest: Bool {
+        router.section == .digest && router.opened == nil && isOnScreen && model.ai.hasUnreadDigest
     }
 
     /// where the digest stands
@@ -169,6 +215,8 @@ public struct MainWindowRoot: View {
             WorkspacesListView(selection: selection.workspaces, searchText: searchText)
         case .slots:
             SlotsView(selection: selection.slots, searchText: searchText)
+        case .inbox:
+            InboxListView(searchText: searchText)
         case .digest:
             DigestView(searchText: searchText)
         }
@@ -198,26 +246,27 @@ public struct MainWindowRoot: View {
             EmptyView()
         case .workspaces:
             WorkspaceDetailView(selection: selection.workspaces)
-        case .slots, .digest:
+        case .slots, .digest, .inbox:
             EmptyView()
         }
     }
 
-    /// The toolbar's Back and Forward buttons: the router's history, and the places as the menus list them (WIN-08).
+    /// The toolbar's Back and Forward buttons: the router's history, and the places as the menus list them (WIN-08). The
+    /// places are read only when a menu opens.
     private var navigation: NavigationControls {
         let router = router
         let model = model
         let history = router.history
-        func entries(_ places: [NavigationLocation]) -> [NavigationControls.Entry] {
-            let resolver = NavigationResolver(model)
-            return places.filter(resolver.exists).enumerated().map { index, place in
-                NavigationControls.Entry(
-                    id: index, location: place, title: resolver.title(place), systemImage: resolver.systemImage(place))
+        func entries(_ places: @escaping @MainActor () -> [NavigationLocation]) -> @MainActor () -> [NavigationControls.Entry] {
+            {
+                let resolver = NavigationResolver(model)
+                return NavigationControls.entries(
+                    places(), exists: resolver.exists, title: resolver.title, systemImage: resolver.systemImage)
             }
         }
         return NavigationControls(
             canGoBack: history.canGoBack, canGoForward: history.canGoForward,
-            backEntries: { entries(history.backEntries) }, forwardEntries: { entries(history.forwardEntries) },
+            backEntries: entries { router.history.backEntries }, forwardEntries: entries { router.history.forwardEntries },
             goBack: { router.goBack(model: model) }, goForward: { router.goForward(model: model) },
             jump: { router.jump(to: $0, model: model) })
     }
@@ -239,7 +288,13 @@ public struct MainWindowRoot: View {
                 },
                 setPinned: { store.setPinned($0, $1) },
                 openInGitLab: { router.browse($0) },
-                copyLink: { MainWindowLinks.copy($0) }))
+                copyLink: { MainWindowLinks.copy($0) }),
+            // Read in each row's own body, from what the store loaded: a load redraws that row, not the window.
+            details: { item in
+                OpenedItemRowDetails.make(
+                    item: item, workItem: store.workItems[item.id],
+                    related: store.related[item.id], build: store.builds[item.id])
+            })
     }
 
     /// The sidebar shows by default; hiding it is kept with the section (`main-window.md`, Restored).
@@ -284,6 +339,12 @@ public struct MainWindowRoot: View {
         return $router.isOpeningByLink
     }
 
+    /// the "Rebuild with Changes…" sheet shows while there is a request; closing it clears the request (PIPE-09)
+    private var rebuildRequest: Binding<RebuildRequest?> {
+        @Bindable var router = router
+        return $router.rebuildRequest
+    }
+
     /// The sheet shows while there is a watch request; closing it clears the request.
     private var isWatching: Binding<Bool> {
         Binding(
@@ -316,6 +377,9 @@ struct MainWindowSectionToolbar: ToolbarContent {
         }
         if section == .activity {
             ActivityToolbar(isInspectorShown: $activityInspectorShown, isConfirmingClear: $isConfirmingClearActivity)
+        }
+        if section == .slots {
+            SlotsToolbarItems()
         }
     }
 }

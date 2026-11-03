@@ -215,7 +215,8 @@ extension GitLabOperation where Value == [Label] {
 }
 
 extension GitLabOperation where Value == [RelatedMergeRequest] {
-    /// The MRs that mention a work item, 10 at most (WI-05). GitLab resolves them for one work item per request.
+    /// The MRs that mention a work item, 10 at most, each with its source branch, so that ``RelatedMergeRequest/isOwn(of:)``
+    /// can tell the item's own from those that only mention it (WI-05). GitLab resolves them for one work item per request.
     ///
     /// - Parameter workItem: the work item
     /// - Returns: the operation, or `nil` for an epic or a reference without an iid, which aren't asked
@@ -228,7 +229,7 @@ extension GitLabOperation where Value == [RelatedMergeRequest] {
                 query RelatedMergeRequests($path: ID!, $iid: String!) {
                   project(fullPath: $path) {
                     issue(iid: $iid) {
-                      relatedMergeRequests(first: 10) { nodes { iid state title webUrl reference(full: true) } }
+                      relatedMergeRequests(first: 10) { nodes { iid state title webUrl reference(full: true) sourceBranch } }
                     }
                   }
                 }
@@ -238,7 +239,7 @@ extension GitLabOperation where Value == [RelatedMergeRequest] {
                 try GraphQLAnswer<RelatedShape>.value(of: body).project.issue.relatedMergeRequests.nodes.compactMap { node in
                     Int(node.iid).map {
                         RelatedMergeRequest(iid: $0, state: .init(rawValue: node.state), title: node.title, webURL: node.webUrl,
-                                            reference: node.reference)
+                                            reference: node.reference, sourceBranch: node.sourceBranch)
                     }
                 }
             })
@@ -414,6 +415,7 @@ private struct RelatedShape: Decodable {
         var title: String
         var webUrl: URL
         var reference: String
+        var sourceBranch: String?
     }
 }
 

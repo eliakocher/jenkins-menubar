@@ -260,7 +260,7 @@ public final class ItemDiscussionsStore {
         var fromDisk = false
     }
 
-    private var entries: [String: Entry] = [:]
+    private let entries = ObservedEntries<String, Entry>()
     @ObservationIgnored private let services: GitLabServices
 
     /// - Parameter services: the transport, the token and the team values; the logs record the requests

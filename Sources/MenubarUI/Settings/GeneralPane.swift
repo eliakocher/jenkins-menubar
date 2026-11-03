@@ -367,6 +367,7 @@ public struct NotificationsSettingsForm: View {
             } footer: {
                 SettingsFooter("Quiet builds stay in the lists and the menu bar; only their alerts and banners stop.")
             }
+            InboxNotificationsSection(rules: $preferences.inboxNotifications)
             Section {
                 Toggle(isOn: $preferences.slotAlerts) {
                     SettingsRowLabel(
@@ -491,6 +492,7 @@ struct AppearanceSettingsForm: View {
             } header: {
                 SettingsSectionHeader("Discussions")
             }
+            SidebarOrderSection()
         }
         .formStyle(.grouped)
         .revealsSettingsFields()

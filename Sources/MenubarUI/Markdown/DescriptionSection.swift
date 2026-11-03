@@ -22,7 +22,7 @@ struct DescriptionSection: View {
             ?? .loaded("")
         // A first heading that repeats the card's title is dropped.
         let document = description.text.map {
-            MarkdownDocument(parsing: $0, base: source.webURL).droppingLeadingHeading(titled: "Description")
+            MarkdownDocument.rendered($0, base: source.webURL).droppingLeadingHeading(titled: "Description")
         }
         if let document, !document.isEmpty {
             container(showsSizeButtons: true) {

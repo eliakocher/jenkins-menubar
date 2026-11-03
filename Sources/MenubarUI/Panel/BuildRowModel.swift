@@ -49,8 +49,6 @@ public struct BuildRowModel: Hashable, Sendable, Identifiable {
     public var rebuild: JenkinsRebuild?
     /// whether the menu and the detail offer Rebuild: for a finished build, with the job URL in Team (PIPE-09)
     public var offersRebuild: Bool
-    /// Jenkins's Build with Parameters page of the job, which "Rebuild with Changes…" opens (PIPE-09)
-    public var rebuildWithChanges: URL?
     /// the job's notifications, set by ``PanelData/Jenkins/row(_:now:jobURL:)`` (ALERT-09)
     var notifications = JobNotifications()
 
@@ -73,8 +71,6 @@ public struct BuildRowModel: Hashable, Sendable, Identifiable {
         self.project = project
         self.rebuild = rebuild
         offersRebuild = jobURL != nil && !build.isRunning
-        rebuildWithChanges = offersRebuild
-            ? jobURL.map { PipelineRules.buildWithParametersURL(job: build.job, jobURL: $0) } : nil
         state = BuildState(build)
         title = Self.title(of: build)
         let number = "#" + String(build.number)

@@ -80,8 +80,12 @@ public final class AppModel {
     public let eggs: EggStage
     /// the local checkouts of Settings → Repositories, read with git while the Workspaces section shows (WS-01)
     public let workspaces: WorkspacesStore
-    /// the Claude features: Why Did It Fail?, Summarize Discussion, the digest and Open in Claude Code (AI-01)
+    /// the Claude features: Why Did It Fail?, Summarize Discussion, the digest and Continue in Claude Code (AI-01)
     public let ai: AIStore
+    /// GitLab's To-Do List with Snooze, and the events between two polls, loaded in the background (INBOX-01)
+    public let inbox: InboxStore
+    /// the daily coffee break's entry in the Inbox, at 08:59 on weekdays by default (Settings → Notifications)
+    public let coffeeBreak: CoffeeBreak
 
     /// whether ``start()`` ran and ``stop()`` didn't since
     public private(set) var isStarted = false
@@ -152,6 +156,12 @@ public final class AppModel {
             services: gitLabServices, preferences: { [weak pipelines] in pipelines?.preferences ?? Preferences() })
         self.mergeRequests = mergeRequests
         self.workItems = workItems
+        let inbox = InboxStore(
+            services: gitLabServices, folder: locations.applicationSupport, rules: preferences.inboxNotifications,
+            myProjects: { [team] in
+                Set(team.projects().map { $0.team.gitLabProject.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+            })
+        self.inbox = inbox
         opened = OpenedItemsStore(
             defaults: dependencies.preferences, services: gitLabServices, pipelines: services, now: dependencies.now)
         gitLabSearch = GitLabSearchStore(services: gitLabServices)
@@ -171,7 +181,8 @@ public final class AppModel {
             reachability: dependencies.reachability,
             powerMode: dependencies.powerMode,
             gitLabMaxAge: .seconds(preferences.gitLabMaxAgeSeconds),
-            loads: [.mergeRequests: mergeRequests, .workItems: workItems],
+            loads: [.mergeRequests: mergeRequests, .workItems: workItems, .inbox: inbox],
+            alwaysShown: [.inbox],
             check: { [weak projects] reason in
                 guard let projects else {
                     throw CancellationError()
@@ -198,10 +209,16 @@ public final class AppModel {
             defaults: dependencies.preferences, runner: dependencies.processRunner, log: log, clock: dependencies.clock,
             now: dependencies.now)
         ai = AIStore(
-            defaults: dependencies.preferences, runner: dependencies.processRunner, log: log, clock: dependencies.clock,
+            defaults: dependencies.preferences,
+            digestFile: dependencies.fileLocations.applicationSupport.appending(path: AIStore.digestFileName),
+            runner: dependencies.processRunner, log: log, clock: dependencies.clock,
             now: dependencies.now, jenkins: services, gitLab: gitLabServices)
 
+        coffeeBreak = CoffeeBreak(
+            inbox: inbox, clock: dependencies.clock, now: dependencies.now, line: { [ai] date in await ai.coffeeLine(on: date) })
+
         connectAI()
+        connectInboxLocal()
         projects.requestCheck = { [weak self] in
             self?.onScheduler { await $0.checkNow() }
         }
@@ -215,17 +232,22 @@ public final class AppModel {
             self?.checkSlotAlerts()
         }
         // A new MR of mine looks my Jenkins jobs up at the next check, not at the 30-minute lookup (OD-06).
-        mergeRequests.onLoaded = { [weak mergeRequests, weak pipelines] in
+        mergeRequests.onLoaded = { [weak mergeRequests, weak pipelines, weak inbox] in
             guard let list = mergeRequests?.list else { return }
             pipelines?.noteMyMergeRequests(list.mergeRequests.filter { $0.roles.contains(.authored) }.map(\.iid))
+            // Only a load that worked: a failed one keeps the old list, which says nothing new (INBOX-05).
+            if mergeRequests?.problem == nil {
+                Task { await inbox?.mergeRequestsLoaded(list) }
+            }
         }
         // Without the GitLab token, the GitLab stores forget their data and show the setup steps (MR-04).
-        settings.onTokenRemoved = { [weak mergeRequests, weak workItems, details] account in
+        settings.onTokenRemoved = { [weak mergeRequests, weak workItems, weak inbox, details] account in
             guard account == .gitlab else {
                 return
             }
             mergeRequests?.tokenRemoved()
             workItems?.tokenRemoved()
+            inbox?.tokenRemoved()
             // The opened details came with that token too.
             details.clear()
         }
@@ -253,6 +275,7 @@ public final class AppModel {
             }
         ]
         onScheduler { await $0.start() }
+        coffeeBreak.apply(settings.preferences.inboxNotifications)
     }
 
     /// Stops the background loop and cancels the check under way. ``start()`` starts it again.
@@ -264,6 +287,7 @@ public final class AppModel {
         watchers.forEach { $0.cancel() }
         watchers = []
         onScheduler { await $0.stop() }
+        coffeeBreak.stop()
     }
 
     /// Removes the global hotkey, as the app quits (APP-08).
@@ -362,6 +386,12 @@ public final class AppModel {
     private func apply(_ preferences: Preferences) {
         projects.preferences = preferences
         hotkey.apply(preferences.globalShortcut)
+        if inbox.rules != preferences.inboxNotifications {
+            inbox.rules = preferences.inboxNotifications
+        }
+        if isStarted {
+            coffeeBreak.apply(preferences.inboxNotifications)
+        }
         let maxAge = Duration.seconds(preferences.gitLabMaxAgeSeconds)
         onScheduler { await $0.setGitLabMaxAge(maxAge) }
         if preferences.workItems != workItemFilters {

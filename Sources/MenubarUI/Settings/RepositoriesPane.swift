@@ -187,7 +187,7 @@ struct RepositoriesSettingsForm: View {
             } label: {
                 SettingsRowLabel(
                     "Terminal",
-                    "Where Open in Terminal and Open in Claude Code open; Default is the app macOS opens .command "
+                    "Where Open in Terminal and Continue in Claude Code open; Default is the app macOS opens .command "
                         + "files with")
             }
             .settingsAnchor(.terminal)
@@ -208,7 +208,7 @@ struct RepositoriesSettingsForm: View {
     private var terminalNote: String? {
         let directory = FixedTerminals(apps: terminals, handler: defaultTerminal)
         let choice = TerminalChoice.choose(preferred: terminal.wrappedValue, for: .script, in: directory)
-        return choice.note.map { "Open in Claude Code uses Terminal: \($0)" }
+        return choice.note.map { "Continue in Claude Code uses Terminal: \($0)" }
     }
 
     @ViewBuilder

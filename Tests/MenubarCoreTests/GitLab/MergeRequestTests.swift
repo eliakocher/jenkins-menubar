@@ -171,17 +171,19 @@ struct MergeRequestTests {
         #expect(MergeRequestStatus.textNamesPipeline(said) == (pipeline != "SUCCESS" && status != "MERGEABLE"))
     }
 
-    @Test("MR-03 the details leave out the pipeline when the badge names it, and keep it otherwise")
+    @Test("MR-03 the details leave out the pipeline when the badge names it or it is green, and keep it otherwise")
     func detailsPipelinePart() {
         let now = Self.date("2026-10-28T10:05:00Z")
         func details(_ status: String, _ pipeline: String) -> String {
             Self.mergeRequest(status: .init(rawValue: status), pipeline: .init(rawValue: pipeline))
                 .details(me: Self.me, project: Self.project, now: now)
         }
-        #expect(details("CI_MUST_PASS", "FAILED").hasSuffix("Pipeline failed · updated 5m ago · 0 files +0 −0"))
+        #expect(details("CI_MUST_PASS", "FAILED").hasSuffix("Pipeline failed · updated 5m ago"))
         #expect(details("CI_STILL_RUNNING", "RUNNING").lowercased().components(separatedBy: "pipeline").count == 2)
-        #expect(details("CONFLICT", "SUCCESS").hasSuffix("0 files +0 −0 · pipeline success"))
-        #expect(details("MERGEABLE", "SUCCESS").hasSuffix("0 files +0 −0 · pipeline success"))
+        // A green pipeline isn't news, and the diff stats are no part of the details.
+        #expect(details("CONFLICT", "SUCCESS").hasSuffix("updated 5m ago"))
+        #expect(details("MERGEABLE", "SUCCESS").hasSuffix("updated 5m ago"))
+        #expect(details("CONFLICT", "CANCELED").hasSuffix("updated 5m ago · pipeline canceled"))
     }
 
     // MARK: - MR-03

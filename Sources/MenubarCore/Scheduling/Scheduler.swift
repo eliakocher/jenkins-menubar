@@ -40,6 +40,8 @@ public enum CheckOutcome: String, Hashable, Sendable, CaseIterable {
 ///   and when the network is back.
 /// - While nobody looks (``setAttentive(_:)``: the app isn't frontmost and the menu bar pane is closed), the shown
 ///   surfaces load every ``backgroundMaxAge`` instead; once someone looks again, stale data loads at once (OD-06).
+/// - The surfaces it was built with as always shown (the Inbox's to-dos, INBOX-01) count as shown whatever the views
+///   say, so they load in the background too, at the same pace.
 public actor Scheduler {
     /// One check. It runs outside the actor; a check that throws counts as a failure, one that is cancelled as nothing.
     public typealias Check = @Sendable (CheckReason) async throws -> CheckOutcome
@@ -77,6 +79,8 @@ public actor Scheduler {
     private var watchers: [Task<Void, Never>] = []
     /// the GitLab load of each surface (OD-02)
     private let loads: [Surface: any OnDemandLoading]
+    /// the surfaces that count as shown whatever the views say, like the Inbox, whose badge is always there
+    private let alwaysShown: Set<Surface>
     private var gitLabMaxAge: Duration
     /// the surfaces the panel and the window show now
     public private(set) var visibleSurfaces: Set<Surface> = []
@@ -97,6 +101,8 @@ public actor Scheduler {
     ///   - powerMode: whether Low Power Mode is on
     ///   - gitLabMaxAge: how old GitLab data may be when it is shown (OD-02)
     ///   - loads: the GitLab load of each surface, like the ``MergeRequestsStore``; without one, a surface loads nothing
+    ///   - alwaysShown: the surfaces that count as shown whatever ``setVisible(_:)`` says, like `.inbox` (INBOX-01):
+    ///     they load every maximum age while someone looks and every ``backgroundMaxAge`` otherwise
     ///   - check: one Jenkins check
     public init(
         checkInterval: Duration,
@@ -106,6 +112,7 @@ public actor Scheduler {
         powerMode: any PowerMode = SystemPowerMode(),
         gitLabMaxAge: Duration = .seconds(30),
         loads: [Surface: any OnDemandLoading] = [:],
+        alwaysShown: Set<Surface> = [],
         check: @escaping Check
     ) {
         self.interval = checkInterval
@@ -115,6 +122,8 @@ public actor Scheduler {
         self.powerMode = powerMode
         self.gitLabMaxAge = gitLabMaxAge
         self.loads = loads
+        self.alwaysShown = alwaysShown
+        visibleSurfaces = alwaysShown
         self.check = check
     }
 
@@ -324,6 +333,7 @@ public actor Scheduler {
     ///
     /// - Parameter surfaces: every surface shown now, in the panel or the window
     public func setVisible(_ surfaces: Set<Surface>) {
+        let surfaces = surfaces.union(alwaysShown)
         let appeared = surfaces.subtracting(visibleSurfaces)
         let disappeared = visibleSurfaces.subtracting(surfaces)
         visibleSurfaces = surfaces

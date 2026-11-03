@@ -52,7 +52,7 @@ struct MenuPaneContent: View {
                 .keyboardShortcut("q")
         }
         .padding(.vertical, MenuMetrics.edge)
-        .frame(width: MenuMetrics.paneWidth)
+        .frame(width: MenuMetrics.paneWidth(model.width))
         .fixedSize(horizontal: false, vertical: true)
         // Concentric to the window's corners: the tint fills the system's glass panel edge to edge.
         .background { MenuBackdropTint(shape: ConcentricRectangle()) }
@@ -143,9 +143,12 @@ struct MenuAreaRow: View {
             .layoutPriority(1)
             Spacer(minLength: 6)
             trailing
+            // Without a flyout the row opens the window, so it has no chevron; the space stays, so the counts line up.
             Image(systemName: "chevron.right")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(isHighlighted ? AnyShapeStyle(.white) : AnyShapeStyle(.menuGrey))
+                .opacity(area.hasFlyout ? 1 : 0)
+                .accessibilityHidden(!area.hasFlyout)
         }
         .frame(minHeight: MenuMetrics.areaRowHeight)
         .menuRow(isHighlighted: isHighlighted)

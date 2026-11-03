@@ -16,7 +16,7 @@ extension AlertContent {
         let title = displayTitle(of: build)
         var facts = ["Duration: \(durationText(duration))"]
         if let counts = build.testCounts, counts.failed > 0 {
-            facts.append("Failed tests: \(counts.failed) of \(counts.total)")
+            facts.append("\(counts.failed) failed \(counts.failed == 1 ? "test" : "tests")")
         }
         if result != .success, !failedStages.isEmpty {
             facts.append("Failed stages: \(failedStages.joined(separator: ", "))")

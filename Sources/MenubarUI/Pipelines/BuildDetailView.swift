@@ -58,21 +58,15 @@ public struct BuildDetailView: View {
 /// The build detail drawn from plain values, for the window and the gallery: a scrolling page in the merge request
 /// detail's language (Task 7.0). On top the header: the state badge, the reference and the checkout, the title, the running
 /// build's bar, and a strip of chips for the duration, the age and the failed tests. Under it the action row: every
-/// frequent action as a bordered button (Rebuild, Notifications, Hide, the console and test results in Jenkins, Copy Link,
-/// New Bug), wrapping when narrow. Below, the compact cards (Stages, Failed Tests, Build Info, Recent Builds with the flaky
-/// hints, Linked) in one column, or two when wide, then Claude full width. "Open Build in Jenkins" is in the toolbar; only
-/// the rare ones (Rebuild with Changes…, the branch) are in the ⋯ menu.
+/// frequent action as a bordered button (Rebuild, Notifications, Hide, the console and test results in Jenkins, Copy
+/// Link), wrapping when narrow. Below, the compact cards (Stages, Failed Tests, Build Info, Recent Builds with the flaky
+/// hints, Linked) in one column, or two when wide, then Claude full width. Open in Jenkins is in the toolbar.
 struct BuildDetailContent: View {
     let model: BuildDetailModel?
     let actions: PanelActions
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.buildInfoFixtures) private var fixtures
     @Environment(AppModel.self) private var appModel: AppModel?
-
-    /// the card the failed tests chip jumps to
-    private enum Card: Hashable {
-        case tests
-    }
 
     /// what the info and history are loaded for: the build, and whether it runs, since a finished build asks again
     private struct LoadKey: Hashable {
@@ -82,17 +76,14 @@ struct BuildDetailContent: View {
 
     var body: some View {
         if let model {
-            DetailPage(id: model.item.id) { proxy in
-                header(model) {
-                    withAnimation(.snappy) { proxy.scrollTo(Card.tests, anchor: .top) }
-                }
+            DetailPage(id: model.item.id) { _ in
+                header(model)
                 CardColumnsLayout {
                     if showsStagesCard(model) {
                         StagesCard(stages: model.stages, note: model.note)
                     }
                     if let build = model.failedTests {
                         FailedTestsSection(build: build)
-                            .id(Card.tests)
                     }
                     if case .build(let row) = model.item {
                         BuildInfoCard(build: row.build, started: model.startedText, branch: branchLink(model), actions: actions)
@@ -105,6 +96,13 @@ struct BuildDetailContent: View {
                     // Why Did It Fail?, while the Claude features are on (AI-02, AI-05).
                     if model.canExplain, case .build(let row) = model.item {
                         ExplainBuildSection(build: row.build, page: row.buildPage?.url, inCard: true)
+                    }
+                    // The console log, collapsed until opened, full width and last (PIPE-12).
+                    if case .build(let row) = model.item {
+                        ConsoleLogCard(
+                            build: row.build.id, consoleURL: model.links.first { $0.kind == .console }?.url,
+                            open: actions.open)
+                        .id(row.build.id)
                     }
                 }
             }
@@ -144,14 +142,37 @@ struct BuildDetailContent: View {
 
     // MARK: The header
 
-    private func header(_ model: BuildDetailModel, jump: @escaping () -> Void) -> some View {
-        DetailHeader(title: model.title) {
-            StatusBadge(text: model.badge, symbol: model.symbol, tint: tint(of: model))
-            if case .build(let row) = model.item {
-                Text(verbatim: model.reference)
+    /// "!16 #3" of a merge request's build: its green chip, then the build's number as text; a branch's is text.
+    @ViewBuilder
+    private func buildReference(_ model: BuildDetailModel, row: BuildRowModel) -> some View {
+        if row.build.mergeRequestIID != nil,
+            let range = model.reference.range(of: row.build.label)
+        {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                if range.lowerBound > model.reference.startIndex {
+                    Text(verbatim: String(model.reference[..<range.lowerBound]))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                MergeRequestNumberChip(text: row.build.label)
+                Text(verbatim: String(model.reference[range.upperBound...]))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
+            }
+        } else {
+            Text(verbatim: model.reference)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+    }
+
+    private func header(_ model: BuildDetailModel) -> some View {
+        DetailHeader(title: model.title) {
+            StatusBadge(text: model.badge, symbol: model.symbol, tint: tint(of: model))
+            if case .build(let row) = model.item {
+                buildReference(model, row: row)
                 // The checkout the build lives in; a click shows it in Workspaces (WS-07).
                 WorkspaceTag(subject: .build(row.build))
             }
@@ -159,13 +180,13 @@ struct BuildDetailContent: View {
                 MutedMark()
             }
         } menu: {
-            moreMenu(model)
+            // Nothing is left for a ⋯ menu: "Open in Jenkins" is in the toolbar, the branch in the Build Info card.
         } byline: {
             byline(model)
         } chips: {
-            chips(model, jump: jump)
+            chips(model)
         } footer: {
-            // Every frequent action as a button, not behind the ⋯ menu.
+            // Every frequent action as a button.
             BuildActionRow(model: model, actions: actions)
                 .padding(.top, 4)
         }
@@ -220,7 +241,7 @@ struct BuildDetailContent: View {
 
     /// The duration, the age and the failed tests, wrapping when narrow; the merge request and the branch are in the cards.
     @ViewBuilder
-    private func chips(_ model: BuildDetailModel, jump: @escaping () -> Void) -> some View {
+    private func chips(_ model: BuildDetailModel) -> some View {
         let green = MergeRequestStatus.Color.green.swiftUI
         let red = MergeRequestStatus.Color.red.swiftUI
         if let started = model.startedText {
@@ -235,34 +256,18 @@ struct BuildDetailContent: View {
         }
         if let tests = model.tests {
             if tests.failed > 0 {
-                let text = "\(String(tests.failed)) of \(String(tests.total)) failed"
-                if model.failedTests != nil {
-                    DetailChip(symbol: "xmark.octagon.fill", tint: red, text: text, help: "Jump to the Failed Tests card", action: jump)
-                } else {
-                    DetailChip(symbol: "xmark.octagon.fill", tint: red, text: text, help: "The tests that failed in this build")
-                }
+                // A fact, not a button (the user, 2026-11-03): why an unstable build is unstable. The Failed Tests card is
+                // under the header; the total is in the tooltip.
+                DetailChip(
+                    symbol: "xmark.octagon.fill", tint: red,
+                    text: "\(tests.failed.formatted()) failed \(tests.failed == 1 ? "test" : "tests")",
+                    help: "\(tests.failed.formatted()) of \(tests.total.formatted()) tests failed")
             } else if tests.total > 0 {
                 DetailChip(symbol: "checkmark.circle", tint: green, text: "\(String(tests.total)) tests passed")
             }
         }
         if model.stages.isEmpty, !model.failedStageNames.isEmpty {
             DetailChip(symbol: "xmark.circle", tint: red, text: "Failed: \(model.failedStageNames.joined(separator: ", "))")
-        }
-    }
-
-    /// The rare actions: Jenkins's own Build with Parameters page, the branch, and the build's page, which the toolbar
-    /// has too. The frequent ones are in the action row.
-    @ViewBuilder
-    private func moreMenu(_ model: BuildDetailModel) -> some View {
-        if let url = model.rebuildWithChanges {
-            // Jenkins's own page, where the parameters change before the build (PIPE-09).
-            Button("Rebuild with Changes…") { actions.open(url) }
-        }
-        ForEach(model.links.filter { $0.kind == .branch }) { link in
-            Button(link.title) { actions.open(link.url) }
-        }
-        if let primary = model.primary {
-            Button(primary.title) { actions.open(primary.url) }
         }
     }
 }

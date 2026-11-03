@@ -285,39 +285,92 @@ struct AITests {
 
     @Test("AI-04 the digest is written from the app's own stores: my merge requests, reviews, red builds, items by slot")
     func digestFacts() throws {
-        let now = Date(timeIntervalSince1970: 1_793_000_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "Europe/Zurich"))
+        // Tuesday 3 November 2026: 2026.49 freezes on Friday, 2026.44 released on 26 October.
+        let now = try #require(calendar.date(from: DateComponents(year: 2026, month: 11, day: 3, hour: 8)))
         let gitLab = "https://gitlab.example.com/group/project"
-        func mergeRequest(_ iid: Int, _ title: String, roles: Set<MergeRequest.Role>, author: String = "jdoe") -> MergeRequest {
+        func mergeRequest(
+            _ iid: Int, _ title: String, roles: Set<MergeRequest.Role>, author: String = "jdoe", draft: Bool = false,
+            status: MergeRequest.MergeStatus? = nil, reviewers: [MergeRequest.Reviewer] = []
+        ) -> MergeRequest {
             MergeRequest(
                 iid: iid, title: title, webURL: URL(string: "\(gitLab)/-/merge_requests/\(iid)")!,
-                reference: "group/project!\(iid)", author: MergeRequest.Person(username: author, name: author == "jdoe" ? "Jane Doe" : "Sam Lee"),
-                updatedAt: now.addingTimeInterval(-3 * 3600), roles: roles)
+                reference: "group/project!\(iid)", isDraft: draft, mergeStatus: status,
+                author: MergeRequest.Person(username: author, name: author == "jdoe" ? "Jane Doe" : "Sam Lee"),
+                reviewers: reviewers, updatedAt: now.addingTimeInterval(-3 * 3600), roles: roles)
         }
+        let reviewers = [
+            MergeRequest.Reviewer(username: "slee", name: "Sam Lee", reviewState: .approved, approved: true),
+            MergeRequest.Reviewer(username: "kpark", name: "Kim Park", reviewState: .unreviewed, approved: false),
+        ]
         let sections = MergeRequestSections(
-            [mergeRequest(42, "Add cart discount", roles: [.authored]),
-             mergeRequest(40, "Fix rounding", roles: [.reviewRequested], author: "slee")],
+            [mergeRequest(42, "Add cart discount", roles: [.authored], status: .mergeable, reviewers: reviewers),
+             mergeRequest(41, "Try new layout", roles: [.authored], draft: true),
+             mergeRequest(40, "Fix rounding", roles: [.reviewRequested], author: "slee"),
+             mergeRequest(39, "Spike search", roles: [.reviewRequested], author: "slee", draft: true)],
             me: "jdoe")
-        let red = Build(
-            job: "MR-42", number: 7, title: "Add cart discount", kind: .mine,
-            phase: .finished(result: .failure, duration: 600), startedAt: now.addingTimeInterval(-3600))
-        let green = Build(job: "MR-45", number: 2, kind: .mine, phase: .finished(result: .success, duration: 60), startedAt: now)
-        func item(_ number: Int, _ title: String, labels: [String]) -> WorkItem {
+        func build(_ job: String, _ number: Int, _ result: BuildResult, kind: JobKind = .mine, hoursAgo: Double) -> Build {
+            Build(
+                job: job, number: number, title: job == "MR-42" ? "Add cart discount" : nil, kind: kind,
+                phase: .finished(result: result, duration: 600), startedAt: now.addingTimeInterval(-hoursAgo * 3600))
+        }
+        let red = build("MR-42", 7, .failure, hoursAgo: 1)
+        let builds = [
+            build("MR-42", 6, .failure, hoursAgo: 5), red, build("MR-45", 2, .success, hoursAgo: 0.5),
+            build("develop", 3, .unstable, kind: .watched, hoursAgo: 2),
+        ]
+        func item(_ number: Int, _ title: String, labels: [String] = [], state: WorkItemState = .opened,
+                  blocked: Bool? = nil, due: String? = nil) -> WorkItem {
             WorkItem(
                 reference: "group/project#\(number)", title: title, webURL: URL(string: "\(gitLab)/-/issues/\(number)")!,
-                labels: labels.map { Label(title: $0, color: "#fff") }, updatedAt: now)
+                state: state, labels: labels.map { Label(title: $0, color: "#fff") }, updatedAt: now, isBlocked: blocked,
+                dueDate: due)
         }
+        let jobURL = URL(string: "https://jenkins.example.com/job/project")!
         let facts = DigestFacts.gather(
-            mergeRequests: sections, builds: [green, red],
-            workItems: [item(1301, "Login page", labels: []), item(1234, "Cart discount", labels: ["slot::2026.45"]),
-                        item(1240, "Search speed", labels: ["slot::2026.44"])],
-            slotPrefix: "slot::", now: now)
-        #expect(facts.myMergeRequests == ["group/project!42 \"Add cart discount\", updated 3 h ago"])
-        #expect(facts.reviews == ["group/project!40 \"Fix rounding\", updated 3 h ago, by Sam Lee"])
-        #expect(facts.redBuilds == ["!42 #7 \"Add cart discount\", FAILURE"])
-        #expect(facts.workItemsBySlot.map(\.name) == ["2026.44", "2026.45", nil])
-        #expect(facts.workItemsBySlot.last?.items == ["group/project#1301 \"Login page\" (issue)"])
+            mergeRequests: sections, builds: builds,
+            workItems: [item(1234, "Cart discount", labels: ["slot::2026.44"], blocked: true),
+                        item(1240, "Search speed", labels: ["slot::2026.49"]),
+                        item(1301, "Login page", due: "2026-11-04"),
+                        item(1100, "Old bug", labels: ["slot::2026.49"], state: .closed)],
+            slotPrefix: "slot::", jobURL: { _ in jobURL }, now: now, calendar: calendar)
 
-        #expect(ClaudePrompt.digest(facts).schema == nil)
+        #expect(facts.items.map(\.kind) == [
+            .mergeRequest, .mergeRequest, .review, .review, .build, .build, .workItem, .workItem, .workItem, .slot, .slot,
+        ])
+        #expect(facts.items.map(\.shortRef) == [
+            "!42", "!41", "!40", "!39", "!42 #7", "develop #3", "#1234", "#1240", "#1301", "2026.44", "2026.49",
+        ])
+        #expect(facts.items.map(\.state.text) == [
+            "Ready to merge", "Draft", "Waiting on you", "Draft", "Failed", "Unstable", "Blocked", "Open", "Due tomorrow",
+            "Released 8 days ago", "Code freeze in 3 days",
+        ])
+        // The app's own rules: what to merge, a review that isn't a draft, my red build, a blocked or due item, a slot
+        // released with my items open or near its freeze.
+        #expect(facts.items.map(\.needsYou) == [true, false, true, false, true, false, true, false, true, true, true])
+        let mine = try #require(facts.items.first)
+        #expect(mine.ref == "group/project!42")
+        #expect(mine.details == ["1 of 2 approved", "updated 3 h ago"])
+        #expect(mine.link?.absoluteString == "\(gitLab)/-/merge_requests/42")
+        #expect(facts.items[2].details == ["by Sam Lee", "updated 3 h ago"])
+        // The newest build of each job, its page, and Rebuild.
+        let redItem = facts.items[4]
+        #expect(redItem.ref == "build:\(red.jobKey)")
+        #expect(redItem.link?.absoluteString == "https://jenkins.example.com/job/project/job/MR-42/7/")
+        #expect(redItem.rebuild == red.id)
+        #expect(facts.items[7].details == ["issue", "slot 2026.49"])
+        #expect(facts.items[10].details.first == "1 open item of mine")
+        #expect(facts.deadline == DigestFacts.Deadline(slot: "2026.49", text: "Code freeze in 3 days", days: 3, isClose: true))
+
+        // The prompt: each item with its reference in brackets, the date, and the JSON shape.
+        let prompt = ClaudePrompt.digest(facts)
+        #expect(prompt.schema != nil)
+        #expect(prompt.text.contains("Today is Tuesday 2026-11-03."))
+        #expect(prompt.text.contains("- [group/project!42] !42 \"Add cart discount\": Ready to merge; 1 of 2 approved; updated 3 h ago"))
+        #expect(prompt.text.contains("# Red builds (2)"))
+        #expect(prompt.text.contains("Nearest date: 2026.49 code freeze in 3 days"))
+        #expect(!prompt.text.contains("Old bug"))
     }
 
     @Test("AI-04 the morning digest comes at the time the user set, today or tomorrow")
@@ -358,7 +411,6 @@ struct AITests {
         #expect(match(.mergeRequest(mergeRequest)) == "develop2")
         #expect(match(.workItem(item)) == "develop2")
         #expect(match(.build(build, page: nil, failedTests: [])) == "develop2")
-        #expect(match(.workspace(one, task: WorkspaceTask())) == "develop1")
         // No checkout on the branch: the user picks one.
         #expect(match(.workItem(other)) == nil)
 
@@ -582,9 +634,15 @@ struct AITests {
 
     static let prompt = ClaudePrompt.explainBuild(failedBuild)
 
-    static let someFacts = DigestFacts(
-        myMergeRequests: ["group/project!42 \"Add cart discount\", pipeline failed"],
-        reviews: ["group/project!40 \"Fix rounding\", by Sam Lee"])
+    static let someFacts = DigestFacts(items: [
+        DigestItem(
+            kind: .mergeRequest, ref: "group/project!42", shortRef: "!42", title: "Add cart discount",
+            state: DigestState(text: "Pipeline failed", symbol: "xmark.circle.fill", color: .red), needsYou: true),
+        DigestItem(
+            kind: .review, ref: "group/project!40", shortRef: "!40", title: "Fix rounding",
+            state: DigestState(text: "Waiting on you", symbol: "eye.circle.fill", color: .orange), details: ["by Sam Lee"],
+            needsYou: true),
+    ])
 }
 
 /// A `claude` that answers every run with the same output, and a login shell that knows no `PATH`.

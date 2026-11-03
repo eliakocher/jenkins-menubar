@@ -24,8 +24,11 @@ struct DetailPage<Content: View>: View {
 
 /// The header of a detail page, as the merge request and build details have it: a top line with the state badge and the
 /// reference, the ⋯ menu at its end; the title, large, wrapping and selectable; a byline, such as the people and the
-/// age; the chips that link or jump, wrapping when narrow; and a quiet footer, such as the labels.
-struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Footer: View>: View {
+/// age; the chips that link or jump, wrapping when narrow; and a quiet footer, such as the action buttons.
+///
+/// An optional aside, such as the work item's facts panel, takes the right column when the page is wide, and goes under
+/// the rest when it is narrow (``DetailHeaderColumns``), so a wide window's right half isn't left empty.
+struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Footer: View, Aside: View>: View {
     let title: String
     /// the full title, for the tooltip, when the shown one is shortened
     var titleHelp: String?
@@ -37,8 +40,17 @@ struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Fo
     /// the chips, each a ``DetailChip``, laid out in lines
     @ViewBuilder var chips: Chips
     @ViewBuilder var footer: Footer
+    /// the right column when wide, under the rest when narrow; nothing by default
+    @ViewBuilder var aside: Aside
 
     var body: some View {
+        DetailHeaderColumns {
+            main
+            aside
+        }
+    }
+
+    private var main: some View {
         // A part with nothing in it, such as a chip strip without chips, takes no room and no gap.
         CollapsingStack(spacing: 10) {
             HStack(alignment: .center, spacing: 8) {
@@ -60,6 +72,96 @@ struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Fo
             .frame(maxWidth: .infinity, alignment: .leading)
             footer
         }
+    }
+}
+
+extension DetailHeader where Aside == EmptyView {
+    /// Returns a header without an aside: the build, workspace and digest details.
+    init(
+        title: String, titleHelp: String? = nil, @ViewBuilder badges: () -> Badges, @ViewBuilder menu: () -> MenuItems,
+        @ViewBuilder byline: () -> Byline, @ViewBuilder chips: () -> Chips, @ViewBuilder footer: () -> Footer
+    ) {
+        self.init(
+            title: title, titleHelp: titleHelp, badges: badges, menu: menu, byline: byline, chips: chips, footer: footer,
+            aside: { EmptyView() })
+    }
+}
+
+/// A header's two parts, the main one and the aside: side by side when the width has room for both, else stacked, the
+/// aside under the main part. An aside of no height leaves the main part the full width.
+///
+/// Side by side, the aside takes the narrowest of its widths that keeps it no taller than the main part: a third of the
+/// width, then the widths of a facts panel in two and three columns (``DetailFactColumns``), as long as the main part
+/// keeps `minMainWidth`; when none does, the one that makes the header the least tall.
+struct DetailHeaderColumns: Layout {
+    /// the least width for two columns
+    var minWideWidth: CGFloat = 760
+    /// the aside's first width when side by side: a third of the width, within these bounds
+    var asideWidths: ClosedRange<CGFloat> = 300...400
+    /// the aside's wider widths to try, in order
+    var widerAsideWidths: [CGFloat] = [DetailFactColumns.panelWidth(columns: 2), DetailFactColumns.panelWidth(columns: 3)]
+    /// the least width of the main part next to the aside
+    var minMainWidth: CGFloat = 340
+    /// between the columns
+    var gap: CGFloat = 32
+    /// between the main part and the aside, stacked
+    var stackedSpacing: CGFloat = 18
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = arrange(width: proposal.width, subviews: subviews)
+        let width = proposal.width ?? frames.map(\.maxX).max() ?? 0
+        return CGSize(width: width, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(width: bounds.width, subviews: subviews)) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    private func arrange(width: CGFloat?, subviews: Subviews) -> [CGRect] {
+        guard let main = subviews.first else { return [] }
+        let aside = subviews.dropFirst().first
+        guard let width, width > 0 else {
+            // An ideal size: the parts' own.
+            return subviews.map { CGRect(origin: .zero, size: $0.sizeThatFits(.unspecified)) }
+        }
+        let full = ProposedViewSize(width: width, height: nil)
+        guard let aside, aside.sizeThatFits(full).height > 0 else {
+            return [CGRect(origin: .zero, size: CGSize(width: width, height: main.sizeThatFits(full).height))]
+                + (aside.map { _ in [CGRect.zero] } ?? [])
+        }
+        if width >= minWideWidth {
+            let first = min(max(width / 3, asideWidths.lowerBound), asideWidths.upperBound)
+            let candidates = [first] + widerAsideWidths.filter { $0 > first && width - $0 - gap >= minMainWidth }
+            var best: (frames: [CGRect], height: CGFloat)?
+            for asideWidth in candidates {
+                let mainWidth = width - asideWidth - gap
+                let mainHeight = main.sizeThatFits(ProposedViewSize(width: mainWidth, height: nil)).height
+                let asideHeight = aside.sizeThatFits(ProposedViewSize(width: asideWidth, height: nil)).height
+                let frames = [
+                    CGRect(x: 0, y: 0, width: mainWidth, height: mainHeight),
+                    CGRect(x: mainWidth + gap, y: 0, width: asideWidth, height: asideHeight),
+                ]
+                if asideHeight <= mainHeight {
+                    return frames
+                }
+                let height = max(mainHeight, asideHeight)
+                if height < (best?.height ?? .infinity) - 0.5 {
+                    best = (frames, height)
+                }
+            }
+            if let best {
+                return best.frames
+            }
+        }
+        let mainHeight = main.sizeThatFits(full).height
+        let asideHeight = aside.sizeThatFits(full).height
+        return [
+            CGRect(x: 0, y: 0, width: width, height: mainHeight),
+            CGRect(x: 0, y: mainHeight + stackedSpacing, width: width, height: asideHeight),
+        ]
     }
 }
 
