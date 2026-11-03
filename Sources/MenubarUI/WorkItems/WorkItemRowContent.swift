@@ -57,7 +57,8 @@ struct WorkItemDetailsLine: View {
                     LabelPill(label: slot, style: .compact)
                         .panelLineCap(WorkItemRowStyle.slotCap)
                 }
-                if let chip = row.mergeRequestChip {
+                // A chip with no number yet (only the marker is known) shows nothing: a lone "!" says nothing.
+                if let chip = row.mergeRequestChip, chip.text != nil {
                     Text(verbatim: " ")
                     WorkItemMergeRequestChipView(chip: chip)
                         .panelLineCap(WorkItemRowStyle.chipCap)

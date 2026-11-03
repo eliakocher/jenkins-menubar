@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.shell.open(url, inApp: inApp)
         }
         effects.onInboxAction = { [weak self] action, event in
-            self?.shell.inboxAction(action, for: event)
+            await self?.shell.performInboxAction(action, for: event)
         }
         // No window opens at launch, also while the status item is hidden: the app stays out of the Dock until a
         // second start opens the main window (APP-01, APP-03).

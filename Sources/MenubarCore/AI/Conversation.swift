@@ -42,7 +42,7 @@ public struct ConversationTurn: Hashable, Sendable, Identifiable {
 
     /// the model's name for the turn, "Opus 5.5", or the name as reported when it is none of the app's
     public var modelName: String? {
-        model.map { ClaudeModel(rawValue: $0)?.shortName ?? $0 }
+        model.map(ClaudeModel.displayName(ofModel:))
     }
 }
 
@@ -125,6 +125,7 @@ extension AIUseCase {
         case .askAboutCode: "The developer's first question is at the end of the facts above."
         case .openInClaudeCode: "The developer asked for help with this item."
         case .askAboutItem: "The developer's first question is at the end of the facts above."
+        case .buildChat: "The developer's first question is at the end of the facts above."
         case .coffeeBreak: "The developer's team has its coffee break."
         }
     }

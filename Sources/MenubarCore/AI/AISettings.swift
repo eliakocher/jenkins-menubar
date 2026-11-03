@@ -1,25 +1,68 @@
 import Foundation
 
-/// The Claude models the app offers (AI-01), Opus by default.
+/// The Claude models the app offers (AI-01), Sonnet by default.
+///
+/// The raw value is the CLI's own **alias** (`--model opus`): `claude` maps it to the newest model of that family it
+/// knows, so an older Claude Code keeps working and an update brings the newer model by itself. A pinned id like
+/// `claude-opus-5-5` made an older `claude` answer "does not support this model". Settings saved by earlier versions
+/// hold such ids; they still decode, to the alias of their family.
 public enum ClaudeModel: String, Codable, Hashable, Sendable, CaseIterable {
-    case opus = "claude-opus-5-5"
-    case sonnet = "claude-sonnet-5-5"
-    case haiku = "claude-haiku-5-5"
+    case opus
+    case sonnet
+    case haiku
 
-    /// "Claude Opus 5.5"
-    public var title: String {
-        switch self {
-        case .opus: "Claude Opus 5.5"
-        case .sonnet: "Claude Sonnet 5.5"
-        case .haiku: "Claude Haiku 5.5"
+    /// Returns the model a name stands for: an alias (`opus`) or an id of its family (`claude-opus-5-5`, even with a
+    /// date or a `[1m]` suffix); `nil` for anything else.
+    ///
+    /// - Parameter name: the alias or the model id
+    public init?(modelName name: String) {
+        let lowered = name.lowercased()
+        if let alias = Self(rawValue: lowered) {
+            self = alias
+        } else if lowered.hasPrefix("claude"), let family = Self.allCases.first(where: { lowered.contains($0.rawValue) }) {
+            self = family
+        } else {
+            return nil
         }
     }
 
-    /// "Opus 5.5": the name on a card and in a menu
-    public var shortName: String {
-        String(title.dropFirst("Claude ".count))
+    // A value saved by an earlier version holds a pinned id; one that is none of the families fails, so the setting reads as its default.
+    public init(from decoder: any Decoder) throws {
+        let name = try decoder.singleValueContainer().decode(String.self)
+        guard let model = Self(modelName: name) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "unknown model \(name)"))
+        }
+        self = model
     }
 
+    /// "Claude Opus": the name in the log
+    public var title: String {
+        "Claude \(shortName)"
+    }
+
+    /// "Opus": the name in a menu; the version is the CLI's newest, so it isn't named
+    public var shortName: String {
+        rawValue.capitalized
+    }
+
+    /// Returns the name of the model that answered, from the id `claude` reports: "Opus 5.5" for `claude-opus-5-5`, "Opus"
+    /// for an alias, or the id as reported when it is none of the families.
+    ///
+    /// - Parameter id: the model id of an answer
+    public static func displayName(ofModel id: String) -> String {
+        let lowered = id.lowercased()
+        let base = lowered.split(separator: "[", maxSplits: 1).first.map(String.init) ?? lowered
+        let parts = base.split(separator: "-").map(String.init)
+        if let alias = Self(rawValue: base) {
+            return alias.shortName
+        }
+        guard parts.count >= 2, parts[0] == "claude", let family = Self(rawValue: parts[1]) else {
+            return id
+        }
+        // The version is the one or two short numbers after the family; a longer number is a date.
+        let version = parts.dropFirst(2).prefix { $0.count <= 2 && $0.allSatisfy(\.isNumber) }
+        return version.isEmpty ? family.shortName : "\(family.shortName) \(version.joined(separator: "."))"
+    }
 }
 
 /// How long Claude thinks before it answers (`claude --effort`). `.standard` passes no flag: Claude's own default.
@@ -64,6 +107,8 @@ public enum AIUseCase: String, Codable, Hashable, Sendable, CaseIterable {
     case askAboutCode
     /// a question about a work item (AI-08)
     case askAboutItem
+    /// a question about a build, whatever its result: its log, stages, tests and changes
+    case buildChat
     /// the daily coffee break's one line, written by Haiku (``CoffeeBreak``)
     case coffeeBreak
 
@@ -76,22 +121,24 @@ public enum AIUseCase: String, Codable, Hashable, Sendable, CaseIterable {
         case .openInClaudeCode: "open in Claude Code"
         case .askAboutCode: "ask about code"
         case .askAboutItem: "ask about a work item"
+        case .buildChat: "ask about a build"
         case .coffeeBreak: "coffee break line"
         }
     }
 }
 
-/// Settings → General's Claude section (AI-01): off by default, the model, the effort and the morning digest.
+/// Settings → Claude's section (AI-01): on by default (shown only while `claude` is installed), Sonnet, the effort and the
+/// morning digest, also on by default.
 ///
 /// Kept in the user's own preferences (`ai` in UserDefaults), never in the team file: each developer brings their own
 /// Claude Code login.
 public struct AISettings: Codable, Hashable, Sendable {
-    /// whether the Claude features show at all; off until the user turns them on
+    /// whether the Claude features show at all; on unless the user turns them off, and offered only while `claude` is installed
     public var isEnabled: Bool
     public var model: ClaudeModel
     /// how long Claude thinks; Default passes no flag
     public var effort: ClaudeEffort
-    /// whether the digest is written by itself each morning, and added to the Inbox while the Digest isn't on screen; off by default
+    /// whether the digest is written by itself each morning, and added to the Inbox while the Digest isn't on screen; on by default
     public var morningDigest: Bool
     /// when the morning digest is written, in minutes after midnight, local time
     public var digestMinutes: Int
@@ -107,7 +154,7 @@ public struct AISettings: Codable, Hashable, Sendable {
     public var mcpServerChoices: [String: Bool]
 
     public init(
-        isEnabled: Bool = false, model: ClaudeModel = .opus, effort: ClaudeEffort = .standard, morningDigest: Bool = false,
+        isEnabled: Bool = true, model: ClaudeModel = .sonnet, effort: ClaudeEffort = .standard, morningDigest: Bool = true,
         digestMinutes: Int = 9 * 60, confirmedUseCases: Set<AIUseCase> = [], useMySetup: Bool = false, useMyClaudeMd: Bool = true,
         mcpServerChoices: [String: Bool] = [:]
     ) {
@@ -161,7 +208,8 @@ public struct AISettings: Codable, Hashable, Sendable {
     /// the UserDefaults key, in the preferences' suite
     public static let defaultsKey = "ai"
 
-    /// Reads the settings; none stored, or unreadable, reads as the defaults: off.
+    /// Reads the settings; none stored, or unreadable, reads as the defaults: on, with Sonnet and the morning digest. A
+    /// saved value keeps its own choices, and a field it lacks takes the default.
     public static func load(from defaults: UserDefaults) -> AISettings {
         guard let data = defaults.data(forKey: defaultsKey),
               let settings = try? JSONDecoder().decode(AISettings.self, from: data) else {

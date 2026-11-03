@@ -68,10 +68,11 @@ struct MenuPaneModelTests {
         var data = f.panel()
         data.inbox = f.inboxPanel
         let area = MenuPaneModel(data).area(.inbox)!
-        #expect(area.count == 10)
-        #expect(area.summaryText.hasPrefix("1 from Claude · 3 mentions · 2 to review"))
+        // The fixture has the coffee break too (added 2026-11-03): 11 waiting, coffee first in the default group order.
+        #expect(area.count == 11)
+        #expect(area.summaryText.hasPrefix("coffee · 1 from Claude · 3 mentions · 2 to review"))
         let flyout = MenuFlyout(data, area: .inbox)
-        #expect(flyout.total == 10 && flyout.entries.count == 10)
+        #expect(flyout.total == 11 && flyout.entries.count == 11)
         #expect(flyout.entries.first?.title == "Claude answered: Why Did It Fail?")
         data.inbox = PanelData.Inbox()
         #expect(MenuPaneModel(data).area(.inbox)!.summaryText == "Inbox zero")

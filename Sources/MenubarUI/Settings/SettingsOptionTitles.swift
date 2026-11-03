@@ -28,11 +28,21 @@ public enum SettingsOptionTitles {
         }
     }
 
-    /// "Alert Window" or "Banner" (ALERT-03)
+    /// "Alert Window", "Banner" or "Inbox Only" (ALERT-03, ALERT-10)
     public static func alertStyle(_ style: Preferences.AlertStyle) -> String {
         switch style {
         case .window: "Alert Window"
         case .banner: "Banner"
+        case .inboxOnly: "Inbox Only"
+        }
+    }
+
+    /// "Automatic", "Light" or "Dark" (Settings → Appearance)
+    public static func appearance(_ appearance: Preferences.Appearance) -> String {
+        switch appearance {
+        case .system: "Automatic"
+        case .light: "Light"
+        case .dark: "Dark"
         }
     }
 

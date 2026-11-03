@@ -122,7 +122,7 @@ extension Fixtures {
 
     /// the pane's Inbox: the pending rows and their count
     var inboxPanel: PanelData.Inbox {
-        let entries = inboxPending.filter { !$0.isMine && $0.kind != .coffeeBreak }
+        let entries = inboxPending.filter { !$0.isMine }
         return PanelData.Inbox(entries: entries, badgeCount: entries.count)
     }
 }
@@ -206,7 +206,7 @@ extension GalleryCatalog {
             },
             GalleryEntry(screen: "inbox", state: "no-token", size: size) { f in
                 InboxGalleryView(
-                    data: f.inboxData(pending: [], snoozed: [], done: [], fetched: false, problem: .noToken(.gitLab)),
+                    data: f.inboxData(pending: f.inboxMine, snoozed: [], done: [], fetched: false, problem: .noToken(.gitLab)),
                     panel: f.panel())
             },
             GalleryEntry(screen: "inbox", state: "narrow", size: narrow) { f in

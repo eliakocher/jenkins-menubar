@@ -220,6 +220,10 @@ private actor ChatFake: ProcessRunner {
         if executable.lastPathComponent == "zsh" {
             return ProcessOutput(status: 1)
         }
+        // `claude --version`, read once when claude is looked for, is not a call the tests count.
+        if arguments == ["--version"] {
+            return ProcessOutput(status: 0, standardOutput: Data("2.1.317 (Claude Code)\n".utf8))
+        }
         calls.append(Call(arguments: arguments))
         if arguments.contains("stream-json") {
             return ProcessOutput(status: 0, standardOutput: listing)

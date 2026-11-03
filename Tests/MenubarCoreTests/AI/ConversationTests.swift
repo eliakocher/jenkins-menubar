@@ -80,7 +80,7 @@ struct ConversationTests {
         // A JSON first answer: no schema now, no tool, the model of the turn.
         let explain = ClaudePrompt.followUp(to: Self.answer, history: [], question: "Why?")
         let plain = ClaudeEngine.arguments(for: explain, model: .haiku, effort: .high)
-        #expect(plain.contains("claude-haiku-5-5") && plain.contains("--safe-mode"))
+        #expect(plain.contains("haiku") && plain.contains("--safe-mode"))
         #expect(plain.contains("--effort") && plain.contains("high"))
         #expect(!plain.contains("--json-schema"))
         #expect(Self.answer.prompt.schema != nil)
@@ -92,7 +92,7 @@ struct ConversationTests {
         let code = AIAnswer(text: "It does.", model: "claude-opus-5-5", prompt: first, answeredAt: Self.date)
         let follow = ClaudePrompt.followUp(to: code, history: [], question: "And callers?")
         let reading = ClaudeEngine.arguments(for: follow, model: .sonnet)
-        #expect(reading.starts(with: ["-p", "--output-format", "json", "--model", "claude-sonnet-5-5", "--tools", "Read,Grep,Glob"]))
+        #expect(reading.starts(with: ["-p", "--output-format", "json", "--model", "sonnet", "--tools", "Read,Grep,Glob"]))
         #expect(reading.contains("5.00") && reading.contains("--restricted"))
         #expect(reading.contains("--add-dir") && reading.contains("/Users/nobody/checkout"))
         #expect(follow.instructions.hasPrefix("Answer in Markdown."))
@@ -121,14 +121,14 @@ struct ConversationTests {
         #expect(turns.map(\.question) == ["What first?", "And then?", "Anything else?"])
         #expect(turns[0].answer == "**Second** answer.")
         // The model of the turn, as asked: the click's, else Settings'.
-        #expect(turns[0].model == "claude-haiku-5-5")
+        #expect(turns[0].model == "haiku")
         #expect(turns[1].status == .failed(ClaudeFailure.failed(status: 1, lastLine: "boom").message))
 
         // The calls: the digest, then one per turn, each model at its own turn; the history only has answered turns.
         let calls = await fake.calls
         #expect(calls.count == 4)
-        #expect(calls[1].arguments.contains("claude-haiku-5-5"))
-        #expect(calls[2].arguments.contains("claude-opus-5-5"))
+        #expect(calls[1].arguments.contains("haiku"))
+        #expect(calls[2].arguments.contains("sonnet"))
         #expect(calls[1].input?.contains("What first?") == true)
         #expect(calls[3].input?.contains("**Second** answer.") == true)
         #expect(calls[3].input?.contains("And then?") == false)
@@ -304,6 +304,10 @@ actor ScriptedClaude: ProcessRunner {
     func run(_ executable: URL, arguments: [String], input: Data?) async throws -> ProcessOutput {
         if executable.lastPathComponent == "zsh" {
             return ProcessOutput(status: 1)
+        }
+        // `claude --version`, read once when claude is looked for, is not a call the tests count.
+        if arguments == ["--version"] {
+            return ProcessOutput(status: 0, standardOutput: Data("2.1.317 (Claude Code)\n".utf8))
         }
         let behavior = script[min(calls.count, script.count - 1)]
         calls.append(Call(arguments: arguments, input: input.map { String(decoding: $0, as: UTF8.self) }))

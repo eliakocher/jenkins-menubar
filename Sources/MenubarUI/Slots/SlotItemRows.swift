@@ -17,9 +17,10 @@ enum SlotItemText {
         var tint: Color {
             switch self {
             case .bug: .red
-            case .feature: .indigo
             case .epic: .purple
-            case .task, .other: .secondary
+            // The rest is the neutral grey: the indigo "Feature" chip blurred with the blue work item number beside it
+            // (the user, 2026-11-03).
+            case .feature, .task, .other: .chipNeutral
             }
         }
     }
@@ -48,6 +49,13 @@ enum SlotItemText {
         value(in: item.labels, prefix: prefix)
     }
 
+    /// Returns a type's value without a leading "New ", so the chip stays short: "New Feature" is shown as "Feature".
+    static func shortName(_ value: String) -> String {
+        let words = value.split(separator: " ")
+        guard words.count > 1, words[0].lowercased() == "new" else { return value }
+        return words.dropFirst().joined(separator: " ")
+    }
+
     /// Returns the item's kind and its name: from the type label when Team has a prefix and the item has one, else from
     /// the work item's own type.
     static func kind(of item: WorkItem, prefix: String) -> (kind: Kind, name: String) {
@@ -56,10 +64,10 @@ enum SlotItemText {
         }
         if let value = value(in: item.labels, prefix: prefix) {
             let lowered = value.lowercased()
-            if lowered.contains("bug") { return (.bug, value) }
-            if lowered.contains("feature") { return (.feature, value) }
-            if lowered.contains("task") { return (.task, value) }
-            return (.other, value)
+            if lowered.contains("bug") { return (.bug, shortName(value)) }
+            if lowered.contains("feature") { return (.feature, "Feature") }
+            if lowered.contains("task") { return (.task, shortName(value)) }
+            return (.other, shortName(value))
         }
         return item.type == .task ? (.task, "Task") : (.other, "Issue")
     }

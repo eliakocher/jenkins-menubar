@@ -264,7 +264,10 @@ public struct InboxNotificationRules: Codable, Hashable, Sendable {
             coffeeMinutes: min(max((try? container.decodeIfPresent(Int.self, forKey: .coffeeMinutes)) ?? Self.defaultCoffeeMinutes, 0), 1439),
             // A delivery this app doesn't know reads as the default, not as a file that can't be read.
             deliveries: ((try? container.decodeIfPresent([String: String].self, forKey: .deliveries)) ?? [:])
-                .compactMapValues(InboxDelivery.init(rawValue:)).filter { $0.value != .inboxOnly },
+                .compactMapValues(InboxDelivery.init(rawValue:)).filter { $0.value != .inboxOnly }
+                // The failed build's pop-up is the build alert style now (Task 7.13): a choice saved here is dropped, so
+                // the alert style, which the user already had, wins and the build never shows twice.
+                .filter { $0.key != InboxEventKind.buildFailed.rawValue },
             groupOrderNames: (try? container.decodeIfPresent([String].self, forKey: .groupOrderNames)) ?? [])
     }
 

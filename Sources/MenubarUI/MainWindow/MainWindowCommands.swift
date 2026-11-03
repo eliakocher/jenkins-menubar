@@ -58,7 +58,14 @@ public struct MainWindowCommands: Commands {
     }
 
     public var body: some Commands {
-        SidebarCommands()
+        // Toggle Sidebar replaces Apple's SidebarCommands, whose ⌃⌘S can't change: this one asks the window in front
+        // to toggle its sidebar, as theirs does, and has the shortcut of Settings → Shortcuts (KEYS-01).
+        CommandGroup(replacing: .sidebar) {
+            Button("Toggle Sidebar") {
+                NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut(shortcut(ShortcutCatalog.toggleSidebarID))
+        }
         // The About window: the butler's CC BY-SA attribution and the author's credit always, the roll of gags with the
         // easter eggs on (EGG-21).
         CommandGroup(replacing: .appInfo) {
@@ -83,7 +90,7 @@ public struct MainWindowCommands: Commands {
             Button("New Work Item…") {
                 openNewWorkItem(.blank(.task))
             }
-            .keyboardShortcut("n")
+            .keyboardShortcut(shortcut("newWorkItem"))
             .disabled(sheetIsUp || !NewWorkItemLauncher.canOpen(model))
             Menu("New Work Item As") {
                 ForEach(WorkItemKind.allCases, id: \.self) { kind in
@@ -95,7 +102,7 @@ public struct MainWindowCommands: Commands {
             Button("Open by Link…") {
                 router.promptOpenByLink()
             }
-            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .keyboardShortcut(shortcut("openByLink"))
             .disabled(sheetIsUp || router.isOpeningByLink)
             Divider()
             // In Workspaces ⌘O opens the checkout, as Return does; its merge request or work item opens without a shortcut.
@@ -103,7 +110,7 @@ public struct MainWindowCommands: Commands {
                 Button(checkout.hasIDECommand ? "Open in IDE" : "Reveal in Finder") {
                     checkout.open()
                 }
-                .keyboardShortcut("o")
+                .keyboardShortcut(shortcut("openSelected"))
                 .disabled(sheetIsUp)
                 Button("Open in Browser") {
                     if let url = selectedLink {
@@ -117,7 +124,7 @@ public struct MainWindowCommands: Commands {
                         router.browse(url)
                     }
                 }
-                .keyboardShortcut("o")
+                .keyboardShortcut(shortcut("openSelected"))
                 .disabled(sheetIsUp || selectedLink == nil)
             }
             Button("Copy Link") {
@@ -125,7 +132,7 @@ public struct MainWindowCommands: Commands {
                     MainWindowLinks.copy(url)
                 }
             }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .keyboardShortcut(shortcut("copyLink"))
             .disabled(sheetIsUp || selectedLink == nil)
             // While an item under "Opened" is selected, ⌘W closes it as a tab; with none, it stays Close Window's (WIN-06).
             Button("Close Opened Item") {
@@ -133,15 +140,17 @@ public struct MainWindowCommands: Commands {
                     router.close(opened: id, in: model.opened)
                 }
             }
-            .keyboardShortcut(selectedOpenedItem == nil ? nil : KeyboardShortcut("w"))
+            .keyboardShortcut(selectedOpenedItem == nil ? nil : shortcut("closeOpened"))
             .disabled(sheetIsUp || selectedOpenedItem == nil)
             Divider()
             Button("Show in Finder") {
                 ActivityFinder.show(model.activity)
             }
+            .keyboardShortcut(shortcut("showInFinder"))
             Button("Clear Activity…") {
                 activityCommands?.clear()
             }
+            .keyboardShortcut(shortcut("clearActivity"))
             .disabled(activityCommands == nil)
         }
         CommandGroup(replacing: .textEditing) {
@@ -150,7 +159,7 @@ public struct MainWindowCommands: Commands {
                 Button("Find…") {
                     router.focusSearch()
                 }
-                .keyboardShortcut("f")
+                .keyboardShortcut(shortcut("find"))
                 .disabled(focusedSection == nil || sheetIsUp)
             }
         }
@@ -159,7 +168,7 @@ public struct MainWindowCommands: Commands {
             Button(activityCommands?.isInspectorShown == true ? "Hide Inspector" : "Show Inspector") {
                 activityCommands?.toggleInspector()
             }
-            .keyboardShortcut("i", modifiers: [.control, .command])
+            .keyboardShortcut(shortcut("toggleInspector"))
             .disabled(activityCommands == nil)
             Divider()
             ForEach(
@@ -173,7 +182,8 @@ public struct MainWindowCommands: Commands {
                     router.open(section)
                     router.focusList()
                 }
-                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))))
+                // ⌘1 and on, by the place in the sidebar; a tenth section has no key (KEYS-01).
+                .keyboardShortcut(index < 9 ? shortcut(ShortcutCatalog.sectionID(index + 1)) : nil)
                 .disabled(sheetIsUp)
             }
             Divider()
@@ -191,24 +201,27 @@ public struct MainWindowCommands: Commands {
             Button("Make Text Bigger") {
                 readingSizeStep = MarkdownReadingSize.step(readingSizeStep, changedBy: 1)
             }
-            .keyboardShortcut("+")
+            .keyboardShortcut(shortcut("biggerText"))
             .disabled(!MarkdownReadingSize.canGrow(from: readingSizeStep))
-            Button("Make Text Bigger") {
-                readingSizeStep = MarkdownReadingSize.step(readingSizeStep, changedBy: 1)
+            // While Bigger has its standard key, ⌘= works too, as ⌘+ does without Shift.
+            if !shortcuts.isCustomized("biggerText") {
+                Button("Make Text Bigger") {
+                    readingSizeStep = MarkdownReadingSize.step(readingSizeStep, changedBy: 1)
+                }
+                .keyboardShortcut("=")
+                .disabled(!MarkdownReadingSize.canGrow(from: readingSizeStep))
+                .hidden()
             }
-            .keyboardShortcut("=")
-            .disabled(!MarkdownReadingSize.canGrow(from: readingSizeStep))
-            .hidden()
             Button("Make Text Smaller") {
                 readingSizeStep = MarkdownReadingSize.step(readingSizeStep, changedBy: -1)
             }
-            .keyboardShortcut("-")
+            .keyboardShortcut(shortcut("smallerText"))
             .disabled(!MarkdownReadingSize.canShrink(from: readingSizeStep))
             // ⌘0 is the window item's too: while the main window is key it is Actual Size's, as that window is already forward.
             Button("Actual Size") {
                 readingSizeStep = MarkdownReadingSize.step(readingSizeStep, changedBy: 0)
             }
-            .keyboardShortcut(focusedSection == nil ? nil : KeyboardShortcut("0"))
+            .keyboardShortcut(focusedSection == nil ? nil : shortcut("actualSize"))
             .disabled(MarkdownReadingSize.isDefault(readingSizeStep))
             Divider()
         }
@@ -217,12 +230,12 @@ public struct MainWindowCommands: Commands {
             Button("Back") {
                 router.goBack(model: model)
             }
-            .keyboardShortcut("[")
+            .keyboardShortcut(shortcut("back"))
             .disabled(focusedSection == nil || sheetIsUp || !router.history.canGoBack)
             Button("Forward") {
                 router.goForward(model: model)
             }
-            .keyboardShortcut("]")
+            .keyboardShortcut(shortcut("forward"))
             .disabled(focusedSection == nil || sheetIsUp || !router.history.canGoForward)
         }
         CommandMenu("Builds") {
@@ -233,7 +246,7 @@ public struct MainWindowCommands: Commands {
                     MainWindowReload.run(section, selection: router.selection, opened: router.opened, model: model)
                 }
             }
-            .keyboardShortcut(focusedSection == nil ? nil : KeyboardShortcut("r"))
+            .keyboardShortcut(focusedSection == nil ? nil : shortcut("reload"))
             .disabled(
                 sheetIsUp
                     || focusedSection.map {
@@ -242,11 +255,11 @@ public struct MainWindowCommands: Commands {
             Button("Check Now") {
                 model.checkNow()
             }
-            .keyboardShortcut(focusedSection == nil ? KeyboardShortcut("r") : KeyboardShortcut("r", modifiers: [.command, .shift]))
+            .keyboardShortcut(focusedSection == nil ? KeyboardShortcut("r") : shortcut("checkNow"))
             Button("Watch a Build…") {
                 router.open(.watch(MergeRequestWatching.request(model: model, router: router)))
             }
-            .keyboardShortcut("l")
+            .keyboardShortcut(shortcut("watchBuild"))
             .disabled(sheetIsUp)
             // The selected merge request's job, in one click, as the detail's button (WATCH-01).
             Button("Watch Builds of Merge Request") {
@@ -254,12 +267,13 @@ public struct MainWindowCommands: Commands {
                     MergeRequestWatching.watch(mergeRequest, model: model, router: router)
                 }
             }
-            .keyboardShortcut("w", modifiers: [.command, .shift])
+            .keyboardShortcut(shortcut("watchMergeRequest"))
             .disabled(sheetIsUp || selectedMergeRequestToWatch == nil)
             Divider()
             Button(PipelinesStore.showHiddenTitle(count: model.projects.hiddenCount) ?? "Show Hidden Builds") {
                 model.projects.unhideAll()
             }
+            .keyboardShortcut(shortcut("showHiddenBuilds"))
             .disabled(model.projects.hiddenCount == 0)
             // The list's link row can be out of reach with the keyboard only (PIPELINES-04).
             Button("All Builds in Jenkins") {
@@ -267,6 +281,7 @@ public struct MainWindowCommands: Commands {
                     router.browse(url)
                 }
             }
+            .keyboardShortcut(shortcut("allBuildsInJenkins"))
             .disabled(model.pipelines.project.team.jenkinsJob == nil)
             Divider()
             // ⌘⌫ goes to whichever of the two the selected row has: a watched build is stopped, any other hidden.
@@ -276,7 +291,7 @@ public struct MainWindowCommands: Commands {
                     router.selection.pipelines = nil
                 }
             }
-            .keyboardShortcut(selectedWatchedJob == nil ? KeyboardShortcut(.delete, modifiers: .command) : nil)
+            .keyboardShortcut(selectedWatchedJob == nil ? shortcut("hideBuild") : nil)
             .disabled(sheetIsUp || selectedBuild == nil)
             Button("Stop Watching") {
                 if let job = selectedWatchedJob {
@@ -284,14 +299,24 @@ public struct MainWindowCommands: Commands {
                     router.selection.pipelines = nil
                 }
             }
-            .keyboardShortcut(selectedWatchedJob != nil ? KeyboardShortcut(.delete, modifiers: .command) : nil)
+            .keyboardShortcut(selectedWatchedJob != nil ? shortcut("hideBuild") : nil)
             .disabled(sheetIsUp || selectedWatchedJob == nil)
         }
         CommandGroup(replacing: .singleWindowList) {
             // Replaced, so ⌘0 goes through the activation helper and the welcome flow isn't listed (`main-window.md`).
-            MainWindowMenuItem(router: router, handOver: handOver)
+            MainWindowMenuItem(router: router, handOver: handOver, shortcut: shortcut("openMainWindow"))
         }
         CommandGroup(replacing: .help) {}
+    }
+
+    /// the user's shortcuts, which Settings → Shortcuts changes (KEYS-01)
+    private var shortcuts: ShortcutMap {
+        model.settings.preferences.shortcuts
+    }
+
+    /// the shortcut of a command as its menu item has it
+    private func shortcut(_ id: String) -> KeyboardShortcut? {
+        shortcuts.keyboardShortcut(id)
     }
 
     /// Opens GitLab's new issue page for an entry point in the browser.
@@ -366,6 +391,8 @@ public struct MainWindowCommands: Commands {
 private struct MainWindowMenuItem: View {
     let router: WindowRouter
     let handOver: (@MainActor (OpenWindowAction, OpenSettingsAction) -> Bool)?
+    /// the shortcut of Settings → Shortcuts, which counts while another window is in front
+    let shortcut: KeyboardShortcut?
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @FocusedValue(\.mainWindowSection) private var focusedSection
@@ -377,7 +404,7 @@ private struct MainWindowMenuItem: View {
             }
             router.open(.main)
         }
-        .keyboardShortcut(focusedSection == nil ? KeyboardShortcut("0") : nil)
+        .keyboardShortcut(focusedSection == nil ? shortcut : nil)
     }
 }
 

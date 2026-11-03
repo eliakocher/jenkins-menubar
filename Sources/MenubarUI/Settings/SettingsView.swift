@@ -56,6 +56,7 @@ public struct SettingsView: View {
             case .menuBar: MenuBarPane()
             case .notifications: NotificationsPane(system: system)
             case .appearance: AppearancePane()
+            case .shortcuts: ShortcutsPane()
             case .accounts: AccountsPane()
             case .projects: ProjectsPane()
             case .team: TeamPane()
@@ -199,6 +200,7 @@ extension SettingsPane {
         case .menuBar: "menubar.rectangle"
         case .notifications: "bell.badge.fill"
         case .appearance: "paintpalette.fill"
+        case .shortcuts: "keyboard.fill"
         case .accounts: "key.fill"
         case .projects: "shippingbox.fill"
         case .team: "person.2.fill"
@@ -217,6 +219,7 @@ extension SettingsPane {
         case .menuBar: .cyan
         case .notifications: .red
         case .appearance: .indigo
+        case .shortcuts: .pink
         case .accounts: .blue
         case .projects: .orange
         case .team: .teal
@@ -346,6 +349,7 @@ extension SettingsPane {
         case .menuBar: "What the menu bar shows, and what its menu lists."
         case .notifications: "Which builds alert you, and what lands in your Inbox."
         case .appearance: "How details, text, code changes and discussions look."
+        case .shortcuts: "The keys for the window's commands, and one for opening MegaMonitor from anywhere."
         case .accounts: "Sign in to GitLab and Jenkins. Tokens stay in your keychain."
         case .projects: "The Jenkins jobs and GitLab projects MegaMonitor watches."
         case .team: "Labels, slots and squads, the same for everyone on your team."

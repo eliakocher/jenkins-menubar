@@ -14,10 +14,40 @@ public enum ClaudeFailure: Error, Hashable, Sendable {
     case answeredError(ClaudeRun)
     /// the answer didn't have the shape asked for
     case unreadableAnswer(ClaudeRun)
+    /// the installed `claude` is too old to run the model's alias, with the version it says it needs, when it says
+    case outdated(required: String?)
+
+    /// the sentence of ``outdated(required:)``; the views know it by this text and offer ``updateCommand``
+    public static let outdatedMessage = "Claude Code is too old for this model. Update it: claude update"
+    /// the command that updates Claude Code
+    public static let updateCommand = "claude update"
+
+    /// Returns whether `claude` said it is too old for the model: "Claude Code 2.1.236 does not support this model;
+    /// version 2.1.280 or newer is required."
+    ///
+    /// - Parameter text: what `claude` answered or printed
+    public static func saysOutdated(_ text: String) -> Bool {
+        let lowered = text.lowercased()
+        return lowered.contains("does not support this model") || lowered.contains("or newer is required")
+    }
+
+    /// Returns the version `claude` says it needs ("2.1.280"), if its text names one.
+    ///
+    /// - Parameter text: what `claude` answered or printed
+    public static func requiredVersion(in text: String) -> String? {
+        guard let end = text.range(of: " or newer", options: .caseInsensitive) else {
+            return nil
+        }
+        let word = text[..<end.lowerBound].split(whereSeparator: \.isWhitespace).last.map(String.init) ?? ""
+        let isVersion = !word.isEmpty && word.first?.isNumber == true && word.allSatisfy { $0.isNumber || $0 == "." }
+        return isVersion ? word : nil
+    }
 
     /// the failure in a sentence
     public var message: String {
         switch self {
+        case .outdated:
+            Self.outdatedMessage
         case .notFound:
             "Claude Code (claude) isn't installed. Install it, then sign in with claude in Terminal."
         case .timedOut:
@@ -55,6 +85,9 @@ public enum ClaudeFailure: Error, Hashable, Sendable {
 ///   servers load, but `--permission-mode dontAsk` lets only the named tools run, whatever their own settings allow:
 ///   the reading MCP tools by name, the use case's own `Read,Grep,Glob`; every other MCP tool and Bash, Edit, Write are
 ///   denied by name too (a denial beats their own allow rules).
+/// - The model goes in as the CLI's alias (`--model opus`, ``ClaudeModel``): `claude` picks the newest model of the
+///   family it knows, so an old and a new Claude Code both work. An old one that still can't run it answers with
+///   "does not support this model"; that is ``ClaudeFailure/outdated(required:)``, never sent again by itself.
 /// - It ends `claude` after ``timeout``.
 public actor ClaudeEngine {
     /// the fixed safety limit of one call, `--max-budget-usd`: a runaway call stops here. Not a setting, not shown.
@@ -85,6 +118,8 @@ public actor ClaudeEngine {
     private let resolver: ProgramResolver
     /// `claude`'s path once looked for: `.some(nil)` when it wasn't found
     private var located: URL??
+    /// `claude --version`'s answer once read: `.some(nil)` when it couldn't be read
+    private var versionRead: String??
 
     /// - Parameters:
     ///   - runner: runs `claude` and the login shell
@@ -107,6 +142,31 @@ public actor ClaudeEngine {
     /// Forgets where `claude` was, so the next ``locate()`` looks again, as after installing it.
     public func forgetLocation() {
         located = nil
+        versionRead = nil
+    }
+
+    /// Returns the version of the `claude` found ("2.1.317"), read once with `claude --version`; `nil` when it isn't
+    /// found or says none.
+    ///
+    /// - Parameter refresh: read it again, as after `claude update`
+    public func version(refresh: Bool = false) async -> String? {
+        if let versionRead, !refresh {
+            return versionRead
+        }
+        guard let claude = await locate() else {
+            return nil
+        }
+        let output = try? await runner.run(claude, arguments: ["--version"], input: nil, timeout: .seconds(10))
+        let version = output.flatMap { Self.version(from: String(decoding: $0.standardOutput, as: UTF8.self)) }
+        versionRead = .some(version)
+        return version
+    }
+
+    /// Returns the version in `claude --version`'s text, "2.1.317 (Claude Code)": its first number with dots.
+    static func version(from text: String) -> String? {
+        text.split(whereSeparator: \.isWhitespace).map(String.init).first {
+            $0.first?.isNumber == true && $0.contains(".") && $0.allSatisfy { $0.isNumber || $0 == "." }
+        }
     }
 
     /// Returns `claude`'s arguments for a prompt: fixed flags, the app's instructions and schema, the model and the
@@ -270,6 +330,9 @@ public actor ClaudeEngine {
         // An error answer comes as JSON too, with exit status 1.
         guard var run = try? ClaudeRun.parse(output.standardOutput) else {
             let text = String(decoding: output.standardError + output.standardOutput, as: UTF8.self)
+            if ClaudeFailure.saysOutdated(text) {
+                throw .outdated(required: ClaudeFailure.requiredVersion(in: text))
+            }
             let lastLine = text.split(whereSeparator: \.isNewline)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .last { !$0.isEmpty }
@@ -279,6 +342,10 @@ public actor ClaudeEngine {
         run.exitStatus = output.status
         guard !run.isError, output.status == 0 else {
             run.isError = true
+            // An old `claude` doesn't know the alias's model: a problem of the installation, said as one.
+            if ClaudeFailure.saysOutdated(run.errorMessage) {
+                throw .outdated(required: ClaudeFailure.requiredVersion(in: run.errorMessage))
+            }
             throw .answeredError(run)
         }
         return run

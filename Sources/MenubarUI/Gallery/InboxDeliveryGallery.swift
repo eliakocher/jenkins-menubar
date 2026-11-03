@@ -35,11 +35,16 @@ extension Fixtures {
 private struct PanelGalleryView: View {
     let events: [InboxEvent]
     var shown = 0
+    /// a Done GitLab refused, shown on the first event's page
+    var refusal: Problem?
 
     var body: some View {
         let model = InboxEventPanelModel()
         for event in events.reversed() {
             model.pages.add(event)
+        }
+        if let refusal, let id = model.pages.current?.id {
+            model.refusals[id] = refusal
         }
         for _ in 0..<shown {
             model.pages.next()
@@ -59,11 +64,13 @@ private struct PanelGalleryView: View {
 /// Settings → Notifications' Inbox sections, with a few kinds on a panel or a banner.
 private struct InboxSettingsGalleryView: View {
     var rules = InboxNotificationRules()
+    var buildAlertStyle = Preferences.AlertStyle.window
     var permission: NotificationPermission? = .allowed
 
     var body: some View {
         Form {
-            InboxNotificationsSection(rules: .constant(rules), permission: permission, actions: .none)
+            InboxNotificationsSection(
+                rules: .constant(rules), buildAlertStyle: .constant(buildAlertStyle), permission: permission, actions: .none)
         }
         .formStyle(.grouped)
         .settingsPaneFrame(estimate: 1000)
@@ -75,7 +82,6 @@ extension GalleryCatalog {
     static var inboxDeliveryEntries: [GalleryEntry] {
         var picked = InboxNotificationRules()
         picked.set(.bigPanel, for: .coffeeBreak)
-        picked.set(.bigPanel, for: .buildFailed)
         picked.set(.desktopNotification, for: .reviewRequested)
         picked.set(.desktopNotification, for: .mentioned)
         var reordered = picked
@@ -93,6 +99,9 @@ extension GalleryCatalog {
             GalleryEntry(screen: "inbox-panel", state: "claude", size: CGSize(width: 380, height: 400)) { f in
                 PanelGalleryView(events: [f.panelEvents["claude"]!])
             },
+            GalleryEntry(screen: "inbox-panel", state: "done-refused", size: CGSize(width: 380, height: 440)) { f in
+                PanelGalleryView(events: [f.panelEvents["review"]!], refusal: .readOnlyToken(action: "Mark Done"))
+            },
             GalleryEntry(screen: "inbox-panel", state: "paged", size: CGSize(width: 380, height: 440)) { f in
                 PanelGalleryView(events: [f.panelEvents["coffee"]!, f.panelEvents["review"]!, f.panelEvents["build"]!], shown: 1)
             },
@@ -103,7 +112,7 @@ extension GalleryCatalog {
                 InboxSettingsGalleryView(rules: reordered)
             },
             GalleryEntry(screen: "settings-inbox", state: "banners-off", size: CGSize(width: SettingsMetrics.width, height: 1000)) { _ in
-                InboxSettingsGalleryView(rules: picked, permission: .off)
+                InboxSettingsGalleryView(rules: picked, buildAlertStyle: .banner, permission: .off)
             },
         ]
     }

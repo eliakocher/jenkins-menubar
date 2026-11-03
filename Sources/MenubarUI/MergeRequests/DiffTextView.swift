@@ -251,6 +251,20 @@ final class DiffSurface: NSView, NSTextViewDelegate {
 
     override var isFlipped: Bool { true }
 
+    /// The code's and the tints' colors are dynamic and resolve as they draw, so a switch of Settings → Appearance
+    /// only needs a redraw of the columns and of what the surface draws itself.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        for column in columns {
+            let length = column.storage.length
+            if length > 0 {
+                column.layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: length))
+            }
+            column.text.needsDisplay = true
+        }
+        needsDisplay = true
+    }
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         clipsToBounds = true

@@ -203,8 +203,10 @@ public final class SettingsStore {
         let routingChanged = new.inboxNotifications != storedPreferences.inboxNotifications
         // The menu bar's layout too (APP-11).
         let layoutChanged = new.menuBarLayout != storedPreferences.menuBarLayout
+        // And the keyboard shortcuts (KEYS-01).
+        let shortcutsChanged = new.shortcuts != storedPreferences.shortcuts
         let changes = preferencesStore.save(new)
-        guard !changes.isEmpty || routingChanged || layoutChanged else { return }
+        guard !changes.isEmpty || routingChanged || layoutChanged || shortcutsChanged else { return }
         storedPreferences = preferencesStore.load()
         var messages = changes
             .filter { labelMessage == nil || !Self.labelKeys.contains($0.key) }
@@ -217,6 +219,9 @@ public final class SettingsStore {
         }
         if layoutChanged {
             messages.append("menuBarLayout: \(storedPreferences.menuBarLayout.summary)")
+        }
+        if shortcutsChanged {
+            messages.append("keyboardShortcuts: \(storedPreferences.shortcuts.jsonText ?? "defaults")")
         }
         logInfo(messages)
         if changes.contains(where: { $0.key == .checkIntervalSeconds }) {

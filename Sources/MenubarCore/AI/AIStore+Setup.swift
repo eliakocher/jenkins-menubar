@@ -17,10 +17,11 @@ public enum SetupInventoryState: Equatable, Sendable {
 
 extension AIStore {
     /// whether a prompt runs with the user's setup: the chats do, when the setting is on: a question about code, a
-    /// question about a work item, and every follow-up. The explanations, summaries and digests stay in safe mode.
+    /// question about a work item, a question about a build, and every follow-up. The explanations, summaries and digests stay in safe mode.
     func usesSetup(for prompt: ClaudePrompt, followUp: Bool) -> Bool {
         guard settings.isEnabled, settings.useMySetup else { return false }
         return followUp || prompt.useCase == .askAboutCode || prompt.useCase == .askAboutItem
+            || prompt.useCase == .buildChat
     }
 
     /// how old the listing may get before a chat starts a quiet refresh of it
@@ -112,5 +113,24 @@ extension AIStore {
         slashCommands = await Task.detached(priority: .utility) {
             SlashCommandCatalog.scan(home: home, project: folder)
         }.value
+    }
+
+    /// Remembers that `claude` is too old for the models' aliases, for Settings → Claude; any other failure leaves it as it was.
+    func noteOutdated(_ error: ClaudeFailure) {
+        if case .outdated(let required) = error {
+            outdatedClaude = OutdatedClaude(required: required)
+            record("Claude Code is too old for this model\(required.map { ", it needs \($0) or newer" } ?? ""); claude update gets it",
+                   level: .warning, source: .app)
+        }
+    }
+}
+
+/// `claude` is too old for the model the app asked for, by alias: the CLI said so, with the version it needs, when it did.
+public struct OutdatedClaude: Equatable, Sendable {
+    /// the version it asked for, like "2.1.280"
+    public var required: String?
+
+    public init(required: String? = nil) {
+        self.required = required
     }
 }

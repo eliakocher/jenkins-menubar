@@ -60,7 +60,7 @@ public struct BuildDetailView: View {
 /// build's bar, and a strip of chips for the duration, the age and the failed tests. Under it the action row: every
 /// frequent action as a bordered button (Rebuild, Notifications, Hide, the console and test results in Jenkins, Copy
 /// Link), wrapping when narrow. Below, the compact cards (Stages, Failed Tests, Build Info, Recent Builds with the flaky
-/// hints, Linked) in one column, or two when wide, then Claude full width. Open in Jenkins is in the toolbar.
+/// hints, Linked) in one column, or two when wide, then Claude full width (for every build). Open in Jenkins is in the toolbar.
 struct BuildDetailContent: View {
     let model: BuildDetailModel?
     let actions: PanelActions
@@ -93,9 +93,10 @@ struct BuildDetailContent: View {
                                 mergeRequest: mergeRequest, workItems: model.workItems, actions: actions.itemLinks)
                         }
                     }
-                    // Why Did It Fail?, while the Claude features are on (AI-02, AI-05).
-                    if model.canExplain, case .build(let row) = model.item {
-                        ExplainBuildSection(build: row.build, page: row.buildPage?.url, inCard: true)
+                    // Claude, always while the features are on: a free question about the build, and Why Did It Fail?
+                    // on a red one (AI-02, AI-05, AI-10).
+                    if model.showsClaudeCard, case .build(let row) = model.item {
+                        BuildClaudeCard(build: row.build, page: row.buildPage?.url, offersWhy: model.canExplain)
                             .cardFocusTarget(.claude)
                     }
                     // The console log, collapsed until opened, full width and last (PIPE-12).

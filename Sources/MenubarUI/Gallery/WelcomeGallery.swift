@@ -95,6 +95,16 @@ extension GalleryCatalog {
                 WelcomeGalleryView(data: WelcomeData(page: .notifications, notifications: .off))
             },
             // Page 5
+            // The Claude step, with `claude` found: all on, Sonnet.
+            GalleryEntry(screen: "welcome", state: "claude", size: size) { _ in
+                WelcomeGalleryView(data: WelcomeData(page: .claude, claude: WelcomeData.Claude(isFound: true)))
+            },
+            GalleryEntry(screen: "welcome", state: "claude-off", size: size) { _ in
+                var input = WelcomeInput()
+                input.claude.isEnabled = false
+                input.coffee = false
+                return WelcomeGalleryView(data: WelcomeData(page: .claude, claude: WelcomeData.Claude(isFound: true)), input: input)
+            },
             GalleryEntry(screen: "welcome", state: "menu-bar-and-login", size: size) { _ in
                 WelcomeGalleryView(data: WelcomeData(page: .menuBarAndLogin))
             },
@@ -105,6 +115,13 @@ extension GalleryCatalog {
             GalleryEntry(screen: "welcome", state: "done", size: size) { fixtures in
                 WelcomeGalleryView(data: fixtures.welcomeDone(
                     report: fixtures.welcomeFresh, storedTokens: [.jenkins, .gitlab], notifications: .allowed))
+            },
+            // `claude` isn't installed: the Claude step is skipped and the last page says how to get it.
+            GalleryEntry(screen: "welcome", state: "done-no-claude", size: size) { fixtures in
+                var data = fixtures.welcomeDone(
+                    report: fixtures.welcomeFresh, storedTokens: [.jenkins, .gitlab], notifications: .allowed)
+                data.claude = WelcomeData.Claude(isMissing: true)
+                return WelcomeGalleryView(data: data)
             },
             GalleryEntry(screen: "welcome", state: "done-old-tool", size: size) { fixtures in
                 WelcomeGalleryView(data: fixtures.welcomeDone(

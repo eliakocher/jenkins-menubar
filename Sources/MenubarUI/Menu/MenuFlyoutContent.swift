@@ -176,7 +176,9 @@ struct MenuEntryRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             if showsSymbolColumn {
                 Group {
-                    if let symbol = entry.symbol {
+                    if isCoffee, AppImages.coffee != nil {
+                        CoffeeButlerIcon(size: MenuMetrics.symbolColumn)
+                    } else if let symbol = entry.symbol {
                         MenuSymbol(name: symbol, tint: entry.tint)
                     } else {
                         // The empty column keeps the titles lined up with the marked rows, as a native menu's.
@@ -221,6 +223,11 @@ struct MenuEntryRow: View {
         .opacity(isFaded ? 0.6 : 1)
         .help(entry.url == nil ? entry.title : "\(entry.title)\n⌥-click to open in the browser")
         .accessibilityElement(children: .combine)
+    }
+
+    /// the coffee break's entry, which wears its butler instead of the cup symbol
+    private var isCoffee: Bool {
+        if case .inbox(let row) = entry.kind { row.entry.kind == .coffeeBreak } else { false }
     }
 
     /// an Inbox entry that was opened, while the pointer isn't on it

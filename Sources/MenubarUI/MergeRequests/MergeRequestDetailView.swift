@@ -266,12 +266,11 @@ struct MergeRequestDetailContent: View {
         reference.split(separator: "!").dropLast().joined(separator: "!")
     }
 
-    /// Copy Link, Ask Claude while the Claude features are on, and the follow-up item (NEW-04), as the build detail has its
-    /// buttons. GitLab's pages are in the toolbar, the Changes card and the Builds card.
+    /// Copy Link and the follow-up item (NEW-04), as the build detail has its buttons. Claude's card is a scroll away (the
+    /// user, 2026-11-03: no "Ask Claude" button here). GitLab's pages are in the toolbar, the Changes card and the Builds card.
     private func actionRow(_ model: MergeRequestDetailModel) -> some View {
         DetailActionRow {
             CopyLinkButton(help: "Copies the merge request's link in GitLab") { actions.copy(model.mergeRequest.webURL) }
-            AskClaudeAboutMergeRequestButton()
             // GitLab's new issue page, prefilled with this merge request's link (NEW-04).
             if let newWorkItem = actions.newWorkItem {
                 DetailActionButton(
@@ -283,18 +282,6 @@ struct MergeRequestDetailContent: View {
             }
         }
         .padding(.top, 2)
-    }
-}
-
-/// "Ask Claude" as a button of the merge request's action row: it aims the Claude card's chat at the whole merge request
-/// (AI-07); nothing while Claude is off.
-private struct AskClaudeAboutMergeRequestButton: View {
-    @Environment(\.askClaudeAboutCode) private var ask
-
-    var body: some View {
-        if let ask {
-            DetailActionButton("Ask Claude", "sparkles", help: "Asks Claude about this merge request's code") { ask(.mergeRequest) }
-        }
     }
 }
 

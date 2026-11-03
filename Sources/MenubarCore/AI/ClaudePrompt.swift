@@ -102,11 +102,14 @@ public struct BuildFailureFacts: Hashable, Sendable {
     public var log: FailureLog
     /// what the job's recent builds say of the failed stages (PIPE-10); empty when unknown
     public var flakyHints: [FlakyHint]
+    /// every stage with its status and duration, when the build's stages are known; only a question about the build
+    /// (``ClaudePrompt/buildQuestion(_:question:)``) lists them
+    public var stages: [Stage]
 
     public init(
         title: String, job: String, number: Int, result: String, failedStages: [String] = [], testCounts: TestCounts? = nil,
         failedTests: [FailedTest] = [], changes: [BuildChange] = [], lastGreen: Int? = nil, log: FailureLog = FailureLog(),
-        flakyHints: [FlakyHint] = []
+        flakyHints: [FlakyHint] = [], stages: [Stage] = []
     ) {
         self.title = title
         self.job = job
@@ -119,6 +122,7 @@ public struct BuildFailureFacts: Hashable, Sendable {
         self.lastGreen = lastGreen
         self.log = log
         self.flakyHints = flakyHints
+        self.stages = stages
     }
 
     /// how many failed tests and changes are listed
@@ -155,7 +159,7 @@ public struct BuildFailureFacts: Hashable, Sendable {
             title: build.title ?? build.label, job: build.label, number: build.number,
             result: build.result?.rawValue ?? "FAILURE", failedStages: build.failedStages ?? [], testCounts: build.testCounts,
             failedTests: tests, changes: found?.changes ?? [], lastGreen: found?.lastGreen, log: narrowed,
-            flakyHints: flakyHints)
+            flakyHints: flakyHints, stages: build.stages ?? [])
     }
 }
 
@@ -202,7 +206,22 @@ extension ClaudePrompt {
     /// - Returns: the prompt, not redacted yet
     public static func explainBuild(_ facts: BuildFailureFacts) -> ClaudePrompt {
         var lines = ["A Jenkins build failed. Find the root cause.", ""]
+        lines += buildFactLines(facts, asked: false)
+        return ClaudePrompt(
+            useCase: .explainBuild, instructions: explainBuildInstructions, text: lines.joined(separator: "\n"),
+            schema: explainBuildSchema)
+    }
 
+    /// The facts of a build as the prompts give them, in the order of an investigation: the build with its failed
+    /// stages (and, when asked about, all its stages), the failed tests, the log's marked lines then its end, and the
+    /// commits. "Why Did It Fail?" and a question about the build gather the same facts (``BuildFailureFacts``).
+    ///
+    /// - Parameters:
+    ///   - facts: the build's facts
+    ///   - asked: whether it is a free question, about any build: it lists the stages and words the commits as
+    ///     changes, since a green build has no suspects
+    private static func buildFactLines(_ facts: BuildFailureFacts, asked: Bool) -> [String] {
+        var lines: [String] = []
         lines.append("# Build")
         lines.append("\(facts.job) #\(facts.number) \"\(facts.title)\", result \(facts.result)")
         if !facts.failedStages.isEmpty {
@@ -228,6 +247,15 @@ extension ClaudePrompt {
                 lines.append("History: stage \"\(stage)\" passed in build #\(build) of the same commit")
             case .failedBefore(let stage, let failed, let of):
                 lines.append("History: stage \"\(stage)\" failed in \(failed) of the last \(of) builds")
+            }
+        }
+
+        if asked, !facts.stages.isEmpty {
+            lines.append("")
+            lines.append("# Stages")
+            for stage in facts.stages {
+                let took = stage.status == .notExecuted ? "" : ", \(Int(max(0, stage.duration)))s"
+                lines.append("- \(stage.name): \(stage.status.rawValue.lowercased().replacingOccurrences(of: "_", with: " "))\(took)")
             }
         }
 
@@ -284,14 +312,15 @@ extension ClaudePrompt {
         lines.append(end.isEmpty ? (log.excerpts.isEmpty ? "(empty)" : "(the excerpts above reach the end)") : end)
 
         lines.append("")
+        let heading = asked ? "Changes" : "Suspect commits"
         if let green = facts.lastGreen {
             lines.append(facts.changes.isEmpty
-                ? "# Suspect commits: none since the last green build (#\(green))"
-                : "# Suspect commits: since the last green build (#\(green)), newest first")
+                ? "# \(heading): none since the last green build (#\(green))"
+                : "# \(heading): since the last green build (#\(green)), newest first")
         } else {
             lines.append(facts.changes.isEmpty
-                ? "# Suspect commits: none known (no green build in the job's recent history)"
-                : "# Suspect commits: the recent builds' (no green build in the job's recent history), newest first")
+                ? "# \(heading): none known (no \(asked ? "earlier " : "")green build in the job's recent history)"
+                : "# \(heading): the recent builds' (no \(asked ? "earlier " : "")green build in the job's recent history), newest first")
         }
         for change in facts.changes.prefix(BuildFailureFacts.listedChanges) {
             lines.append("- \(change.commit.prefix(10)) #\(change.build) \(change.author): \(head(change.message, characters: 200))")
@@ -299,9 +328,37 @@ extension ClaudePrompt {
         if facts.changes.count > BuildFailureFacts.listedChanges {
             lines.append("- and \(facts.changes.count - BuildFailureFacts.listedChanges) more")
         }
-        return ClaudePrompt(
-            useCase: .explainBuild, instructions: explainBuildInstructions, text: lines.joined(separator: "\n"),
-            schema: explainBuildSchema)
+        return lines
+    }
+}
+
+// MARK: - A question about a build
+
+extension ClaudePrompt {
+    /// the system prompt of a question about a build
+    static let buildQuestionInstructions = """
+        You answer a developer's question about a Jenkins CI build, whatever its result. You get the build, its \
+        stages, its failed tests, the log lines with error markers (with their line numbers and stage), the end of the \
+        log, and the commits since the last green build; answer from them. You can't run commands, open links or \
+        change anything. Answer in Markdown, concise and concrete: lead with the answer. Say plainly when the facts \
+        don't tell enough to be sure, and don't invent log lines, tests or commits.
+        """
+
+    /// Returns the prompt of a free question about a build: the same facts "Why Did It Fail?" gathers, for a build of
+    /// any result (the stages, the failed tests, the log's marked lines and its end, the changes since the last green
+    /// build), and the question last.
+    ///
+    /// - Parameters:
+    ///   - facts: the build's facts
+    ///   - question: the user's question
+    /// - Returns: the prompt, not redacted yet
+    public static func buildQuestion(_ facts: BuildFailureFacts, question: String) -> ClaudePrompt {
+        var lines = ["Answer my question about this Jenkins build.", ""]
+        lines += buildFactLines(facts, asked: true)
+        lines += ["", "# My question", question]
+        var prompt = ClaudePrompt(useCase: .buildChat, instructions: buildQuestionInstructions, text: lines.joined(separator: "\n"))
+        prompt.question = question
+        return prompt
     }
 }
 

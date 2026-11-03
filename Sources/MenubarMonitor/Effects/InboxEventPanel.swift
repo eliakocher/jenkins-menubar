@@ -14,15 +14,16 @@ final class InboxEventPanels: NSObject, NSWindowDelegate {
     private var panel: AlertPanel?
     private let model = InboxEventPanelModel()
     /// runs a button's action for an event; the shell's
-    private var perform: @MainActor (InboxDeliveryAction, InboxEvent) -> Void = { _, _ in }
+    private var perform: @MainActor (InboxDeliveryAction, InboxEvent) async -> Problem? = { _, _ in nil }
 
     /// Shows an event in the panel, in front of every window, without taking the keyboard; the panel opens for the first
     /// event and takes the later ones as pages.
     ///
     /// - Parameters:
     ///   - event: the event
-    ///   - perform: runs Show, Done and Snooze 1 Hour for the event
-    func show(_ event: InboxEvent, perform: @escaping @MainActor (InboxDeliveryAction, InboxEvent) -> Void) {
+    ///   - perform: runs Show, Done and Snooze 1 Hour for the event; answers why GitLab refused a Done, which the page then
+    ///     shows inline and stays
+    func show(_ event: InboxEvent, perform: @escaping @MainActor (InboxDeliveryAction, InboxEvent) async -> Problem?) {
         self.perform = perform
         model.pages.add(event)
         if let panel {
@@ -55,12 +56,27 @@ final class InboxEventPanels: NSObject, NSWindowDelegate {
         event.kind == .coffeeBreak ? "Coffee Break" : event.headline
     }
 
-    /// Runs a button of a page, then takes the page.
+    /// Runs a button of a page, then takes the page. A Done that GitLab refused keeps the page, with the reason on it.
     private func run(_ action: InboxDeliveryAction, for event: InboxEvent) {
-        if action != .dismiss {
-            perform(action, event)
+        guard action == .done else {
+            if action != .dismiss {
+                Task { _ = await perform(action, event) }
+            }
+            dismiss(event.id)
+            return
         }
-        dismiss(event.id)
+        guard model.busy.insert(event.id).inserted else {
+            return
+        }
+        Task {
+            let refused = await perform(action, event)
+            model.busy.remove(event.id)
+            if let refused {
+                model.refusals[event.id] = refused
+            } else {
+                dismiss(event.id)
+            }
+        }
     }
 
     /// Takes a page out; the window closes with the last one.

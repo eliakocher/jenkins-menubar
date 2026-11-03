@@ -469,7 +469,9 @@ public final class InboxStore {
     /// GitLab refuses.
     ///
     /// - Parameter entry: the row
-    public func markDone(_ entry: InboxEntry) async {
+    /// - Returns: why GitLab refused it, when it did and the row came back (also kept in ``actionProblem``); `nil` otherwise
+    @discardableResult
+    public func markDone(_ entry: InboxEntry) async -> Problem? {
         switch entry.source {
         case .event:
             setLocal(entry.id, doneAt: services.now())
@@ -477,8 +479,11 @@ public final class InboxStore {
             mine.setDone(todo.id, at: services.now())
             saveMine()
         case .todo(let todo):
-            _ = await change(todo, to: .done, .todoMarkDone(id: todo.id), "Mark Done")
+            if case .failure = await change(todo, to: .done, .todoMarkDone(id: todo.id), "Mark Done") {
+                return actionProblem
+            }
         }
+        return nil
     }
 
     /// Makes a done row pending again (INBOX-03), the same way.

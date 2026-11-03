@@ -18,6 +18,8 @@ struct WelcomeData {
     var notifications: NotificationPermission?
     /// the saved preferences, for the notification line
     var preferences = Preferences()
+    /// the Claude step, shown only while `claude` is installed
+    var claude = Claude()
     /// page 5
     var login = Login()
     /// page 6
@@ -67,6 +69,14 @@ struct WelcomeData {
         }
     }
 
+    /// The Claude step: what the switches show, and whether `claude` was found.
+    struct Claude {
+        /// whether `claude` was found: the step shows
+        var isFound = false
+        /// whether it wasn't found (not just still being looked for): the last page says how to get it
+        var isMissing = false
+    }
+
     /// The login item on page 5 (APP-02).
     struct Login {
         var status: LoginItemStatus = .notRegistered
@@ -86,6 +96,11 @@ struct WelcomeInput: Equatable {
     var jenkinsToken = ""
     var gitLabToken = ""
     var showInMenuBar = true
+    /// the Claude settings the step edits: on, Sonnet, the morning digest on, until changed
+    var claude = AISettings()
+    /// the coffee break, on at 08:59 until changed
+    var coffee = true
+    var coffeeMinutes = InboxNotificationRules.defaultCoffeeMinutes
     /// starts on; registered when Continue is pressed on page 5 (APP-02)
     var openAtLogin = true
 }
@@ -150,6 +165,7 @@ struct WelcomeContent: View {
         case .team: SettingsPane.projects.tint
         case .accounts: SettingsPane.accounts.tint
         case .notifications: SettingsPane.notifications.tint
+        case .claude: SettingsPane.claude.tint
         case .menuBarAndLogin: SettingsPane.general.tint
         case .done: data.summary.heading == WelcomePage.done.heading ? .green : .orange
         }
@@ -157,7 +173,7 @@ struct WelcomeContent: View {
 
     private var bottomBar: some View {
         HStack {
-            Text(data.page.stepText)
+            Text(data.page.stepText(offersClaude: data.claude.isFound))
                 .foregroundStyle(.secondary)
             Spacer()
             if data.page.showsBack(notifications: data.notifications) {
@@ -182,6 +198,7 @@ struct WelcomeContent: View {
         case .team: teamSections
         case .accounts: accountsSections
         case .notifications: notificationSections
+        case .claude: claudeSections
         case .menuBarAndLogin: menuBarAndLoginSections
         case .done: doneSections
         }
@@ -262,6 +279,67 @@ struct WelcomeContent: View {
         }
     }
 
+    // MARK: Claude (AI-01)
+
+    /// The switches of Settings → Claude and Settings → Notifications' coffee break, saved as they change. The digest
+    /// follows the Claude switch; the coffee break's line comes from Haiku while Claude is on, and from the built-in
+    /// lines otherwise.
+    @ViewBuilder private var claudeSections: some View {
+        Section {
+            Toggle(isOn: $input.claude.isEnabled) {
+                SettingsRowLabel("Claude features", "Why Did It Fail?, summaries, the Digest and the chats")
+            }
+            .settingsSwitch()
+            Picker(selection: $input.claude.model) {
+                ForEach(WelcomeClaudeRules.models, id: \.self) { model in
+                    Text(verbatim: model.shortName).tag(model)
+                }
+            } label: {
+                SettingsRowLabel("Model", "Sonnet is fast and thorough; Opus thinks longest")
+            }
+            .pickerStyle(.menu)
+            .disabled(!input.claude.isEnabled)
+        } header: {
+            SettingsSectionHeader("Claude")
+        }
+        Section {
+            timedSwitch(
+                "Daily digest", "Lands in your Inbox each morning", isOn: $input.claude.morningDigest,
+                minutes: $input.claude.digestMinutes
+            )
+            .disabled(!input.claude.isEnabled)
+            timedSwitch(
+                "Coffee break", "A short line in your Inbox on weekdays", isOn: $input.coffee,
+                minutes: $input.coffeeMinutes)
+        } header: {
+            SettingsSectionHeader("Every Day")
+        } footer: {
+            SettingsFooter("You can change this anytime in Settings → Claude.")
+        }
+    }
+
+    /// A switch row with its time beside it while it is on: "Daily digest … [09:00] (switch)".
+    private func timedSwitch(_ title: String, _ caption: String, isOn: Binding<Bool>, minutes time: Binding<Int>) -> some View {
+        HStack(spacing: 10) {
+            SettingsRowLabel(title, caption)
+            Spacer(minLength: 8)
+            if isOn.wrappedValue {
+                DatePicker(title + " time", selection: minutes(time), displayedComponents: .hourAndMinute)
+                    .labelsHidden()
+            }
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .settingsSwitch()
+        }
+    }
+
+    /// A time of day in minutes after midnight, as a picker's date.
+    private func minutes(_ minutes: Binding<Int>) -> Binding<Date> {
+        Binding(
+            get: { WelcomeClaudeRules.date(minutes: minutes.wrappedValue) },
+            set: { minutes.wrappedValue = WelcomeClaudeRules.minutes(of: $0) })
+    }
+
     // MARK: Menu bar and login (APP-01, APP-02)
 
     private var menuBarAndLoginSections: some View {
@@ -280,6 +358,13 @@ struct WelcomeContent: View {
     // MARK: Done (IMP-03)
 
     @ViewBuilder private var doneSections: some View {
+        if data.claude.isMissing {
+            Section {
+                StatusLine(.note, WelcomeClaudeRules.installText) {
+                    Link("Get Claude Code", destination: WelcomeClaudeRules.installURL)
+                }
+            }
+        }
         if !data.summary.stillMissing.isEmpty {
             Section {
                 ForEach(data.summary.stillMissing) { line in

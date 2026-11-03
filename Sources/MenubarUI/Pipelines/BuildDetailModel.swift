@@ -60,6 +60,11 @@ struct BuildDetailModel: Hashable, Sendable {
     var canRebuild: Bool
     /// whether Why Did It Fail? shows: for finished failed or unstable builds (AI-02)
     var canExplain: Bool
+    /// whether the Claude card shows (while the Claude features are on): for every build, whatever its result, with its
+    /// free question; not for a waiting job, which has no build to ask about (AI-10)
+    var showsClaudeCard: Bool {
+        if case .build = item { true } else { false }
+    }
     /// the job's rebuild: "Rebuilding…" with Cancel Rebuild while queued, or its failure (PIPE-09)
     var rebuild: JenkinsRebuild?
     /// the running build's bar

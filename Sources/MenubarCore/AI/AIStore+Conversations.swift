@@ -226,6 +226,7 @@ extension AIStore {
                 setup == nil ? prompt : prompt.startingWithCommand(), model: model, effort: settings.effort, setup: setup)
             guard !Task.isCancelled else { return }
             count(run, prompt: prompt, model: model, followUp: true)
+            outdatedClaude = nil
             if let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
                 status = .answered(text, model: run.model ?? model.rawValue, at: now())
             } else {
@@ -236,9 +237,12 @@ extension AIStore {
             if let run = error.run {
                 count(run, prompt: prompt, model: model, followUp: true)
             } else {
-                let how = if case .failed(let code, _) = error { "exit \(code)" } else { "no answer" }
+                let how =
+                    if case .failed(let code, _) = error { "exit \(code)" }
+                    else if case .outdated = error { "claude is too old for the model" } else { "no answer" }
                 record("Claude: \(prompt.useCase.logName) follow-up failed, \(how)", level: .warning, source: .app)
             }
+            noteOutdated(error)
             status = .failed(error.message)
         }
         guard let index = conversations[subject]?.turns.firstIndex(where: { $0.id == turn.id }) else {

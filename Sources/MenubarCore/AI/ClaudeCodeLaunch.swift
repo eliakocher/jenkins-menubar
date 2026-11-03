@@ -80,7 +80,8 @@ public enum ClaudeCodeContext: Hashable, Sendable {
                         + "description. Propose the next steps; don't commit or push.")
             }
         case .build(let build, let page, let failedTests):
-            lines.append("- Failed build: \(build.label) #\(build.number)\(build.title.map { " \"\($0)\"" } ?? ""), \(build.result?.rawValue ?? "FAILURE")")
+            let failed = build.result == .failure || build.result == .unstable
+            lines.append("- \(failed ? "Failed build" : "Build"): \(build.label) #\(build.number)\(build.title.map { " \"\($0)\"" } ?? ""), \(build.result?.rawValue ?? "FAILURE")")
             if let page {
                 lines.append("- Build: \(page.absoluteString)")
             }
@@ -96,8 +97,10 @@ public enum ClaudeCodeContext: Hashable, Sendable {
             }
             lines.append("")
             lines.append(
-                "Find the cause of this failure in this checkout (the build log is on the build's page) and propose a "
-                    + "fix. Don't commit or push.")
+                failed
+                    ? "Find the cause of this failure in this checkout (the build log is on the build's page) and propose a "
+                        + "fix. Don't commit or push."
+                    : "Help me with this build in this checkout (the build log is on the build's page). Don't commit or push.")
         case .conversation(let inner, let text):
             // The item's own lines, without its first task: the conversation is the task.
             let context = inner.prompt(in: checkout).components(separatedBy: "\n")

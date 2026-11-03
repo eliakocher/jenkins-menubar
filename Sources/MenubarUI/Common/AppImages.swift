@@ -59,6 +59,10 @@ enum AppImages {
     /// The sad butler of every other alert, `icons/sad.png`.
     static let sad: NSImage = load("sad") ?? symbol("cloud.rain")
 
+    /// The butler sipping a coffee, `icons/coffee.png` (512 px, transparent), for the coffee break's panel and Inbox rows.
+    /// Optional art like the hats: without the file it is `nil` and the ☕ and the cup symbol stay.
+    static let coffee: NSImage? = load("coffee")
+
     /// The GitLab tanuki, `icons/gitlab.png`, in full color, for the menu pane's summary rows. The file is 32 px; the size
     /// is set to the row's 14 pt so it stays sharp on a Retina screen.
     static let gitLab: NSImage = {

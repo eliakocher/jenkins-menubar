@@ -3,7 +3,9 @@ import Foundation
 /// Hands the alerts to the ``Effects`` as the preferences say, and logs them.
 ///
 /// - A finished build plays its sound, then shows the alert window or a banner, never both (ALERT-03). When the style
-///   is banner but notifications aren't allowed, the alert window shows instead.
+///   is banner but notifications aren't allowed, the alert window shows instead. With the style Inbox Only nothing plays
+///   and nothing shows (ALERT-10). This is the only pop-up of a finished build: the Inbox's delivery leaves failed
+///   builds out.
 /// - A stage banner is always a banner, with the Basso sound (ALERT-05).
 /// - A preview shows like a finished build, and is logged as a preview, not as an alert (ALERT-07).
 public struct AlertAnnouncer: Sendable {
@@ -89,11 +91,16 @@ public struct AlertAnnouncer: Sendable {
 
     /// Plays the sound, then shows the window or the banner.
     ///
-    /// - Returns: how it was shown, as the log says it: `alert`, `banner`, or `alert, notifications are off`
+    /// - Returns: how it was shown, as the log says it: `alert`, `banner`, `alert, notifications are off`, or `inbox only`
     private func show(_ alert: BuildAlert, preferences: Preferences) async -> String {
+        if preferences.alertStyle == .inboxOnly {
+            return "inbox only"
+        }
         await effects.playSound(alert.content.sound)
         let shownAs: String
         switch preferences.alertStyle {
+        case .inboxOnly:
+            shownAs = "inbox only"
         case .window:
             await effects.showAlertWindow(alert)
             shownAs = "alert"

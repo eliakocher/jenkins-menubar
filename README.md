@@ -62,7 +62,7 @@ team's data. They are in dark mode, and the app follows the system's appearance.
 
 *GitLab's to-dos in groups, with the app's own entries and your own to-dos beside them.*
 
-<img src="docs/screenshots/inbox-panel.png" alt="The Inbox's big panel with a coffee cup and the line: Warm cups, cold pipelines, that's the plan, and the buttons Done, Snooze 1 Hour and Dismiss" width="380">
+<img src="docs/screenshots/inbox-panel.png" alt="The Inbox's big panel with the butler sipping a coffee and the line: Warm cups, cold pipelines, that's the plan, and the buttons Done, Snooze 1 Hour and Dismiss" width="380">
 
 *Each kind of event can announce itself with a big panel, a desktop notification or only the Inbox. This one is the weekday coffee break.*
 
@@ -150,12 +150,13 @@ Nothing is rebuilt without that click.
   for the same. Watched builds alert and hide like yours.
 - **Several projects**: **Settings → Projects** adds more Jenkins jobs (same Jenkins and GitLab, same tokens). One check
   covers all of them, the counts are summed, and with more than one project the rows, alerts and the log name theirs.
-- **Claude** (optional, off by default, needs Claude Code installed): with **Use Claude** on in **Settings → Claude**,
+- **Claude** (on by default with Sonnet when Claude Code is installed; the welcome flow asks, **Settings → Claude** changes it): with **Use Claude** on,
   a failed build gets **Why Did It Fail?** (a verdict, the root cause with its evidence, suspect commits, a next step),
   a merge request or work item gets **Summarize Discussion**, the window gets the **Digest** section, and
   **Continue in Claude Code**, in a chat, starts it in a checkout. It runs your own Claude Code login, sends only what you click (the
-  first answer of each kind shows what goes; the morning digest is the one thing you can turn on to run by itself)
-  and removes tokens and keys first.
+  first answer of each kind shows what goes; the morning digest, on by default, runs by itself)
+  and removes tokens and keys first. It asks for the models by the CLI's aliases (`opus`, `sonnet`, `haiku`), so any recent
+  Claude Code works; `claude update` gets the newest models.
 - **Easter eggs**: the butler sometimes has something to say. One switch in **Settings → General** turns them off.
 - **Settings** (⌘,): General, Menu Bar, Notifications, Appearance, Accounts, Projects, Team, Pipelines, Work Items,
   Workspaces, Claude and Advanced.
@@ -217,7 +218,7 @@ keeps a company name out of its files. How the app handles tokens and what it ma
 
 The code is MIT licensed, see [LICENSE](LICENSE).
 
-The Jenkins icons in `icons/` (`AppIcon.icon` and `app.png` for the app, `happy.png` and `sad.png` for the alert, `menubar.png` for the menu bar) are
+The Jenkins icons in `icons/` (`AppIcon.icon` and `app.png` for the app, `happy.png` and `sad.png` for the alert, `coffee.png` for the coffee break, `menubar.png` for the menu bar) are
 AI-generated images of the Jenkins mascot. The mascot is the [Jenkins logo](https://www.jenkins.io/artwork/) by Charles Lowell and Frontside,
 licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/), and the icons keep that license.
 The GitLab logo is a trademark of GitLab Inc.

@@ -9,6 +9,7 @@ extension AISubject {
         case .digest: .digest
         case .codeChat: .askAboutCode
         case .workItem: .askAboutItem
+        case .buildChat: .buildChat
         }
     }
 
@@ -20,6 +21,7 @@ extension AISubject {
         case .digest: "digest"
         case .codeChat(let reference): "chat:\(reference)"
         case .workItem(let reference): "item:\(reference)"
+        case .buildChat(let id): "buildchat:\(id.jobKey)#\(id.number)"
         }
     }
 }
@@ -34,6 +36,7 @@ extension AIUseCase {
         case .openInClaudeCode: "Continue in Claude Code"
         case .askAboutCode: "Question About Code"
         case .askAboutItem: "Question About a Work Item"
+        case .buildChat: "Question About a Build"
         case .coffeeBreak: "Coffee Break"
         }
     }
@@ -118,7 +121,7 @@ extension AppModel {
     private func inboxPlace(of subject: AISubject) -> (title: String, reference: String?, url: URL?) {
         let gitLab = team.primaryProject().team.gitLab
         switch subject {
-        case .build(let id):
+        case .build(let id), .buildChat(let id):
             let build = (projects.myBuilds + projects.watchedBuilds).first { $0.id == id }
             let jobURL = team.project(id.project)?.team.jenkinsJob ?? team.primaryProject().team.jenkinsJob
             let url = jobURL.map { AlertContent.buildURL(job: id.job, number: id.number, jobURL: $0) }

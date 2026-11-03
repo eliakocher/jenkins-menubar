@@ -9,13 +9,14 @@ import Testing
 struct AITests {
     // MARK: - AI-01 The engine and the opt-in
 
-    @Test("AI-01 the Claude features are off by default and hidden while claude isn't installed")
+    @Test("AI-01 the Claude features are on by default with Sonnet and the morning digest, hidden while claude isn't installed")
     @MainActor
     func optIn() async throws {
         let defaults = TemporaryDefaults()
         #expect(AISettings.load(from: defaults.defaults) == AISettings())
-        #expect(AISettings().isEnabled == false)
-        #expect(AISettings().model == .opus)
+        let fresh = AISettings()
+        #expect(fresh.isEnabled && fresh.morningDigest && fresh.digestMinutes == 9 * 60)
+        #expect(fresh.model == .sonnet && fresh.confirmedUseCases.isEmpty)
 
         // No claude anywhere: Settings shows nothing, and nothing is offered or run.
         let missing = FakeClaude(answer: try FixtureFiles.data("Claude/digest.json"))
@@ -29,10 +30,18 @@ struct AITests {
         await hidden.writeDigest()
         #expect(await missing.claudeCalls.isEmpty)
 
-        // claude found: Settings shows the section; off, the features stay hidden and nothing is sent.
+        // claude found: Settings shows the section; with nothing saved the features are offered at once.
+        let fresh2 = TemporaryDefaults()
+        let offeredFake = FakeClaude(answer: try FixtureFiles.data("Claude/digest.json"))
+        let offered = AIStore(defaults: fresh2.defaults, runner: offeredFake, resolver: offeredFake.resolver(found: true))
+        await offered.detect()
+        #expect(offered.isOffered)
+
+        // Off, the features stay hidden and nothing is sent.
         let other = TemporaryDefaults()
         let found = FakeClaude(answer: try FixtureFiles.data("Claude/digest.json"))
         let store = AIStore(defaults: other.defaults, runner: found, resolver: found.resolver(found: true))
+        store.update(AISettings(isEnabled: false))
         store.digestFacts = { Self.someFacts }
         await store.detect()
         #expect(store.isSettingsShown)
@@ -75,7 +84,7 @@ struct AITests {
         let call = try #require(await fake.claudeCalls.first)
         #expect(call.executable == "/opt/homebrew/bin/claude")
         #expect(Array(call.arguments.prefix(11)) == [
-            "-p", "--output-format", "json", "--model", "claude-sonnet-5-5", "--tools", "", "--safe-mode",
+            "-p", "--output-format", "json", "--model", "sonnet", "--tools", "", "--safe-mode",
             "--no-session-persistence", "--max-budget-usd", "1.00",
         ])
         #expect(call.arguments.contains("--json-schema"))
@@ -455,7 +464,7 @@ struct AITests {
         let recorded = try String(contentsOf: record, encoding: .utf8)
         let parts = recorded.split(separator: "|", maxSplits: 4).map(String.init)
         #expect(parts.first == "3")
-        #expect(parts[2] == "--model" && parts[3] == "claude-sonnet-5-5")
+        #expect(parts[2] == "--model" && parts[3] == "sonnet")
         #expect(parts.dropFirst().first.map { URL(filePath: $0).resolvingSymlinksInPath().path } == checkout.resolvingSymlinksInPath().path)
         #expect(parts.last == prompt)
         // Nothing in the text ran, and the launch folder is gone.
@@ -486,6 +495,7 @@ struct AITests {
             webURL: URL(string: "https://gitlab.example.com/group/project/-/issues/1234")!, updatedAt: Date())
 
         // Off: nothing opens.
+        store.update(AISettings(isEnabled: false))
         await store.openInClaudeCode(.workItem(item), in: checkout)
         #expect(await launcher.calls.isEmpty)
 
@@ -533,7 +543,7 @@ struct AITests {
         let calls = await fake.claudeCalls
         #expect(!calls.contains { $0.arguments.contains("--effort") })
         let models = calls.map { call in call.arguments[(call.arguments.firstIndex(of: "--model") ?? 0) + 1] }
-        #expect(models == ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"])
+        #expect(models == ["sonnet", "haiku", "opus"])
         #expect(Set(calls.compactMap(\.input)).count == 1)
 
         // Settings' effort reaches the command line once.
@@ -548,14 +558,14 @@ struct AITests {
         first.update(AISettings(isEnabled: true))
         await first.writeDigest(model: .haiku)
         await first.send(.digest)
-        #expect(await fake.claudeCalls.last?.arguments.contains("claude-haiku-5-5") == true)
+        #expect(await fake.claudeCalls.last?.arguments.contains("haiku") == true)
     }
 
-    @Test("AI-01 the default model reads as Opus when none or an unknown one is stored, and a known one is kept")
+    @Test("AI-01 the default model reads as Sonnet when none or an unknown one is stored, and a known one is kept")
     func defaultModel() throws {
-        #expect(AISettings().model == .opus && AISettings().effort == .standard)
+        #expect(AISettings().model == .sonnet && AISettings().effort == .standard)
         for stored in [#"{}"#, #"{"model":"gpt-9"}"#, #"{"model":42}"#, #"{"model":null}"#] {
-            #expect(try JSONDecoder().decode(AISettings.self, from: Data(stored.utf8)).model == .opus)
+            #expect(try JSONDecoder().decode(AISettings.self, from: Data(stored.utf8)).model == .sonnet)
         }
         for stored in [#"{}"#, #"{"effort":"ultra"}"#, #"{"effort":3}"#, #"{"effort":null}"#, #"{"effort":"standard"}"#] {
             #expect(try JSONDecoder().decode(AISettings.self, from: Data(stored.utf8)).effort == .standard)
@@ -565,6 +575,42 @@ struct AITests {
         AISettings(model: .haiku, effort: .high).save(to: defaults.defaults)
         #expect(AISettings.load(from: defaults.defaults).model == .haiku)
         #expect(AISettings.load(from: defaults.defaults).effort == .high)
+    }
+
+    @Test("AI-01 settings saved before the new defaults keep their choices, and a missing key takes the default")
+    func savedSettingsKeepTheirChoices() throws {
+        let old = #"{"isEnabled":false,"model":"claude-opus-5-5","morningDigest":false,"digestMinutes":480}"#
+        let kept = try JSONDecoder().decode(AISettings.self, from: Data(old.utf8))
+        #expect(!kept.isEnabled && kept.model == .opus && !kept.morningDigest && kept.digestMinutes == 480)
+
+        // Only what was saved is kept: the model alone leaves the switches at their defaults.
+        let partial = try JSONDecoder().decode(AISettings.self, from: Data(#"{"model":"haiku"}"#.utf8))
+        #expect(partial.model == .haiku && partial.isEnabled && partial.morningDigest)
+
+        let defaults = TemporaryDefaults()
+        AISettings(isEnabled: false, model: .opus, morningDigest: false).save(to: defaults.defaults)
+        let loaded = AISettings.load(from: defaults.defaults)
+        #expect(!loaded.isEnabled && loaded.model == .opus && !loaded.morningDigest)
+    }
+
+    @Test("AI-01 with the Claude features on by default, only the digest and the coffee line run without a click")
+    @MainActor
+    func silentRuns() async throws {
+        let fake = FakeClaude(answer: try FixtureFiles.data("Claude/explain-build.json"))
+        let store = AIStore(
+            defaults: TemporaryDefaults().defaults, runner: fake, resolver: fake.resolver(found: true))
+        await store.detect()
+        #expect(store.isOffered && store.settings.confirmedUseCases.isEmpty)
+        // A first answer of any kind shows what it sends and waits for Send: nothing was run.
+        store.digestFacts = { Self.someFacts }
+        await store.writeDigest()
+        guard case .review = store.state(of: .digest) else {
+            Issue.record("expected the review, got \(store.state(of: .digest))")
+            return
+        }
+        #expect(await fake.claudeCalls.isEmpty)
+        // No use case is confirmed until the user sends one or turns the morning digest on and it runs.
+        #expect(store.settings.confirmedUseCases.isEmpty)
     }
 
     @Test("AI-05 the launch script passes --model and --effort only for names of the fixed lists, never a value from a file as code")
@@ -586,10 +632,10 @@ struct AITests {
         }
         cases += ClaudeEffort.allCases.compactMap(\.level).map { ("", $0, "3|--effort|\($0)|first prompt") }
         cases += [
-            ("claude-opus-5-5", "high", "5|--model|claude-opus-5-5|--effort|high|first prompt"),
-            ("opus", "", none),
-            ("claude-opus-5-5 $(touch pwned)", "", none),
-            ("claude-opus-5-5; touch pwned", "", none),
+            ("opus", "high", "5|--model|opus|--effort|high|first prompt"),
+            ("claude-opus-5-5", "", none),
+            ("opus $(touch pwned)", "", none),
+            ("opus; touch pwned", "", none),
             ("", "", none),
             ("", "standard", none),
             ("", "ultra", none),
@@ -616,7 +662,7 @@ struct AITests {
             prompt: "p", directory: "/x", claude: fakeClaude, model: .haiku, effort: .xhigh,
             in: folder.url.appending(path: "launches", directoryHint: .isDirectory)).deletingLastPathComponent()
         #expect(try String(contentsOf: written.appending(path: "effort"), encoding: .utf8) == "xhigh")
-        #expect(try String(contentsOf: written.appending(path: "model"), encoding: .utf8) == "claude-haiku-5-5")
+        #expect(try String(contentsOf: written.appending(path: "model"), encoding: .utf8) == "haiku")
     }
 
     // MARK: - Made-up values
@@ -667,6 +713,10 @@ private actor FakeClaude: ProcessRunner {
         if executable.lastPathComponent == "zsh" {
             shellCalls += 1
             return ProcessOutput(status: 1)
+        }
+        // `claude --version`, read once when claude is looked for, is not a call the tests count.
+        if arguments == ["--version"] {
+            return ProcessOutput(status: 0, standardOutput: Data("2.1.317 (Claude Code)\n".utf8))
         }
         claudeCalls.append(Call(
             executable: executable.path(percentEncoded: false), arguments: arguments,

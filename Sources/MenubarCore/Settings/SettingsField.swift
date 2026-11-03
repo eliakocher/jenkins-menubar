@@ -5,8 +5,11 @@ import Foundation
 public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     // General
     case openAtLogin
-    case shortcut
     case linkRouting
+    // Shortcuts
+    case shortcut
+    case sidebarShortcut
+    case resetShortcuts
     // Menu Bar
     case showInMenuBar
     case menuBarIcon
@@ -21,6 +24,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     case coffeeBreak
     case inboxGroupOrder
     // Appearance
+    case appearance
     case contentWidth
     case textSize
     case diffLayout
@@ -64,10 +68,11 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     /// the pane the field lives in
     public var pane: SettingsPane {
         switch self {
-        case .openAtLogin, .shortcut, .linkRouting: .general
+        case .openAtLogin, .linkRouting: .general
+        case .shortcut, .sidebarShortcut, .resetShortcuts: .shortcuts
         case .showInMenuBar, .menuBarIcon, .menuBarParts, .menuPaneRows, .menuPaneWidth: .menuBar
         case .buildAlerts, .mutedJobs, .slotWarning, .inboxNotifications, .coffeeBreak, .inboxGroupOrder: .notifications
-        case .contentWidth, .textSize, .diffLayout, .discussions, .sidebarOrder: .appearance
+        case .appearance, .contentWidth, .textSize, .diffLayout, .discussions, .sidebarOrder: .appearance
         case .gitLabURL, .gitLabToken, .jenkinsToken, .accountCheck: .accounts
         case .projects, .jenkinsJob: .projects
         case .teamFile, .labels, .slotSchedule, .slotPlanning, .squads: .team
@@ -88,14 +93,17 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .menuBarParts: "What the menu bar shows"
         case .menuPaneRows: "Rows of the menu"
         case .menuPaneWidth: "Menu width"
-        case .shortcut: "Open the window with"
+        case .shortcut: "Open MegaMonitor (anywhere)"
+        case .sidebarShortcut: "Toggle Sidebar shortcut"
+        case .resetShortcuts: "Reset all shortcuts"
         case .linkRouting: "Open GitLab and Jenkins links in MegaMonitor"
-        case .buildAlerts: "When a build finishes"
+        case .buildAlerts: "Build alerts and previews"
         case .mutedJobs: "Which builds alert"
         case .slotWarning: "Warn before a code freeze"
         case .inboxNotifications: "What lands in the Inbox"
         case .coffeeBreak: "Coffee break"
         case .inboxGroupOrder: "Order of the Inbox groups"
+        case .appearance: "Appearance"
         case .contentWidth: "Content width"
         case .textSize: "Text size"
         case .diffLayout: "Code changes layout"
@@ -139,14 +147,17 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .menuBarParts: ["counts", "running", "failed", "unstable", "successful", "passed", "problem", "inbox", "dot", "red dot", "badge", "number", "review", "merge requests", "slot", "freeze", "countdown", "order", "drag", "zero"]
         case .menuPaneRows: ["pane", "menu", "rows", "flyout", "order", "drag", "pipelines", "inbox", "merge requests", "work items", "entries"]
         case .menuPaneWidth: ["width", "compact", "regular", "wide", "pane", "menu"]
-        case .shortcut: ["hotkey", "keyboard", "global", "shortcut", "key"]
+        case .shortcut: ["hotkey", "keyboard", "global", "shortcut", "key", "anywhere", "open window"]
+        case .sidebarShortcut: ["sidebar", "toggle", "keyboard", "shortcut", "⌘S", "cmd s", "show sidebar", "hide sidebar", "key"]
+        case .resetShortcuts: ["reset", "default", "defaults", "restore", "keyboard", "shortcuts", "keys", "rebind"]
         case .linkRouting: ["links", "browser", "route", "gitlab", "jenkins", "hold option"]
         case .buildAlerts: ["alert", "banner", "window", "notification", "sound", "stage", "preview"]
         case .mutedJobs: ["mute", "muted", "quiet", "my builds", "watched builds", "job", "notify"]
         case .slotWarning: ["slot", "code freeze", "warning", "committed", "merge request"]
-        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "to-do", "todo", "unread", "only my projects", "notification", "delivery", "big panel", "panel", "desktop notification", "banner", "popup"]
+        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "when a build finishes", "alert window", "finished build", "to-do", "todo", "unread", "only my projects", "notification", "delivery", "big panel", "panel", "desktop notification", "banner", "popup"]
         case .coffeeBreak: ["coffee", "break", "haiku", "daily", "08:59", "joke", "fun", "time", "reminder", "inbox"]
         case .inboxGroupOrder: ["inbox", "order", "groups", "reorder", "drag", "move", "my to-dos", "coffee", "claude", "mentions", "builds", "reset"]
+        case .appearance: ["dark mode", "light mode", "dark", "light", "automatic", "system", "theme", "night", "colors", "colours"]
         case .contentWidth: ["width", "wide", "narrow", "cards", "window"]
         case .textSize: ["reading size", "font", "bigger", "smaller", "descriptions", "comments"]
         case .diffLayout: ["diff", "side by side", "inline", "layout", "folders", "folded"]

@@ -22,28 +22,66 @@ public enum InboxDelivery: String, Codable, Hashable, Sendable, CaseIterable {
 
     /// the picker's order: the quiet choice first, then the louder ones
     public static let pickerOrder: [InboxDelivery] = [.inboxOnly, .desktopNotification, .bigPanel]
+
+    /// the delivery a build alert style stands for: the alert window is the Big Panel, a banner the Desktop Notification
+    public init(_ style: Preferences.AlertStyle) {
+        switch style {
+        case .window: self = .bigPanel
+        case .banner: self = .desktopNotification
+        case .inboxOnly: self = .inboxOnly
+        }
+    }
+}
+
+extension Preferences.AlertStyle {
+    /// the build alert style a delivery choice stands for (the inverse of ``InboxDelivery/init(_:)``)
+    public init(_ delivery: InboxDelivery) {
+        switch delivery {
+        case .bigPanel: self = .window
+        case .desktopNotification: self = .banner
+        case .inboxOnly: self = .inboxOnly
+        }
+    }
+}
+
+extension InboxEventKind {
+    /// whether the Inbox's delivery rules leave this kind out: my own to-dos never announce themselves, and a failed
+    /// build is announced by the build alerts (``Preferences/alertStyle``), not a second time from the Inbox
+    var deliveryIsNotInTheRules: Bool {
+        self == .myTodo || self == .buildFailed
+    }
 }
 
 extension InboxNotificationRules {
-    /// The kinds that can announce themselves with a panel or a banner: everything but the user's own to-dos.
+    /// The kinds whose delivery these rules keep: everything but the user's own to-dos, which never announce
+    /// themselves, and the failed builds, whose pop-up is the build alert style (``Preferences/alertStyle``).
     public static var deliveryKinds: [InboxEventKind] {
-        settingsKinds.filter { $0 != .myTodo }
+        settingsKinds.filter { !$0.deliveryIsNotInTheRules }
     }
 
-    /// Returns how a kind announces itself.
+    /// Returns how a kind announces itself through the Inbox's delivery.
+    ///
+    /// A failed build is never delivered from here: the build alerts announce it once, as ``Preferences/alertStyle``
+    /// says, so this is always ``InboxDelivery/inboxOnly`` for it. Before the single setting (Task 7.13) the rules also
+    /// held a choice for it, and one failed build showed twice, a panel and a banner; a saved choice is dropped on
+    /// load and the alert style wins.
     ///
     /// - Parameter kind: the kind
     /// - Returns: the user's choice, or ``InboxDelivery/inboxOnly``
     public func delivery(for kind: InboxEventKind) -> InboxDelivery {
-        kind == .myTodo ? .inboxOnly : deliveries[kind.rawValue] ?? .inboxOnly
+        kind.deliveryIsNotInTheRules ? .inboxOnly : deliveries[kind.rawValue] ?? .inboxOnly
     }
 
-    /// Sets how a kind announces itself; the default removes the override.
+    /// Sets how a kind announces itself; the default removes the override. It does nothing for the kinds the rules
+    /// don't deliver (the user's own to-dos, the failed builds).
     ///
     /// - Parameters:
     ///   - delivery: the choice
     ///   - kind: the kind
     public mutating func set(_ delivery: InboxDelivery, for kind: InboxEventKind) {
+        guard !kind.deliveryIsNotInTheRules else {
+            return
+        }
         deliveries[kind.rawValue] = delivery == .inboxOnly ? nil : delivery
     }
 

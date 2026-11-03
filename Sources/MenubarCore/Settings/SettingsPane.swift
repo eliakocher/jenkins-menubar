@@ -8,6 +8,8 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     case menuBar
     case notifications
     case appearance
+    /// the keyboard shortcuts of the window's commands, and the one that opens MegaMonitor from anywhere (KEYS-01)
+    case shortcuts
     case accounts
     case projects
     /// the team's shared values: labels, the slot schedule, squads, and the team file
@@ -28,7 +30,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
 
     /// The sidebar's groups, in their order, each a short list of panes.
     public static let groups: [[SettingsPane]] = [
-        [.general, .menuBar, .notifications, .appearance],
+        [.general, .menuBar, .notifications, .appearance, .shortcuts],
         [.accounts, .projects, .team],
         [.pipelines, .workItems, .workspaces, .claude],
         [.advanced],
@@ -41,6 +43,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
         case .menuBar: "Menu Bar"
         case .notifications: "Notifications"
         case .appearance: "Appearance"
+        case .shortcuts: "Shortcuts"
         case .accounts: "Accounts"
         case .projects: "Projects"
         case .team: "Team"
@@ -56,7 +59,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     public var keywords: [String] {
         switch self {
         case .general:
-            ["login", "start", "shortcut", "hotkey", "links", "browser", "copied link", "paste", "easter eggs"]
+            ["login", "start", "links", "browser", "copied link", "paste", "easter eggs"]
         case .menuBar:
             ["menu bar", "status item", "icon", "butler", "color", "monochrome", "counts", "running", "failed",
              "unstable", "successful", "inbox", "dot", "badge", "number", "review", "slot", "freeze", "order", "zero",
@@ -67,6 +70,8 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
         case .appearance:
             ["width", "content width", "text size", "reading size", "font", "diff", "side by side", "inline",
              "comments", "sort", "folders", "folded", "layout"]
+        case .shortcuts:
+            ["keyboard", "shortcut", "hotkey", "keys", "key", "sidebar", "toggle sidebar", "record", "rebind", "command", "menu", "global", "anywhere", "reset"]
         case .accounts:
             ["token", "keychain", "sign in", "signed in", "jenkins", "gitlab", "url", "server", "user", "check"]
         case .projects:

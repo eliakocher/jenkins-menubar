@@ -5,10 +5,15 @@ import SwiftUI
 /// (Big Panel, Desktop Notification or Inbox Only) and whether it lands in the Inbox and counts in the badge and the menu
 /// bar's dot, whether only my projects' items count, the coffee break, and the order of the Inbox's groups.
 ///
-/// Every kind is Inbox Only until the user picks: the Inbox, its badge and the dot are the notification (the user,
+/// The Failed Builds row is the build alerts' own setting (``Preferences/alertStyle``), the only one for a failed build.
+///
+/// Every other kind is Inbox Only until the user picks: the Inbox, its badge and the dot are the notification (the user,
 /// 2026-11-03). A macOS banner needs the permission, which is asked once when a kind first gets a Desktop Notification.
 struct InboxNotificationsSection: View {
     @Binding var rules: InboxNotificationRules
+    /// how a finished build announces itself: the one setting of the Failed Builds row, kept in the preferences and not in
+    /// the rules, so the build alerts and the Inbox never both show a failed build (ALERT-10)
+    @Binding var buildAlertStyle: Preferences.AlertStyle
     /// what macOS allows; `nil` while it isn't known yet
     var permission: NotificationPermission?
     var actions: GeneralSettingsActions
@@ -17,7 +22,7 @@ struct InboxNotificationsSection: View {
         Section {
             routingTable
                 .settingsAnchor(.inboxNotifications)
-            if rules.usesDesktopNotifications, let permission, permission != .allowed {
+            if rules.usesDesktopNotifications || buildAlertStyle == .banner, let permission, permission != .allowed {
                 StatusLine(
                     permission == .off ? .problem : .note,
                     permission == .off
@@ -43,7 +48,7 @@ struct InboxNotificationsSection: View {
             SettingsSectionHeader("Inbox and Delivery")
         } footer: {
             SettingsFooter(
-                "Delivery is how an event announces itself: a Big Panel floats over your windows like a failed build, a Desktop Notification is a macOS banner with Show, Mark Done and Snooze 1 Hour, Inbox Only stays quiet. GitLab's to-dos are always in the Inbox; Inbox decides what else lands there, and Badge what counts.")
+                "Delivery is how an event announces itself: a Big Panel floats over your windows, a Desktop Notification is a macOS banner, Inbox Only stays quiet. Failed Builds is the one setting for every finished build, with its sound: it is not announced a second time. GitLab's to-dos are always in the Inbox; Inbox decides what else lands there, and Badge what counts.")
         }
         InboxGroupOrderSection(rules: $rules)
         Section {
@@ -146,27 +151,55 @@ struct InboxNotificationsSection: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: Self.deliveryWidth, alignment: .leading)
         } else {
-            Picker(
-                selection: Binding(
-                    get: { rules.delivery(for: kind) },
-                    set: { choice in
-                        rules.set(choice, for: kind)
-                        // macOS asks once; the first Desktop Notification is the moment.
-                        if choice == .desktopNotification, permission == .notAsked {
-                            actions.turnOnNotifications()
-                        }
-                    })
-            ) {
-                ForEach(InboxDelivery.pickerOrder, id: \.self) { delivery in
-                    Text(verbatim: delivery.title).tag(delivery)
+            let current = kind == .buildFailed ? InboxDelivery(buildAlertStyle) : rules.delivery(for: kind)
+            // A menu with its own label, not a pop-up Picker: a pop-up is as wide as the choice it shows, so the chevrons
+            // stood at a different place in every row. Here the text starts at the column's left edge and the chevrons sit at
+            // its right edge.
+            Menu {
+                Picker(selection: deliveryBinding(kind, current: current)) {
+                    ForEach(InboxDelivery.pickerOrder, id: \.self) { delivery in
+                        Text(verbatim: delivery.title).tag(delivery)
+                    }
+                } label: {
+                    Text(verbatim: "Delivery: \(kind.title)")
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             } label: {
-                Text(verbatim: "Delivery: \(kind.title)")
+                HStack(spacing: 6) {
+                    Text(verbatim: current.title)
+                        .foregroundStyle(.primary)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: Self.deliveryWidth, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delivery: \(kind.title)")
+            .accessibilityValue(current.title)
             .frame(width: Self.deliveryWidth, alignment: .leading)
         }
+    }
+
+    private func deliveryBinding(_ kind: InboxEventKind, current: InboxDelivery) -> Binding<InboxDelivery> {
+        Binding(
+            get: { current },
+            set: { choice in
+                if kind == .buildFailed {
+                    buildAlertStyle = Preferences.AlertStyle(choice)
+                } else {
+                    rules.set(choice, for: kind)
+                }
+                // macOS asks once; the first Desktop Notification is the moment.
+                if choice == .desktopNotification, permission == .notAsked {
+                    actions.turnOnNotifications()
+                }
+            })
     }
 }
 

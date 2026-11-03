@@ -68,7 +68,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/megamonitor" "$app/Contents/MacOS/MegaMonitor"
 cp icons/menubar.png icons/happy.png icons/sad.png icons/gitlab.png "$app/Contents/Resources/"
 # The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
-for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa; do
+for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa coffee; do
 	if [[ -f icons/$egg.png ]]; then
 		cp "icons/$egg.png" "$app/Contents/Resources/"
 	fi
@@ -108,8 +108,8 @@ cat >"$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleExecutable</key><string>MegaMonitor</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0.1</string>
-	<key>CFBundleVersion</key><string>2</string>
+	<key>CFBundleShortVersionString</key><string>1.0.2</string>
+	<key>CFBundleVersion</key><string>3</string>
 	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>LSUIElement</key><true/>
 	<key>CFBundleURLTypes</key>

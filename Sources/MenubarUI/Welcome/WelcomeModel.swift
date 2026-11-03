@@ -1,12 +1,13 @@
 import Foundation
 import MenubarCore
 
-/// The welcome flow's six pages, in their order (Task 6.4, `docs/design/welcome.md`).
+/// The welcome flow's pages, in their order: seven, and six while `claude` isn't installed, which skips the Claude step (Task 6.4, `docs/design/welcome.md`).
 public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
     case welcome = 1
     case team
     case accounts
     case notifications
+    case claude
     case menuBarAndLogin
     case done
 
@@ -20,6 +21,7 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
         case .team: "Team"
         case .accounts: "Accounts"
         case .notifications: "Notifications"
+        case .claude: "Claude in MegaMonitor"
         case .menuBarAndLogin: "Menu Bar and Login"
         case .done: "You're Ready"
         }
@@ -32,6 +34,7 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
         case .team: SettingsPane.projects.symbol
         case .accounts: SettingsPane.accounts.symbol
         case .notifications: SettingsPane.notifications.symbol
+        case .claude: SettingsPane.claude.symbol
         case .menuBarAndLogin: SettingsPane.general.symbol
         case .done: "checkmark.seal.fill"
         }
@@ -45,6 +48,7 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
         case .team: "The Jenkins job and GitLab project your team works on."
         case .accounts: "Sign in to Jenkins and GitLab. Tokens stay in your keychain."
         case .notifications: "Banners when a stage fails, and when a build finishes if you choose banners."
+        case .claude: "Explains failed builds and writes your digest, with your own local Claude Code."
         case .menuBarAndLogin: "Checks and alerts run in the background, so the menu bar suits MegaMonitor best."
         case .done: nil
         }
@@ -59,17 +63,33 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
         }
     }
 
-    /// "Step 2 of 6"
-    var stepText: String {
-        "Step \(String(rawValue)) of \(String(Self.allCases.count))"
+    /// Returns the pages the flow shows: all of them, or without the Claude step while `claude` isn't installed.
+    ///
+    /// - Parameter offersClaude: whether `claude` was found
+    /// - Returns: the pages in order
+    static func sequence(offersClaude: Bool) -> [WelcomePage] {
+        allCases.filter { offersClaude || $0 != .claude }
     }
 
-    var next: WelcomePage? {
-        WelcomePage(rawValue: rawValue + 1)
+    /// Returns "Step 2 of 6".
+    ///
+    /// - Parameter offersClaude: whether `claude` was found, which adds the Claude step
+    func stepText(offersClaude: Bool) -> String {
+        let pages = Self.sequence(offersClaude: offersClaude)
+        let number = (pages.firstIndex(of: self) ?? 0) + 1
+        return "Step \(String(number)) of \(String(pages.count))"
     }
 
-    var previous: WelcomePage? {
-        WelcomePage(rawValue: rawValue - 1)
+    /// Returns the page after this one, skipping the Claude step without `claude`.
+    func next(offersClaude: Bool) -> WelcomePage? {
+        let pages = Self.sequence(offersClaude: offersClaude)
+        return pages.firstIndex(of: self).flatMap { pages.indices.contains($0 + 1) ? pages[$0 + 1] : nil }
+    }
+
+    /// Returns the page before this one, skipping the Claude step without `claude`.
+    func previous(offersClaude: Bool) -> WelcomePage? {
+        let pages = Self.sequence(offersClaude: offersClaude)
+        return pages.firstIndex(of: self).flatMap { $0 > 0 ? pages[$0 - 1] : nil }
     }
 
     /// Returns whether the page shows Back: never on page 1, and not on Notifications while macOS never asked, where
@@ -253,6 +273,29 @@ struct WelcomeSummary: Hashable, Sendable {
     static func rejects(_ status: AccountStatus) -> Bool {
         let refusals = [Problem.rejectedToken(.jenkins), .rejectedToken(.gitLab), .missingScope].map(\.message)
         return !status.ok && refusals.contains(status.message)
+    }
+}
+
+/// The Claude step's rules and words (Task 7.14).
+enum WelcomeClaudeRules {
+    /// the line on the last page while `claude` isn't installed
+    static let installText = "Install Claude Code to use Claude features"
+    /// where Claude Code is got
+    static let installURL = URL(string: "https://claude.com/product/claude-code")!
+    /// the models in the picker: Sonnet, the default, first
+    static let models: [ClaudeModel] = [.sonnet, .opus, .haiku]
+
+    /// Returns a time of day as a date today, for a time picker.
+    ///
+    /// - Parameter minutes: minutes after midnight
+    static func date(minutes: Int) -> Date {
+        Calendar.current.date(bySettingHour: minutes / 60 % 24, minute: minutes % 60, second: 0, of: .now) ?? .now
+    }
+
+    /// Returns the minutes after midnight of a picker's date.
+    static func minutes(of date: Date) -> Int {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
     }
 }
 

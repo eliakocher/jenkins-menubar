@@ -87,6 +87,13 @@ public struct WorkspacesListView: View {
     }
 }
 
+extension WorkspacesListModel {
+    /// the ids of the rows the list selects, in order
+    var selectableIDs: [Checkout.ID] {
+        rows.map(\.id)
+    }
+}
+
 /// The Workspaces list drawn from plain values, for the window and the gallery.
 struct WorkspacesListContent: View {
     let model: WorkspacesListModel
@@ -94,7 +101,7 @@ struct WorkspacesListContent: View {
     let actions: WorkspaceActions
 
     var body: some View {
-        List(selection: $selection) {
+        List(selection: $selection.keepingSelection()) {
             if model.isPlaceholder {
                 WorkspacePlaceholderRows()
             }
@@ -131,6 +138,15 @@ struct WorkspacesListContent: View {
                         .controlSize(.small)
                 }
                 .selectionDisabled()
+            }
+        }
+        .keepsSelection()
+        .onChange(of: model.selectableIDs) { old, new in
+            // The selected row left the list: its neighbour takes over (`KeepListSelection.kept`).
+            guard model.query.isEmpty, let current = selection else { return }
+            let next = KeepListSelection.kept(current, from: old, to: new)
+            if next != current {
+                selection = next
             }
         }
         .contextMenu(forSelectionType: Checkout.ID.self) { ids in

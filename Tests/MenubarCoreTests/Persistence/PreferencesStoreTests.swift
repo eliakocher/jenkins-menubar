@@ -32,6 +32,7 @@ struct PreferencesStoreTests {
             .globalShortcut: "⌘K",
             .easterEggs: "off",
             .slotAlerts: "on",
+            .appearance: "purple",
         ]
         #expect(Set(values.keys) == Set(PreferencesStore.Key.allCases))
         for (key, value) in values {
@@ -60,7 +61,7 @@ struct PreferencesStoreTests {
             workItemRows: WorkItemRowLabels(hidden: ["group:", "affects::"], showsScopedValueOnly: true),
             showInMenuBar: false, fillInCopiedLink: true,
             globalShortcut: HotkeyShortcut(keyCode: 40, modifiers: [.command], label: "K"), easterEggs: false,
-            slotAlerts: true)
+            slotAlerts: true, appearance: .dark)
 
         let changes = store.save(changed)
 
@@ -99,6 +100,39 @@ struct PreferencesStoreTests {
         #expect(decoded.showInMenuBar)
         #expect(!decoded.fillInCopiedLink)
         #expect(try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8)) == Preferences())
+    }
+
+    @Test("SET-01 the appearance is automatic by default, and decodes, saves and backs up as light or dark")
+    func appearance() throws {
+        // Automatic from nothing, from a value stored before it existed, and from text that is no case.
+        #expect(Preferences().appearance == .system)
+        #expect(try JSONDecoder().decode(Preferences.self, from: Data("{}".utf8)).appearance == .system)
+        #expect(try JSONDecoder().decode(Preferences.self, from: Data(#"{"appearance":"dark"}"#.utf8)).appearance == .dark)
+        #expect(try JSONDecoder().decode(Preferences.self, from: Data(#"{"appearance":"sepia"}"#.utf8)).appearance == .system)
+
+        // Saved under its own key, logged, and read back.
+        let suite = TemporaryDefaults()
+        let store = PreferencesStore(defaults: suite.defaults)
+        var before = "system"
+        for choice in [Preferences.Appearance.light, .dark] {
+            let changes = store.save(Preferences(appearance: choice))
+            #expect(changes == [PreferencesStore.Change(key: .appearance, old: before, new: choice.rawValue)])
+            #expect(suite.defaults.string(forKey: "appearance") == choice.rawValue)
+            #expect(store.load().appearance == choice)
+            before = choice.rawValue
+        }
+        #expect(store.save(Preferences(appearance: .system)) == [
+            PreferencesStore.Change(key: .appearance, old: "dark", new: "system")
+        ])
+
+        // A backup carries it to another Mac, and a planted value that is no case reads as automatic there.
+        _ = store.save(Preferences(appearance: .dark))
+        let backup = try PersonalSettingsBackup.export(from: suite.defaults)
+        let other = TemporaryDefaults()
+        try PersonalSettingsBackup.importValues(from: backup, into: other.defaults)
+        #expect(PreferencesStore(defaults: other.defaults).load().appearance == .dark)
+        other.defaults.set("sepia", forKey: "appearance")
+        #expect(PreferencesStore(defaults: other.defaults).load().appearance == .system)
     }
 
     @Test("hiding after N hours hides only once more than N hours have passed")

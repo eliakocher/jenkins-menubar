@@ -43,6 +43,8 @@ public enum PersonalSettingsBackup {
             Entry(PreferencesStore.inboxNotificationsKey, .string),
             // what the menu bar shows: the item's parts and the pane's rows, as JSON text (APP-11)
             Entry(PreferencesStore.menuBarLayoutKey, .string),
+            // the keyboard shortcuts the user changed, as JSON text (`PreferencesStore.keyboardShortcutsKey`, KEYS-01)
+            Entry(PreferencesStore.keyboardShortcutsKey, .string),
             // `RepositorySettings`, `TerminalChoice` and `AISettings` (MCP choices, no secret) in their own keys
             Entry(RepositorySettings.defaultsKey, .data),
             Entry(TerminalChoice.defaultsKey, .string),
@@ -70,7 +72,7 @@ public enum PersonalSettingsBackup {
             .bool
         case .workItemsWithLabels, .workItemsWithoutLabels, .workItemsHideOnRows: .strings
         case .hideSuccessfulAfter, .hideFailedAfter, .alertStyle, .iconStyle, .workItemsScope, .workItemsType,
-            .workItemsState, .workItemsSort, .workItemsLabelsMatch, .globalShortcut:
+            .workItemsState, .workItemsSort, .workItemsLabelsMatch, .globalShortcut, .appearance:
             .string
         }
     }

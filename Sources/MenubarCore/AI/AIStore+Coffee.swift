@@ -69,6 +69,7 @@ extension AIStore {
         do {
             let run = try await engine.run(prompt, model: .haiku)
             count(run, prompt: prompt, model: .haiku)
+            outdatedClaude = nil
             return ClaudePrompt.coffeeLine(from: run.text)
         } catch {
             if let run = error.run {
@@ -76,6 +77,7 @@ extension AIStore {
             } else {
                 record("Claude: \(prompt.useCase.logName) failed, the built-in line stands in", level: .warning, source: .app)
             }
+            noteOutdated(error)
             return nil
         }
     }

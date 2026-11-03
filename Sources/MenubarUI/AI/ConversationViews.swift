@@ -70,10 +70,14 @@ private struct TurnView: View {
             case .failed(let message):
                 StatusLine(.problem, message) {
                     HStack(spacing: 10) {
-                        Button("Try Again") {
-                            Task { await model?.ai.retry(turn, of: subject) }
+                        if ClaudeFailure.isOutdated(message: message) {
+                            ClaudeUpdateCommandButton()
+                        } else {
+                            Button("Try Again") {
+                                Task { await model?.ai.retry(turn, of: subject) }
+                            }
+                            .buttonStyle(.link)
                         }
-                        .buttonStyle(.link)
                         Button("Dismiss") { model?.ai.remove(turn, of: subject) }
                             .buttonStyle(.link)
                     }

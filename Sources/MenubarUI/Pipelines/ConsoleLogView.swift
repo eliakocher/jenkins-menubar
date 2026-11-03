@@ -164,6 +164,17 @@ enum ConsoleLogAppearance {
 final class ConsoleLogTextView: NSTextView {
     weak var controller: ConsoleLogController?
 
+    /// The colors are dynamic and resolve as they draw, so a switch of Settings → Appearance only needs a redraw: the
+    /// text, the bands and the line numbers.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        if let layoutManager, let length = textStorage?.length, length > 0 {
+            layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: length))
+        }
+        needsDisplay = true
+        enclosingScrollView?.verticalRulerView?.needsDisplay = true
+    }
+
     override func drawBackground(in rect: NSRect) {
         super.drawBackground(in: rect)
         guard let controller, let layoutManager, let textContainer, !controller.kinds.isEmpty else { return }

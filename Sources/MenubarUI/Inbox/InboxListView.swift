@@ -56,6 +56,11 @@ struct InboxListContent: View {
     /// the to-do the form edits, or a new one
     @ViewState private var todoSheet: MyTodoSheetTarget?
 
+    /// the keys of Done, which Settings → Shortcuts changes
+    private var doneShortcut: HotkeyShortcut? {
+        (settings?.preferences.shortcuts ?? ShortcutMap()).shortcut(for: "inboxDone")
+    }
+
     var body: some View {
         List(selection: $selection) {
             MainWindowProblemRows(model.problems, openSettings: links.openSettings)
@@ -89,6 +94,10 @@ struct InboxListContent: View {
                     InboxSectionHeader(title: section.title, count: section.rows.count)
                 }
             }
+            if model.needsToken {
+                // Under My To-Dos, which need no token: the steps for GitLab's own to-dos.
+                InboxTokenNote(openAccounts: { links.openSettings(.accounts) })
+            }
         }
         .contextMenu(forSelectionType: String.self) { ids in
             menu(for: rows(of: ids))
@@ -102,9 +111,9 @@ struct InboxListContent: View {
                 }
             }
         }
-        .onKeyPress(keys: [.delete, .deleteForward]) { press in
-            // ⌘⌫ is Done, ⌘⌫ in Done is Restore; plain ⌫ stays the field's.
-            guard press.modifiers == .command, !selection.isEmpty else {
+        .onKeyPress(phases: .down) { press in
+            // ⌘⌫ is Done, ⌘⌫ in Done is Restore; plain ⌫ stays the field's. The keys are the user's (KEYS-01).
+            guard let shortcut = doneShortcut, shortcut.matches(press), !selection.isEmpty else {
                 return .ignored
             }
             let rows = rows(of: selection).map(\.entry)
@@ -211,13 +220,7 @@ struct InboxListContent: View {
     @ViewBuilder
     private var emptyState: some View {
         if model.needsToken {
-            ContentUnavailableView {
-                Label("Needs a GitLab Token", systemImage: "key")
-            } description: {
-                Text(verbatim: PanelModel.SetupText.needsToken)
-            } actions: {
-                Button("Open Settings → Accounts") { links.openSettings(.accounts) }
-            }
+            EmptyView()
         } else if let failure = model.failure {
             ContentUnavailableView {
                 Label("Couldn't Load the Inbox", systemImage: "exclamationmark.triangle")
@@ -237,6 +240,30 @@ struct InboxListContent: View {
                 }
             }
         }
+    }
+}
+
+/// The missing token's steps, under My To-Dos: the key, a title, the setup text and the way to Settings → Accounts.
+private struct InboxTokenNote: View {
+    let openAccounts: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "key")
+                .font(.title)
+                .foregroundStyle(.secondary)
+            Text("Needs a GitLab Token")
+                .font(.headline)
+            Text(verbatim: PanelModel.SetupText.needsToken)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open Settings → Accounts", action: openAccounts)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
     }
 }
 

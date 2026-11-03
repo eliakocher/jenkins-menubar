@@ -43,10 +43,10 @@ final class NativeEffects: Effects {
     var onOpen: @MainActor (URL, Bool) -> Void = { _, _ in }
 
     /// runs a button of the Inbox's big panel or of an Inbox event's banner; the app delegate sets it to the shell's
-    var onInboxAction: @MainActor (InboxDeliveryAction, InboxEvent) -> Void = { _, _ in }
+    var onInboxAction: @MainActor (InboxDeliveryAction, InboxEvent) async -> Problem? = { _, _ in nil }
 
     func showInboxPanel(_ event: InboxEvent) async {
-        inboxPanels.show(event) { [weak self] action, event in self?.onInboxAction(action, event) }
+        inboxPanels.show(event) { [weak self] action, event in await self?.onInboxAction(action, event) }
     }
 
     /// Posts an Inbox event as a macOS banner with Show, Mark Done and Snooze 1 Hour (INBOX-14). It never plays a sound.
@@ -62,6 +62,9 @@ final class NativeEffects: Effects {
         content.userInfo = InboxBanner.userInfo(for: event)
         content.threadIdentifier = "inbox-\(event.kind.rawValue)"
         content.sound = nil
+        if event.kind == .coffeeBreak, let attachment = Self.coffeeAttachment() {
+            content.attachments = [attachment]
+        }
         do {
             try await UNUserNotificationCenter.current().add(
                 UNNotificationRequest(identifier: "inbox-\(event.id)", content: content, trigger: nil))
@@ -69,6 +72,25 @@ final class NativeEffects: Effects {
         } catch {
             AppLog.warning("The banner of an Inbox event (\(event.kind.rawValue)) didn't post: \(error.localizedDescription)")
             return false
+        }
+    }
+
+    /// The coffee break's butler (`coffee.png` in the bundle) as a banner's picture. macOS moves an attachment's file into
+    /// its own store, so it gets a temporary copy, never the bundle's file. `nil` without the art or when the copy fails:
+    /// the banner then shows as before.
+    private static func coffeeAttachment() -> UNNotificationAttachment? {
+        guard let source = Bundle.main.url(forResource: "coffee", withExtension: "png") else {
+            return nil
+        }
+        do {
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("megamonitor-banner-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let copy = folder.appendingPathComponent("coffee.png")
+            try FileManager.default.copyItem(at: source, to: copy)
+            return try UNNotificationAttachment(identifier: "coffee", url: copy, options: nil)
+        } catch {
+            AppLog.warning("The coffee break's picture couldn't be attached: \(error.localizedDescription)")
+            return nil
         }
     }
 

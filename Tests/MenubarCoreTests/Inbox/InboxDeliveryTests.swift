@@ -59,8 +59,10 @@ struct InboxDeliveryTests {
         for kind in InboxEventKind.allCases {
             #expect(rules.delivery(for: kind) == .inboxOnly)
         }
-        #expect(InboxNotificationRules.deliveryKinds.count == 13)
+        #expect(InboxNotificationRules.deliveryKinds.count == 12)
         #expect(!InboxNotificationRules.deliveryKinds.contains(.myTodo))
+        // A failed build is announced by the build alerts, once (ALERT-10).
+        #expect(!InboxNotificationRules.deliveryKinds.contains(.buildFailed))
 
         rules.set(.bigPanel, for: .coffeeBreak)
         rules.set(.desktopNotification, for: .reviewRequested)
@@ -97,7 +99,6 @@ struct InboxDeliveryTests {
 
         var rules = InboxNotificationRules()
         rules.set(.desktopNotification, for: .mentioned)
-        rules.set(.bigPanel, for: .buildFailed)
         rules.setGroupOrder([.other, .builds, .claude, .coffee, .myToDos, .mentions, .reviewRequests, .assigned])
         let copy = try JSONDecoder().decode(InboxNotificationRules.self, from: JSONEncoder().encode(rules))
         #expect(copy == rules)
@@ -215,6 +216,115 @@ struct InboxDeliveryTests {
         #expect(store.snoozed.isEmpty && store.pending.map(\.kind) == [.coffeeBreak])
         await store.markDone(cup)
         #expect(store.done.map(\.kind).contains(.coffeeBreak))
+    }
+
+    // MARK: - ALERT-10
+
+    private static func failedBuild(_ result: BuildResult = .failure) throws -> BuildAlert {
+        let build = Build(
+            job: "MR-1", number: 7, title: "Fix the login", gitLabURL: nil, kind: .mine,
+            phase: .finished(result: result, duration: 1800), startedAt: start,
+            testCounts: TestCounts(failed: result == .failure ? 2 : 0, total: 40))
+        let content = try #require(
+            AlertContent.finished(
+                build, failedStages: [],
+                links: AlertContent.links(for: build, jobURL: URL(string: "https://jenkins.example.com/job/project")!)))
+        return BuildAlert(kind: .finished, build: build, content: content)
+    }
+
+    /// A failed build as the app handles it: the build alerts announce it, the Inbox keeps it.
+    private func failedBuildEverywhere(
+        style: Preferences.AlertStyle, rules: InboxNotificationRules, setup: Setup
+    ) async throws {
+        let alert = try Self.failedBuild()
+        setup.model.inbox.rules = rules
+        await AlertAnnouncer(effects: setup.effects, log: setup.model.log)
+            .announce([alert], preferences: Preferences(alertStyle: style))
+        setup.model.addToInbox(finished: [alert])
+        for _ in 0..<200 {
+            await Task.yield()
+        }
+    }
+
+    @Test(
+        "ALERT-10 a failed build gives exactly one pop-up per alert style, the Inbox adds none, and it is an Inbox entry",
+        arguments: [
+            (Preferences.AlertStyle.window, 1, 0), (.banner, 0, 1), (.inboxOnly, 0, 0),
+        ])
+    func oneFailedBuildOnePopUp(style: Preferences.AlertStyle, windows: Int, banners: Int) async throws {
+        // Whatever the old Inbox delivery says, it adds nothing: a saved choice is dropped, and `set` ignores the kind.
+        var rules = try JSONDecoder().decode(
+            InboxNotificationRules.self, from: Data(#"{"deliveries":{"buildFailed":"desktopNotification"}}"#.utf8))
+        rules.set(.bigPanel, for: .buildFailed)
+        let setup = try Setup(rules: rules)
+
+        try await failedBuildEverywhere(style: style, rules: rules, setup: setup)
+
+        #expect(await setup.effects.alertWindows.count == windows)
+        #expect(await setup.effects.banners.count == banners)
+        #expect(await setup.effects.sounds.count == windows + banners)
+        #expect(await setup.effects.inboxPanels.isEmpty)
+        #expect(await setup.effects.inboxBanners.isEmpty)
+        // It is still history in the Inbox, quietly.
+        #expect(setup.model.inbox.pending.map(\.kind) == [.buildFailed])
+    }
+
+    @Test("ALERT-10 migration: the build alert style the user had wins, and a failed build's saved Inbox delivery is dropped")
+    func migrationKeepsTheAlertStyle() throws {
+        // The user of 2026-11-03: alertStyle window (the big panel), and buildFailed set to a desktop notification.
+        let suite = TemporaryDefaults()
+        suite.defaults.set("window", forKey: "alertStyle")
+        suite.defaults.set(
+            #"{"deliveries":{"buildFailed":"desktopNotification","coffeeBreak":"bigPanel"}}"#,
+            forKey: PreferencesStore.inboxNotificationsKey)
+
+        let loaded = PreferencesStore(defaults: suite.defaults).load()
+
+        #expect(loaded.alertStyle == .window)
+        #expect(InboxDelivery(loaded.alertStyle) == .bigPanel)
+        #expect(loaded.inboxNotifications.deliveries == ["coffeeBreak": .bigPanel])
+        #expect(loaded.inboxNotifications.delivery(for: .buildFailed) == .inboxOnly)
+
+        // The choices and the styles map one to one, so the one row shows what the build alerts do.
+        for delivery in InboxDelivery.allCases {
+            #expect(InboxDelivery(Preferences.AlertStyle(delivery)) == delivery)
+        }
+        for style in Preferences.AlertStyle.allCases {
+            #expect(Preferences.AlertStyle(InboxDelivery(style)) == style)
+        }
+        // A saved Inbox Only style survives a restart.
+        suite.defaults.set("inboxOnly", forKey: "alertStyle")
+        #expect(PreferencesStore(defaults: suite.defaults).load().alertStyle == .inboxOnly)
+    }
+
+    @Test("ALERT-10 nothing else is delivered twice: the digest, a Claude answer and the coffee break each show once")
+    func otherKindsShowOnce() async throws {
+        var rules = InboxNotificationRules()
+        rules.set(.bigPanel, for: .digestReady)
+        rules.set(.desktopNotification, for: .claudeAnswered)
+        rules.set(.bigPanel, for: .coffeeBreak)
+        let setup = try Setup(rules: rules)
+        let model = setup.model
+
+        // The digest lands twice in a day (a manual run and the morning one), a Claude answer lands twice.
+        for _ in 0..<2 {
+            model.addToInbox(AILanding(subject: .digest, useCase: .digest, answer: nil, text: "A quiet day", failure: nil, at: Self.start))
+            model.addToInbox(
+                AILanding(
+                    subject: .mergeRequest("acme/web/app!12"), useCase: .summarizeThreads, answer: nil, text: "Two open points",
+                    failure: nil, at: Self.start))
+        }
+        model.inbox.addLocal(Self.coffee())
+        model.inbox.addLocal(Self.coffee())
+        for _ in 0..<200 {
+            await Task.yield()
+        }
+
+        #expect(await setup.effects.inboxPanels.map(\.kind).sorted { $0.rawValue < $1.rawValue } == [.coffeeBreak, .digestReady])
+        #expect(await setup.effects.inboxBanners.map(\.kind) == [.claudeAnswered])
+        // None of them goes through the build alerts.
+        #expect(await setup.effects.alertWindows.isEmpty)
+        #expect(await setup.effects.banners.isEmpty)
     }
 
     // MARK: - INBOX-15

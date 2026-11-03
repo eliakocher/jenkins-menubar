@@ -32,8 +32,8 @@ public struct PipelinesListView: View {
                 actions: .mainWindow(model, router: router, openURL: openURL),
                 focusRequest: router.listFocusRequest)
         }
-        .onChange(of: PipelinesData(model, now: model.pipelines.now).jobs, initial: true) { _, jobs in
-            dropSelection(keeping: jobs)
+        .onChange(of: snapshot, initial: true) { old, new in
+            dropSelection(from: old, to: new)
         }
         .onAppear {
             // The hiding rules' time moves on as when the panel opens (HIDE-02).
@@ -47,13 +47,38 @@ public struct PipelinesListView: View {
         .workspaceTagsClickable()
     }
 
-    /// Clears the selection when its job left the list; before the first check the list has nothing to compare with.
-    private func dropSelection(keeping jobs: Set<String>) {
+    /// What the list holds now: every job, and the rows in order, for the selection to follow.
+    private struct Snapshot: Equatable {
+        var jobs: Set<String>
+        var rows: [String]
+    }
+
+    private var snapshot: Snapshot {
+        let data = PipelinesData(model, now: model.pipelines.now)
+        return Snapshot(jobs: data.jobs, rows: PipelinesListModel(data, query: "").selectableIDs)
+    }
+
+    /// Moves the selection to the neighbour of a job that left the list (hidden, dropped, no longer watched), or clears
+    /// it when none is left or the job was never in it (a restored one); before the first check the list has nothing to
+    /// compare with.
+    private func dropSelection(from old: Snapshot, to new: Snapshot) {
         let pipelines = model.pipelines
-        guard let job = selection, !jobs.contains(job), pipelines.hasLoaded || pipelines.problem != nil else {
+        guard let job = selection, !new.jobs.contains(job), pipelines.hasLoaded || pipelines.problem != nil else {
             return
         }
-        selection = nil
+        let next = KeepListSelection.kept(job, from: old.rows, to: new.rows)
+        selection = next == job ? nil : next
+    }
+}
+
+extension PipelinesListModel {
+    /// the ids of the rows the list selects, in order: My Builds, then Watching
+    var selectableIDs: [String] {
+        var ids: [String] = []
+        if case .rows(let rows)? = myBuilds {
+            ids += rows.map(\.build.job)
+        }
+        return ids + watching.map(\.id)
     }
 }
 
@@ -68,7 +93,7 @@ struct PipelinesListContent: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-            List(selection: $selection) {
+            List(selection: $selection.keepingSelection()) {
                 if !model.problems.isEmpty {
                     MainWindowProblemRows(model.problems, openSettings: actions.openSettings)
                 }
@@ -107,6 +132,7 @@ struct PipelinesListContent: View {
                     }
                 }
             }
+            .keepsSelection()
             .focused($isFocused)
             .contextMenu(forSelectionType: String.self) { jobs in
                 if let job = jobs.first, let item = item(job) {

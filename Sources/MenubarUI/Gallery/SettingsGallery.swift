@@ -21,13 +21,11 @@ private struct GeneralGalleryView: View {
     var preferences = Preferences()
     var login = LoginItemStatus.notRegistered
     var loginError: String?
-    var hotkey = HotkeyStatus.off
-    var isRecordingShortcut = false
 
     var body: some View {
         GeneralSettingsForm(
             preferences: .constant(preferences), openAtLogin: .constant(login.isOn), loginStatus: login,
-            loginError: loginError, hotkey: hotkey, isRecordingShortcut: isRecordingShortcut, actions: .none,
+            loginError: loginError, actions: .none,
             linkRouting: LinkRoutingSwitch(isOn: .constant(false), browserName: "Safari", note: nil, isChanging: false))
     }
 }
@@ -144,7 +142,8 @@ private struct SettingsWindowGalleryView: View {
             case .general: GeneralGalleryView()
             case .menuBar: MenuBarSettingsForm(preferences: .constant(Preferences()))
             case .notifications: NotificationsGalleryView()
-            case .appearance: AppearanceSettingsForm()
+            case .shortcuts: ShortcutsSettingsForm(preferences: .constant(Preferences()))
+            case .appearance: AppearanceSettingsForm(appearance: .constant(.system))
             case .accounts:
                 AccountsGalleryView(model: {
                     var model = fixtures.settingsAccounts
@@ -169,7 +168,7 @@ extension GalleryCatalog {
     static var settingsEntries: [GalleryEntry] {
         settingsWindowEntries + settingsGeneralEntries + settingsJenkinsEntries + settingsGitLabEntries
             + settingsTeamEntries + settingsTeamLinkEntries + settingsProjectsEntries + settingsAccountsEntries + settingsAdvancedEntries
-            + settingsSidebarEntries
+            + settingsSidebarEntries + settingsShortcutsEntries
     }
 
     // MARK: - Window
@@ -196,6 +195,45 @@ extension GalleryCatalog {
         CGSize(width: SettingsMetrics.width, height: height)
     }
 
+    // MARK: - Shortcuts
+
+    /// Settings → Shortcuts: the defaults, with changes and the global hotkey, recording, a conflict, a refused key.
+    private static var settingsShortcutsEntries: [GalleryEntry] {
+        let hotkey = HotkeyShortcut(keyCode: 40, modifiers: [.control, .option, .command], label: "K")
+        let commandS = HotkeyShortcut(keyCode: 1, modifiers: [.command], label: "S")
+        var changed = Preferences(globalShortcut: hotkey)
+        changed.shortcuts.set(commandS, for: ShortcutCatalog.toggleSidebarID)
+        changed.shortcuts.set(nil, for: "forward")
+        changed.shortcuts.set(HotkeyShortcut(keyCode: 15, modifiers: [.control, .command], label: "R"), for: "reload")
+        let height: CGFloat = 2400
+        func entry(_ state: String, _ preferences: Preferences, hotkey: HotkeyStatus = .off, recording: String? = nil, notice: ShortcutNotice? = nil)
+            -> GalleryEntry
+        {
+            GalleryEntry(screen: "settings-shortcuts", state: state, size: paneSize(height)) { _ in
+                SettingsPaneGalleryView(height: height) {
+                    ShortcutsSettingsForm(preferences: .constant(preferences), hotkey: hotkey, recordingID: recording, notice: notice)
+                }
+            }
+        }
+        let conflict = commandS.map {
+            ShortcutNotice(
+                commandID: ShortcutCatalog.toggleSidebarID, shortcut: $0,
+                refusal: .usedBy(ShortcutCatalog.command("find")!))
+        }
+        let reserved = HotkeyShortcut(keyCode: 12, modifiers: [.command], label: "Q").map {
+            ShortcutNotice(
+                commandID: "find", shortcut: $0, refusal: .reserved(ShortcutRules.reservedNote(for: $0) ?? ""))
+        }
+        return [
+            entry("typical", Preferences()),
+            entry("changed", changed, hotkey: hotkey.map { .active($0) } ?? .off),
+            entry("recording", Preferences(), recording: ShortcutCatalog.toggleSidebarID),
+            entry("conflict", Preferences(), notice: conflict),
+            entry("reserved", Preferences(), notice: reserved),
+            entry("hotkey-taken", changed, hotkey: hotkey.map { .failed($0, .taken) } ?? .off),
+        ]
+    }
+
     // MARK: - General
 
     private static var settingsGeneralEntries: [GalleryEntry] {
@@ -207,25 +245,9 @@ extension GalleryCatalog {
         changed.fillInCopiedLink = true
         var banner = Preferences()
         banner.alertStyle = .banner
-        let shortcut = HotkeyShortcut(keyCode: 40, modifiers: [.control, .option, .command], label: "K")
-        let withShortcut = Preferences(globalShortcut: shortcut)
         return [
             GalleryEntry(screen: "settings-general", state: "typical", size: paneSize(380)) { _ in
                 SettingsPaneGalleryView(height: 380) { GeneralGalleryView() }
-            },
-            GalleryEntry(screen: "settings-general", state: "shortcut", size: paneSize(410)) { _ in
-                SettingsPaneGalleryView(height: 410) {
-                    GeneralGalleryView(preferences: withShortcut, hotkey: shortcut.map { .active($0) } ?? .off)
-                }
-            },
-            GalleryEntry(screen: "settings-general", state: "shortcut-recording", size: paneSize(410)) { _ in
-                SettingsPaneGalleryView(height: 410) { GeneralGalleryView(isRecordingShortcut: true) }
-            },
-            GalleryEntry(screen: "settings-general", state: "shortcut-taken", size: paneSize(440)) { _ in
-                SettingsPaneGalleryView(height: 440) {
-                    GeneralGalleryView(
-                        preferences: withShortcut, hotkey: shortcut.map { .failed($0, .taken) } ?? .off)
-                }
             },
             GalleryEntry(screen: "settings-general", state: "changed", size: paneSize(380)) { _ in
                 SettingsPaneGalleryView(height: 380) { GeneralGalleryView(preferences: changed, login: .enabled) }

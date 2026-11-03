@@ -83,6 +83,19 @@ final class AppShell {
         router.onRebuilt = { app in AppShell.relaunch(app) }
         router.openInBrowser = { [weak self] url in self?.openInBrowser(url) }
         model.hotkey.onPress = { [weak self] in self?.hotkeyPressed() }
+        followAppearance()
+    }
+
+    /// Gives the app Settings → Appearance's choice now, and again each time it changes (also by an import or a
+    /// restored backup), for every window and panel at once.
+    private func followAppearance() {
+        let choice = withObservationTracking {
+            model.settings.preferences.appearance
+        } onChange: { [weak self] in
+            // Runs before the change lands; the next turn reads the new value.
+            Task { @MainActor in self?.followAppearance() }
+        }
+        AppAppearance.apply(choice)
     }
 
     /// The global hotkey (APP-08): opens the main window from anywhere and brings it forward. Pressed again while the
@@ -317,47 +330,63 @@ final class AppShell {
     /// notes it as seen, Done and Snooze 1 Hour act on the event's Inbox entry. A click that starts the app waits for the
     /// launch, which loads the to-dos.
     ///
+    /// A banner has no room to say why GitLab refused a Done, so the Inbox opens, where its note says it; the big panel
+    /// says it inline (``performInboxAction(_:for:)``).
+    ///
+    /// - Parameters:
+    ///   - action: the button
+    ///   - event: the event the banner is about
+    func inboxAction(_ action: InboxDeliveryAction, for event: InboxEvent) {
+        Task {
+            if await performInboxAction(action, for: event) != nil {
+                open(.open(.inbox))
+            }
+        }
+    }
+
+    /// Runs a button of an Inbox event for the panel or the banner.
+    ///
     /// - Parameters:
     ///   - action: the button
     ///   - event: the event the panel or the banner is about
-    func inboxAction(_ action: InboxDeliveryAction, for event: InboxEvent) {
-        Task {
-            await launching?.value
-            let store = model.inbox
-            let entry = store.entry(for: event)
-            switch action {
-            case .show:
-                if let entry {
-                    store.seen.markSeen(entry.id)
-                }
-                if let url = event.targetURL {
-                    if let route = AppRoute(url: url) {
-                        open(route)
-                    } else {
-                        // A Claude answer shows its card, as in the Inbox's list.
-                        if open(url, inApp: true), let card = event.kind.focusCard {
-                            router.requestCardFocus(card)
-                        }
-                    }
-                } else {
-                    open(.open(.inbox))
-                }
-                // A thing of this app clears when it is opened, as in the Inbox's list.
-                if let entry, entry.isLocalItem {
-                    await store.markDone(entry)
-                }
-            case .done:
-                if let entry {
-                    await store.markDone(entry)
-                }
-            case .snooze:
-                if let entry {
-                    await store.snooze(entry, .oneHour)
-                }
-            case .dismiss:
-                break
+    /// - Returns: why GitLab refused a Done, when it did; `nil` otherwise
+    func performInboxAction(_ action: InboxDeliveryAction, for event: InboxEvent) async -> Problem? {
+        await launching?.value
+        let store = model.inbox
+        let entry = store.entry(for: event)
+        switch action {
+        case .show:
+            if let entry {
+                store.seen.markSeen(entry.id)
             }
+            if let url = event.targetURL {
+                if let route = AppRoute(url: url) {
+                    open(route)
+                } else {
+                    // A Claude answer shows its card, as in the Inbox's list.
+                    if open(url, inApp: true), let card = event.kind.focusCard {
+                        router.requestCardFocus(card)
+                    }
+                }
+            } else {
+                open(.open(.inbox))
+            }
+            // A thing of this app clears when it is opened, as in the Inbox's list.
+            if let entry, entry.isLocalItem {
+                await store.markDone(entry)
+            }
+        case .done:
+            if let entry {
+                return await store.markDone(entry)
+            }
+        case .snooze:
+            if let entry {
+                await store.snooze(entry, .oneHour)
+            }
+        case .dismiss:
+            break
         }
+        return nil
     }
 
     /// Handles a web link that macOS gave this app as the default browser (APP-09): a Jenkins build, a GitLab merge request

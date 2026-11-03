@@ -84,7 +84,7 @@ struct InboxListModel: Sendable {
     var actionNote: String?
     /// whether the refusal is the token's (read-only), so the banner offers Settings → Accounts
     var actionFixesToken = false
-    /// no GitLab token: the setup steps stand in for the rows (MR-04)
+    /// no GitLab token: the setup steps show under My To-Dos, which are local (MR-04)
     var needsToken: Bool
     /// rows of bars: the first load, or the first look at the Done list
     var isPlaceholder: Bool
@@ -174,8 +174,13 @@ struct InboxListModel: Sendable {
         guard !data.teamValuesMissing else {
             return
         }
-        // Offline shows the cached rows without another problem row (OD-05); a missing token shows the steps instead.
+        // Offline shows the cached rows without another problem row (OD-05). A missing token shows the setup note under
+        // My To-Dos, which are local and need no token.
         guard !needsToken else {
+            let mine = data.pending.filter(\.isMine).map { InboxRowModel($0, now: data.now, calendar: calendar) }.filter { $0.matches(query) }
+            if query.isEmpty || !mine.isEmpty {
+                sections = [Section(group: .myToDos, rows: mine, showsAddField: query.isEmpty, canReorder: query.isEmpty && mine.count > 1)]
+            }
             return
         }
         let neverLoaded = data.fetchedAt == nil

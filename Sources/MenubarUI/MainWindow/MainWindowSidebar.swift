@@ -132,13 +132,17 @@ struct MainWindowSidebar: View {
 
 /// The small dot after a sidebar row's title: something new is waiting in the section. The accent color, white on the
 /// selected row, whose accent fill would swallow it.
-private struct SidebarUnreadDot: View {
+struct SidebarUnreadDot: View {
     @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
+        // Red, like an unread badge; on the selected row, whose accent fill would swallow it, it keeps a white ring.
         Circle()
-            .fill(prominence == .increased ? AnyShapeStyle(.white) : AnyShapeStyle(Color.accentColor))
-            .frame(width: 7, height: 7)
+            .fill(MergeRequestStatus.Color.red.swiftUI)
+            .overlay {
+                Circle().strokeBorder(.white, lineWidth: prominence == .increased ? 1.25 : 0)
+            }
+            .frame(width: 8, height: 8)
             .accessibilityLabel("New")
             .help("A digest you haven't seen yet")
     }

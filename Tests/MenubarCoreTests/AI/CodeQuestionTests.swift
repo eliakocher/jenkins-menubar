@@ -168,7 +168,7 @@ struct CodeQuestionTests {
             #expect(!prompt.text.contains("# Local checkout"))
             let plain = ClaudeEngine.command(claude: claude, for: prompt, model: .opus)
             #expect(plain.executable == claude)
-            #expect(Array(plain.arguments.prefix(7)) == ["-p", "--output-format", "json", "--model", "claude-opus-5-5", "--tools", ""])
+            #expect(Array(plain.arguments.prefix(7)) == ["-p", "--output-format", "json", "--model", "opus", "--tools", ""])
             #expect(!plain.arguments.contains("--add-dir"))
         }
         let odd = ClaudeEngine.command(claude: URL(filePath: "/opt/A=B/claude"), for: reading, model: .opus)

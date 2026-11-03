@@ -52,6 +52,13 @@ public struct MergeRequestsListView: View {
     private static let workspacesHost = "merge-requests-section"
 }
 
+extension MergeRequestsListModel {
+    /// the ids of the rows the list selects, in order: the open sections, then Recently Merged
+    var selectableIDs: [MergeRequest.ID] {
+        sections.flatMap { $0.rows.map(\.id) } + (merged?.rows.map(\.id) ?? [])
+    }
+}
+
 /// The Merge Requests list drawn from plain values, for the window and the gallery.
 struct MergeRequestsListContent: View {
     let model: MergeRequestsListModel
@@ -79,7 +86,8 @@ struct MergeRequestsListContent: View {
             set: { newValue in
                 if search.row(url: newValue) != nil {
                     highlighted = newValue
-                } else {
+                } else if newValue != nil {
+                    // A click on empty space writes `nil`; the selection stays (`KeepListSelection`).
                     highlighted = nil
                     selection = newValue
                 }
@@ -114,6 +122,15 @@ struct MergeRequestsListContent: View {
                             .buttonStyle(.link)
                             .selectionDisabled()
                     }
+                }
+            }
+            .keepsSelection()
+            .onChange(of: model.selectableIDs) { old, new in
+                // The selected row left the list: its neighbour takes over (`KeepListSelection.kept`).
+                guard model.query.isEmpty, let current = selection else { return }
+                let next = KeepListSelection.kept(current, from: old, to: new)
+                if next != current {
+                    selection = next
                 }
             }
             .contextMenu(forSelectionType: MergeRequest.ID.self) { ids in

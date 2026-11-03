@@ -40,6 +40,13 @@ public struct WorkItemsListView: View {
     }
 }
 
+extension WorkItemsListModel {
+    /// the ids of the rows the list selects, in order
+    var selectableIDs: [WorkItem.ID] {
+        sections.flatMap { $0.rows.map(\.id) }
+    }
+}
+
 /// The Work Items list drawn from plain values, for the window and the gallery.
 struct WorkItemsListContent: View {
     let model: WorkItemsListModel
@@ -58,7 +65,8 @@ struct WorkItemsListContent: View {
             set: { newValue in
                 if search.row(reference: newValue) != nil {
                     highlighted = newValue
-                } else {
+                } else if newValue != nil {
+                    // A click on empty space writes `nil`; the selection stays (`KeepListSelection`).
                     highlighted = nil
                     selection = newValue
                 }
@@ -104,6 +112,15 @@ struct WorkItemsListContent: View {
                             .buttonStyle(.link)
                             .selectionDisabled()
                     }
+                }
+            }
+            .keepsSelection()
+            .onChange(of: model.selectableIDs) { old, new in
+                // The selected row left the list: its neighbour takes over (`KeepListSelection.kept`).
+                guard model.query.isEmpty, let current = selection else { return }
+                let next = KeepListSelection.kept(current, from: old, to: new)
+                if next != current {
+                    selection = next
                 }
             }
             .contextMenu(forSelectionType: WorkItem.ID.self) { ids in

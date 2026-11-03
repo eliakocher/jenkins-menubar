@@ -1,84 +1,115 @@
 import MenubarCore
 import SwiftUI
 
-/// The failed build detail's Claude section (AI-02, AI-05): "Why Did It Fail?" as its action, and Claude's
-/// investigation as a card below; the chat's own "Continue in Claude Code" takes it on from there. Hidden while the
-/// Claude features are off or `claude` isn't installed, and in the gallery.
-struct ExplainBuildSection: View {
+/// The build detail's Claude card (AI-02, AI-05, AI-10): always there while the Claude features are on, for a build of any
+/// result. On top, on a failed or unstable build, "Why Did It Fail?" as a quick action with Claude's investigation below
+/// it; then the chat, a field for a free question ("Ask about this build…") scoped to the build: its stages, failed
+/// tests, the log's errors and its end, and the changes since the last green build. The chat's own "Continue in Claude
+/// Code" takes either on from there. Hidden while the Claude features are off or `claude` isn't installed, and in the
+/// gallery.
+///
+/// The investigation and the chat are two subjects (``AISubject/build(_:)``, ``AISubject/buildChat(_:)``). The
+/// investigation's answer has its own follow-up field, so the chat's field waits while the investigation is on the card
+/// and the chat has nothing yet: one field at a time.
+struct BuildClaudeCard: View {
     let build: Build
     /// the build's page, which Claude Code's prompt links
     let page: URL?
-    /// whether it is a card of the build detail's ScrollView rather than a `Form`'s section
-    var inCard = false
+    /// whether "Why Did It Fail?" shows: for a failed or unstable build
+    let offersWhy: Bool
 
     @Environment(AppModel.self) private var model: AppModel?
 
     var body: some View {
         if let model, model.ai.isOffered {
-            let subject = AISubject.build(build.id)
-            let state = model.ai.state(of: subject)
+            let why = AISubject.build(build.id)
+            let chat = AISubject.buildChat(build.id)
+            let whyState = model.ai.state(of: why)
             let failedTests: [FailedTest]? =
                 if case .loaded(let tests) = model.failedTests.state(of: build.id) { tests } else { nil }
             let hints: [FlakyHint] =
                 if case .loaded(let hints) = model.flakyHints.state(of: build.id) { hints } else { [] }
-            container {
-                VStack(alignment: .leading, spacing: 6) {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 8) {
-                            buttons(model, state: state, failedTests: failedTests, hints: hints)
-                            Spacer(minLength: 0)
-                        }
-                        VStack(alignment: .leading, spacing: 8) {
-                            buttons(model, state: state, failedTests: failedTests, hints: hints)
-                        }
+            let context = ClaudeCodeContext.build(build, page: page, failedTests: failedTests ?? [])
+            DetailCard("Claude", symbol: "sparkles", width: .fullWidth) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if offersWhy {
+                        explanation(model, state: whyState, failedTests: failedTests, hints: hints, context: context)
                     }
-                    if state == .idle {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text("Claude reads the failed tests, the errors in the log and the commits since the last green build.")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            // The Claude features are turned on and off in Settings → Claude.
-                            SettingsGearButton(field: .claude)
+                    if !whyState.hasRows || model.ai.state(of: chat).hasRows {
+                        InlineClaudeChat(
+                            subject: chat, item: context, placeholder: "Ask about this build…",
+                            followUpPlaceholder: "Ask about this build…", quickPicks: quickPicks,
+                            ask: { question, picked in
+                                Task {
+                                    await model.ai.ask(
+                                        question, aboutBuild: build, failedTests: failedTests, flakyHints: hints, model: picked)
+                                }
+                            }
+                        ) { state in
+                            if state == .idle {
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(
+                                        "Claude gets the stages, the failed tests, the errors in the log and its end, and the changes since the last green build."
+                                    )
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    // The Claude features are turned on and off in Settings → Claude.
+                                    SettingsGearButton(field: .claude)
+                                }
+                            }
                         }
-                    }
-                }
-                .controlSize(.small)
-                .padding(.vertical, 2)
-                AIAnswerRows(
-                    state: state, subject: subject, item: .build(build, page: page, failedTests: failedTests ?? []),
-                    send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
-                ) { answer in
-                    if let explanation = answer.explanation {
-                        BuildExplanationCard(explanation: explanation)
                     }
                 }
             }
         }
     }
 
-    /// A `Form`'s section, or the build detail's card.
-    @ViewBuilder
-    private func container(@ViewBuilder _ content: () -> some View) -> some View {
-        if inCard {
-            DetailCard("Claude", symbol: "sparkles", width: .fullWidth, content: content)
-        } else {
-            Section {
-                content()
-            } header: {
-                Text("Claude")
-            }
+    /// the quick questions above the field: for every build, and one more for a red one
+    private var quickPicks: [(title: String, question: String)] {
+        var picks = [
+            (
+                title: "Summarize Build",
+                question: "Summarize this build in a few lines: what ran, how long it took, and anything that stands out."
+            ),
+            (
+                title: "What Changed?",
+                question: "Which commits came into this build since the last green build, and which of them could matter most?"
+            ),
+        ]
+        if offersWhy {
+            picks.append(
+                (
+                    title: "Is It Flaky?",
+                    question: "Does the failure look flaky? Say why or why not, from the log and the stages' history."
+                ))
         }
+        return picks
     }
 
+    /// "Why Did It Fail?" and Claude's investigation below it
     @ViewBuilder
-    private func buttons(_ model: AppModel, state: AIAnswerState, failedTests: [FailedTest]?, hints: [FlakyHint]) -> some View {
-        ClaudeActionButton(
-            title: "Why Did It Fail?", systemImage: "sparkles", prominent: true,
-            help: "Ask Claude for the root cause, the evidence in the log, the suspect commits and the next step.",
-            isDisabled: state.isBusy
-        ) { picked in
-            Task { await model.ai.explain(build, failedTests: failedTests, flakyHints: hints, model: picked) }
+    private func explanation(
+        _ model: AppModel, state: AIAnswerState, failedTests: [FailedTest]?, hints: [FlakyHint], context: ClaudeCodeContext
+    ) -> some View {
+        let subject = AISubject.build(build.id)
+        VStack(alignment: .leading, spacing: 8) {
+            ClaudeActionButton(
+                title: "Why Did It Fail?", systemImage: "sparkles", prominent: true,
+                help: "Ask Claude for the root cause, the evidence in the log, the suspect commits and the next step.",
+                isDisabled: state.isBusy
+            ) { picked in
+                Task { await model.ai.explain(build, failedTests: failedTests, flakyHints: hints, model: picked) }
+            }
+            .controlSize(.small)
+            AIAnswerRows(
+                state: state, subject: subject, item: context,
+                send: { Task { await model.ai.send(subject) } }, dismiss: { model.ai.dismiss(subject) }
+            ) { answer in
+                if let explanation = answer.explanation {
+                    BuildExplanationCard(explanation: explanation)
+                }
+            }
         }
     }
 }

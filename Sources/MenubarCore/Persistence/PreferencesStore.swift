@@ -63,6 +63,10 @@ public struct PreferencesStore: @unchecked Sendable {
     /// ``inboxNotificationsKey``, and absent for the default layout
     public static let menuBarLayoutKey = "menuBarLayout"
 
+    /// the UserDefaults key of ``Preferences/shortcuts``, JSON text; outside ``Key`` like ``menuBarLayoutKey``, and absent
+    /// while every command has its default shortcut (KEYS-01)
+    public static let keyboardShortcutsKey = "keyboardShortcuts"
+
     /// The UserDefaults key of each value, which is also its name in the log (SET-01).
     public enum Key: String, CaseIterable, Sendable {
         case checkIntervalSeconds
@@ -88,6 +92,7 @@ public struct PreferencesStore: @unchecked Sendable {
         case globalShortcut
         case easterEggs
         case slotAlerts
+        case appearance
     }
 
     /// A value that ``save(_:)`` changed, as text for the log: `on` and `off` for a switch, and a list joined with
@@ -144,6 +149,7 @@ public struct PreferencesStore: @unchecked Sendable {
         read(.fillInCopiedLink, into: \.fillInCopiedLink)
         read(.easterEggs, into: \.easterEggs)
         read(.slotAlerts, into: \.slotAlerts)
+        readRaw(.appearance, into: \.appearance)
         // Text that isn't a shortcut, or one without ⌘, ⌃ or ⌥, reads as none.
         if let raw = defaults.object(forKey: Key.globalShortcut.rawValue) as? String {
             preferences.globalShortcut = HotkeyShortcut(rawValue: raw)
@@ -159,6 +165,10 @@ public struct PreferencesStore: @unchecked Sendable {
             let layout = try? JSONDecoder().decode(MenuBarLayout.self, from: Data(text.utf8))
         {
             preferences.menuBarLayout = layout
+        }
+        // Text that doesn't decode reads as every default; an unknown command or shortcut is dropped (KEYS-01).
+        if let text = defaults.string(forKey: Self.keyboardShortcutsKey) {
+            preferences.shortcuts = ShortcutMap(jsonText: text)
         }
         // A case that isn't one of the value's options is caught here.
         return Self.validated(preferences)
@@ -185,6 +195,13 @@ public struct PreferencesStore: @unchecked Sendable {
         }
         if new.menuBarLayout != old.menuBarLayout {
             saveMenuBarLayout(new.menuBarLayout)
+        }
+        if new.shortcuts != old.shortcuts {
+            if let text = new.shortcuts.jsonText {
+                defaults.set(text, forKey: Self.keyboardShortcutsKey)
+            } else {
+                defaults.removeObject(forKey: Self.keyboardShortcutsKey)
+            }
         }
         return changes
     }
@@ -285,6 +302,7 @@ public struct PreferencesStore: @unchecked Sendable {
         case .globalShortcut: .shortcut(preferences.globalShortcut?.rawValue ?? "")
         case .easterEggs: .bool(preferences.easterEggs)
         case .slotAlerts: .bool(preferences.slotAlerts)
+        case .appearance: .string(preferences.appearance.rawValue)
         }
     }
 }

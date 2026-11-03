@@ -31,6 +31,25 @@ extension InboxRowModel.Tint {
     }
 }
 
+/// The coffee break's butler (``AppImages/coffee``) as a row's leading symbol. Where the file is missing the rows keep
+/// their cup symbol, so callers check ``AppImages/coffee`` first.
+struct CoffeeButlerIcon: View {
+    let size: CGFloat
+
+    var body: some View {
+        if let butler = AppImages.coffee {
+            Image(nsImage: butler)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: size, height: size)
+                // An image's first baseline is its bottom edge, which would lift it above the title. Its middle sits on the
+                // title's x-height instead, like a symbol's.
+                .alignmentGuide(.firstTextBaseline) { $0.height / 2 + 5 }
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// An Inbox row in the window's list, in the shape the lists share (``ListRow``; INBOX-02): the kind's symbol in its color
 /// (the accent "@" for a mention), line 1 with what happened and to what and the age at the right end, line 2 with the
 /// target's chip, the author's avatar and name (and when a snoozed row wakes), and under it GitLab's text, like the comment
@@ -71,6 +90,8 @@ struct InboxRowContent: View {
                 }
                 .buttonStyle(.borderless)
                 .help(state == .done ? "Not done after all" : "Done")
+            } else if row.entry.kind == .coffeeBreak, AppImages.coffee != nil {
+                CoffeeButlerIcon(size: 18)
             } else {
                 Image(systemName: row.symbol)
                     .foregroundStyle(prominence == .increased ? AnyShapeStyle(.secondary) : AnyShapeStyle(row.tint.color))
@@ -207,6 +228,13 @@ private struct InboxRowButtons: View {
     let state: InboxFilter.State
     let actions: InboxActions
     let pickDate: @MainActor ([InboxEntry]) -> Void
+    @Environment(SettingsStore.self) private var settings: SettingsStore?
+
+    /// Done's tooltip, with the key the user's shortcut map gives it (KEYS-01); none when the shortcut was cleared.
+    private var doneHelp: String {
+        let shortcut = (settings?.preferences.shortcuts ?? ShortcutMap()).shortcut(for: "inboxDone")
+        return shortcut.map { "Done (\($0.display))" } ?? "Done"
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -257,7 +285,7 @@ private struct InboxRowButtons: View {
                 .accessibilityLabel("Done")
         }
         .buttonStyle(.borderless)
-        .help("Done (⌘⌫)")
+        .help(doneHelp)
     }
 }
 

@@ -1,7 +1,7 @@
 import MenubarCore
 import SwiftUI
 
-/// Settings → Claude's sections (AI-01): one switch, off by default; with it on, the model and effort, your Claude Code
+/// Settings → Claude's sections (AI-01): one switch, on by default; with it on, the model and effort, your Claude Code
 /// setup and the morning digest. Hidden entirely while `claude` isn't installed, and in the gallery.
 struct AISettingsSection: View {
     @Environment(AppModel.self) private var model: AppModel?
@@ -17,6 +17,7 @@ struct AISettingsSection: View {
                 }
                 .settingsSwitch()
                 .settingsAnchor(.claude)
+                claudeVersion(ai)
             } header: {
                 SettingsSectionHeader("Claude")
                     .task(id: ai.settings.useMySetup && ai.settings.isEnabled) {
@@ -27,7 +28,7 @@ struct AISettingsSection: View {
             } footer: {
                 SettingsFooter(
                     "It runs your own Claude Code login (claude). Nothing is sent without a click, except the morning "
-                        + "digest you turn on; the first answer of each kind shows what it sends, with tokens, cookies and "
+                        + "digest, which is on until you turn it off; the first answer of each kind shows what it sends, with tokens, cookies and "
                         + "keys removed first.")
             }
             if ai.settings.isEnabled {
@@ -88,6 +89,30 @@ struct AISettingsSection: View {
                 } header: {
                     SettingsSectionHeader("Morning Digest")
                 }
+            }
+        }
+    }
+
+    /// The version of the `claude` found, and a note when the last run found it too old for the models: the app asks for the
+    /// models by the CLI's aliases, so a Claude Code that is up to date always has the newest one.
+    @ViewBuilder private func claudeVersion(_ ai: AIStore) -> some View {
+        if let version = ai.claudeVersion {
+            LabeledContent {
+                Text(verbatim: version)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } label: {
+                SettingsRowLabel("Claude Code", "The models are the newest this version knows; claude update gets newer ones")
+            }
+        }
+        if let outdated = ai.outdatedClaude {
+            StatusLine(
+                .problem,
+                outdated.required.map { "This Claude Code is too old for the model: it asks for \($0) or newer." }
+                    ?? "This Claude Code is too old for the model."
+            ) {
+                ClaudeUpdateCommandButton()
             }
         }
     }

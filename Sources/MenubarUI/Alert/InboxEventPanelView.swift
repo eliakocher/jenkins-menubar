@@ -8,6 +8,10 @@ import SwiftUI
 @Observable
 public final class InboxEventPanelModel {
     public var pages = InboxEventPages()
+    /// why GitLab refused a Done, by event id: the page stays and says it
+    public var refusals: [String: Problem] = [:]
+    /// the events whose Done is waiting for GitLab's answer, so a second click doesn't send it twice
+    public var busy: Set<String> = []
 
     public init() {}
 }
@@ -38,7 +42,7 @@ public struct InboxEventPanelView: View {
 
     public var body: some View {
         if let event = model.pages.current {
-            InboxEventView(event: event, pager: pager) { action in
+            InboxEventView(event: event, pager: pager, refusal: model.refusals[event.id], isBusy: model.busy.contains(event.id)) { action in
                 perform(action, event)
             }
             .id(event.id)
@@ -61,16 +65,25 @@ public struct InboxEventPanelView: View {
 
 /// One event in the big panel, in the look of the failed-build alert: a symbol where the butler is, the reference chip, the
 /// headline, the target's title, a line, and the buttons: Show, Done, Snooze 1 Hour and Dismiss. The coffee break
-/// wears a ☕ on a warm disc and has no Show and no Snooze (its Done says "On My Way ☕"). 320 pt wide; the height fits the content.
+/// wears the butler sipping a coffee (a ☕ on a warm disc without the art) and has no Show and no Snooze (its Done says "On My Way ☕"). 320 pt wide; the height fits the content.
 public struct InboxEventView: View {
     let event: InboxEvent
     let pager: AlertPager?
+    /// why GitLab refused the Done, shown above the buttons
+    let refusal: Problem?
+    /// whether a Done is waiting for GitLab's answer
+    let isBusy: Bool
     let perform: (InboxDeliveryAction) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
-    public init(event: InboxEvent, pager: AlertPager? = nil, perform: @escaping (InboxDeliveryAction) -> Void) {
+    public init(
+        event: InboxEvent, pager: AlertPager? = nil, refusal: Problem? = nil, isBusy: Bool = false,
+        perform: @escaping (InboxDeliveryAction) -> Void
+    ) {
         self.event = event
         self.pager = pager
+        self.refusal = refusal
+        self.isBusy = isBusy
         self.perform = perform
     }
 
@@ -108,6 +121,10 @@ public struct InboxEventView: View {
                     .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
+            }
+            if let refusal {
+                RefusalNote(text: refusal.message)
+                    .padding(.top, 12)
             }
             VStack(spacing: 8) {
                 if canShow {
@@ -156,6 +173,7 @@ public struct InboxEventView: View {
         .controlSize(.large)
         .buttonSizing(.flexible)
         .frame(maxWidth: .infinity)
+        .disabled(isBusy && action == .done)
         .background {
             if !isDefault {
                 plainFill
@@ -199,13 +217,47 @@ public struct InboxEventView: View {
     }
 }
 
-/// The picture at the top of an event's page: the kind's symbol on a disc in its color, or the coffee break's ☕ on a warm
-/// glowing disc, where the build alert has its butler.
+/// A Done that GitLab refused, on the page: a tinted note with the reason, above the buttons, which stay for another try.
+private struct RefusalNote: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(MergeRequestStatus.Color.orange.swiftUI)
+            Text(verbatim: text)
+                .font(.callout)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            MergeRequestStatus.Color.orange.swiftUI.opacity(0.16), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The picture at the top of an event's page: the kind's symbol on a disc in its color, or the coffee break's butler
+/// (``AppImages/coffee``; a ☕ on a warm glowing disc without the file), where the build alert has its butler.
 struct InboxEventSymbol: View {
     let look: InboxEventView.Look
     static let size: CGFloat = 96
 
     var body: some View {
+        if look.emoji != nil, let butler = AppImages.coffee {
+            // The coffee break's own butler, at the size of the build alert's, with no disc.
+            Image(nsImage: butler)
+                .resizable()
+                .frame(width: Self.size, height: Self.size)
+                .accessibilityHidden(true)
+        } else {
+            disc
+        }
+    }
+
+    @ViewBuilder private var disc: some View {
         let color = look.emoji == nil ? look.tint.color : Color(red: 0.93, green: 0.55, blue: 0.22)
         ZStack {
             Circle()

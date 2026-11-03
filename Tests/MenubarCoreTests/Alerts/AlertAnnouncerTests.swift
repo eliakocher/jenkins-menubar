@@ -47,6 +47,7 @@ struct AlertAnnouncerTests {
         arguments: [
             (Preferences.AlertStyle.window, true, false), (.banner, true, true), (.banner, false, false),
         ])
+    // ALERT-10 has its own test below for Inbox Only.
     func style(style: Preferences.AlertStyle, notificationsAllowed: Bool, banner: Bool) async throws {
         let setup = try Setup(notificationsAllowed: notificationsAllowed)
         let alert = try Self.finished(.success)
@@ -55,6 +56,17 @@ struct AlertAnnouncerTests {
 
         #expect(await setup.effects.banners == (banner ? [alert] : []))
         #expect(await setup.effects.alertWindows == (banner ? [] : [alert]))
+    }
+
+    @Test("ALERT-10 Inbox Only shows nothing and plays nothing, but the build is logged")
+    func inboxOnlyIsSilent() async throws {
+        let setup = try Setup()
+
+        await setup.announcer.announce([try Self.finished(.failure)], preferences: Self.preferences(.inboxOnly))
+
+        #expect(await setup.effects.calls.isEmpty)
+        let messages = await setup.log.entries().map(\.message)
+        #expect(messages.contains { $0.contains("(inbox only)") })
     }
 
     // MARK: ALERT-09

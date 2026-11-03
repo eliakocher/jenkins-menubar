@@ -95,17 +95,18 @@ extension DetailHeader where Aside == EmptyView {
 /// aside under the main part. An aside of no height leaves the main part the full width.
 ///
 /// Side by side, the aside takes the narrowest of its widths that keeps it no taller than the main part: a third of the
-/// width, then the widths of a facts panel in two and three columns (``DetailFactColumns``), as long as the main part
-/// keeps `minMainWidth`; when none does, the one that makes the header the least tall.
+/// width, then the width of a facts panel in two columns (``DetailFactColumns``, the most), as long as the main part
+/// keeps `minMainWidth`, so the title, people and actions get their room first; when none does, the one that makes the
+/// header the least tall.
 struct DetailHeaderColumns: Layout {
     /// the least width for two columns
     var minWideWidth: CGFloat = 760
     /// the aside's first width when side by side: a third of the width, within these bounds
     var asideWidths: ClosedRange<CGFloat> = 300...400
     /// the aside's wider widths to try, in order
-    var widerAsideWidths: [CGFloat] = [DetailFactColumns.panelWidth(columns: 2), DetailFactColumns.panelWidth(columns: 3)]
-    /// the least width of the main part next to the aside
-    var minMainWidth: CGFloat = 340
+    var widerAsideWidths: [CGFloat] = [DetailFactColumns.panelWidth(columns: 2)]
+    /// the least width of the main part next to the aside: a normal title stays on one line
+    var minMainWidth: CGFloat = 480
     /// between the columns
     var gap: CGFloat = 32
     /// between the main part and the aside, stacked

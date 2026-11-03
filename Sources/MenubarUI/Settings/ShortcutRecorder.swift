@@ -9,6 +9,8 @@ import SwiftUI
 /// a local event monitor, which sees only this app's own key events, so it needs no permission.
 public struct ShortcutRecorder: View {
     @Binding private var shortcut: HotkeyShortcut?
+    private let name: String
+    private let reservesClearButton: Bool
     @ViewState private var isRecording: Bool
     /// the modifiers held now, shown live while recording
     @ViewState private var held: HotkeyShortcut.Modifiers = []
@@ -19,8 +21,16 @@ public struct ShortcutRecorder: View {
     /// - Parameters:
     ///   - shortcut: the recorded shortcut; nil for none
     ///   - isRecording: whether it looks as if it records, for the gallery; it listens to nothing until it is clicked
-    public init(shortcut: Binding<HotkeyShortcut?>, isRecording: Bool = false) {
+    ///   - name: what the shortcut is for, which VoiceOver reads
+    ///   - reservesClearButton: whether the place of the clear button stays free while there is none, so a list of recorders
+    ///     lines up
+    public init(
+        shortcut: Binding<HotkeyShortcut?>, isRecording: Bool = false, name: String = "Open the window with",
+        reservesClearButton: Bool = false
+    ) {
         _shortcut = shortcut
+        self.name = name
+        self.reservesClearButton = reservesClearButton
         _isRecording = ViewState(initialValue: isRecording)
     }
 
@@ -32,7 +42,7 @@ public struct ShortcutRecorder: View {
                 field
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Open the window with")
+            .accessibilityLabel(name)
             .accessibilityValue(shortcut?.display ?? "No shortcut")
             .accessibilityHint(isRecording ? "Press the new shortcut, or Escape to cancel" : "Starts recording a shortcut")
             if shortcut != nil, !isRecording {
@@ -44,7 +54,11 @@ public struct ShortcutRecorder: View {
                 }
                 .buttonStyle(.plain)
                 .help("Clear Shortcut")
-                .accessibilityLabel("Clear Shortcut")
+                .accessibilityLabel("Clear \(name) Shortcut")
+            } else if reservesClearButton {
+                Image(systemName: "xmark.circle.fill")
+                    .hidden()
+                    .accessibilityHidden(true)
             }
         }
         .onDisappear { stop() }

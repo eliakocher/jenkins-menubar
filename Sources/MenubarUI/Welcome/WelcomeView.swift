@@ -51,14 +51,15 @@ public struct WelcomeView: View {
         WelcomeContent(data: flow.data(settings: settings), input: input, actions: contentActions)
             .onAppear {
                 flow.appeared(
-                    settings: settings, actions: actions, finishedBefore: model.preferencesStore.welcomeCompleted)
+                    settings: settings, actions: actions, finishedBefore: model.preferencesStore.welcomeCompleted,
+                    ai: model.ai)
             }
             .onChange(of: flow.page) { old, _ in
                 flow.pageChanged(from: old, settings: settings, actions: actions)
             }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 // System Settings may have approved the login item or changed the notifications meanwhile.
-                flow.becameActive(settings: settings, actions: actions)
+                flow.becameActive(settings: settings, actions: actions, ai: model.ai)
             }
             .onDisappear {
                 flow.disappeared(settings: settings)
@@ -72,7 +73,8 @@ public struct WelcomeView: View {
             WelcomeInput(
                 team: settings.teamDraft, jenkinsUser: flow.jenkinsUser, jenkinsToken: flow.jenkinsToken,
                 gitLabToken: flow.gitLabToken, showInMenuBar: settings.preferences.showInMenuBar,
-                openAtLogin: flow.openAtLogin)
+                claude: model.ai.settings, coffee: settings.preferences.inboxNotifications.coffeeBreak,
+                coffeeMinutes: settings.preferences.inboxNotifications.coffeeMinutes, openAtLogin: flow.openAtLogin)
         } set: { new in
             if new.team != settings.teamDraft {
                 flow.typing(TeamValues.Key.allCases.filter { new.team[$0] != settings.teamDraft[$0] })
@@ -85,6 +87,7 @@ public struct WelcomeView: View {
             if new.showInMenuBar != settings.preferences.showInMenuBar {
                 settings.preferences.showInMenuBar = new.showInMenuBar
             }
+            flow.applyClaude(new, ai: model.ai, settings: settings)
         }
     }
 
@@ -93,10 +96,11 @@ public struct WelcomeView: View {
         let flow = flow
         let actions = actions
         let dismiss = dismiss
+        let ai = model.ai
         return WelcomeContentActions(
             next: {
                 flow.perform {
-                    if await flow.next(settings: settings, actions: actions) {
+                    if await flow.next(settings: settings, actions: actions, ai: ai) {
                         dismiss()
                     }
                 }
@@ -127,6 +131,10 @@ final class WelcomeFlow {
     var openAtLogin = true
     /// what macOS answered; nil until it is read
     var notifications: NotificationPermission?
+    /// whether `claude` is installed, once looked for: the Claude step shows only when it was found
+    var claude = ClaudeAvailability.unknown
+    /// whether the Claude step is one of the pages
+    var offersClaude: Bool { claude == .found }
     /// what Import Team File… did, until the next edit or import
     var teamFileResult: WelcomeLine?
     /// whether the TEAM-03 row is a problem: people tried to move on, or left a required field empty; a note before
@@ -178,6 +186,7 @@ final class WelcomeFlow {
                 errors: tokenErrors, isChecking: settings.isCheckingAccounts, results: settings.accounts),
             notifications: notifications,
             preferences: settings.preferences,
+            claude: WelcomeData.Claude(isFound: offersClaude, isMissing: claude == .missing),
             login: WelcomeData.Login(status: settings.openAtLogin, error: settings.openAtLoginError),
             summary: WelcomeSummary.make(
                 report: settings.importReport, storedTokens: settings.storedTokens,
@@ -194,7 +203,7 @@ final class WelcomeFlow {
     ///   - actions: what the app does for the flow
     ///   - finishedBefore: whether the flow was finished or closed once, so it comes back for a missing team value:
     ///     open at login then starts as the login item is, not against an earlier choice
-    func appeared(settings: SettingsStore, actions: WelcomeActions, finishedBefore: Bool) {
+    func appeared(settings: SettingsStore, actions: WelcomeActions, finishedBefore: Bool, ai: AIStore? = nil) {
         if jenkinsUser.isEmpty {
             jenkinsUser = settings.jenkinsUser
         }
@@ -202,13 +211,43 @@ final class WelcomeFlow {
         if finishedBefore {
             openAtLogin = settings.openAtLogin.isOn
         }
+        lookForClaude(ai)
         pageAppeared(settings: settings, actions: actions)
     }
 
-    /// The app became active again, maybe from System Settings: the login item and the permission are read again.
-    func becameActive(settings: SettingsStore, actions: WelcomeActions) {
+    /// Looks for `claude`, which adds the Claude step when it is there.
+    func lookForClaude(_ ai: AIStore?) {
+        guard let ai else { return }
+        claude = ai.availability
+        Task {
+            await ai.detect()
+            claude = ai.availability
+        }
+    }
+
+    /// The app became active again, maybe from System Settings: the login item and the permission are read again, and
+    /// `claude` is looked for again while it wasn't there, as after installing it.
+    func becameActive(settings: SettingsStore, actions: WelcomeActions, ai: AIStore? = nil) {
         settings.refreshOpenAtLogin()
         Task { notifications = await actions.notificationPermission() }
+        if let ai, claude == .missing {
+            Task {
+                await ai.detectAgain()
+                claude = ai.availability
+            }
+        }
+    }
+
+    /// Saves what the Claude step's switches changed, through the Claude settings and the Inbox's routing rules, as
+    /// Settings → Claude and Settings → Notifications do.
+    func applyClaude(_ new: WelcomeInput, ai: AIStore, settings: SettingsStore) {
+        ai.update(new.claude)
+        var rules = settings.preferences.inboxNotifications
+        rules.coffeeBreak = new.coffee
+        rules.coffeeMinutes = new.coffeeMinutes
+        if rules != settings.preferences.inboxNotifications {
+            settings.preferences.inboxNotifications = rules
+        }
     }
 
     /// Accounts tells the settings that the account check shows, which runs it the first time with a token stored
@@ -220,7 +259,7 @@ final class WelcomeFlow {
             Task { await settings.accountsAppeared() }
         case .welcome, .notifications, .done:
             Task { notifications = await actions.notificationPermission() }
-        case .team, .menuBarAndLogin:
+        case .team, .claude, .menuBarAndLogin:
             break
         }
     }
@@ -284,7 +323,7 @@ final class WelcomeFlow {
     /// Goes to the next page once the page's step is done, or finishes the flow.
     ///
     /// - Returns: `true` when the flow is finished and the window closes
-    func next(settings: SettingsStore, actions: WelcomeActions) async -> Bool {
+    func next(settings: SettingsStore, actions: WelcomeActions, ai: AIStore? = nil) async -> Bool {
         switch page {
         case .welcome:
             break
@@ -314,6 +353,9 @@ final class WelcomeFlow {
                 // The system's prompt doesn't hold up the flow; the answer arrives while the next page shows.
                 Task { notifications = await actions.requestNotificationPermission() }
             }
+        case .claude:
+            // What the step showed is kept as chosen, defaults included.
+            ai?.persistSettings()
         case .menuBarAndLogin:
             if settings.openAtLogin != .notFound {
                 await settings.setOpenAtLogin(openAtLogin)
@@ -327,14 +369,14 @@ final class WelcomeFlow {
             settings.completeWelcomeFlow()
             return true
         }
-        if let next = page.next {
+        if let next = page.next(offersClaude: offersClaude) {
             page = next
         }
         return false
     }
 
     func back() {
-        if let previous = page.previous {
+        if let previous = page.previous(offersClaude: offersClaude) {
             page = previous
         }
     }

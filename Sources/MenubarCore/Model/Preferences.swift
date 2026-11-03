@@ -40,6 +40,11 @@ public struct Preferences: Codable, Hashable, Sendable {
     public var inboxNotifications: InboxNotificationRules
     /// what the status item and the menu pane show, in which order (APP-11); kept as JSON text in one key
     public var menuBarLayout: MenuBarLayout
+    /// whether the app's windows and panels follow macOS's light or dark appearance, or always draw light or dark;
+    /// never the status item, which follows the menu bar itself (Settings → Appearance)
+    public var appearance: Appearance
+    /// the shortcuts the user changed, by command id; every other command has its default (KEYS-01); kept as JSON text in one key
+    public var shortcuts: ShortcutMap
 
     public init(
         checkIntervalSeconds: Int = 60,
@@ -58,9 +63,13 @@ public struct Preferences: Codable, Hashable, Sendable {
         easterEggs: Bool = true,
         slotAlerts: Bool = false,
         inboxNotifications: InboxNotificationRules = InboxNotificationRules(),
-        menuBarLayout: MenuBarLayout = MenuBarLayout()
+        menuBarLayout: MenuBarLayout = MenuBarLayout(),
+        appearance: Appearance = .system,
+        shortcuts: ShortcutMap = ShortcutMap()
     ) {
+        self.shortcuts = shortcuts
         self.menuBarLayout = menuBarLayout
+        self.appearance = appearance
         self.checkIntervalSeconds = checkIntervalSeconds
         self.hideSuccessfulAfter = hideSuccessfulAfter
         self.hideFailedAfter = hideFailedAfter
@@ -82,7 +91,7 @@ public struct Preferences: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds, alertStyle
         case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
-        case globalShortcut, easterEggs, slotAlerts, inboxNotifications, menuBarLayout
+        case globalShortcut, easterEggs, slotAlerts, inboxNotifications, menuBarLayout, appearance, shortcuts
     }
 
     // A value encoded before a field existed decodes with that field's default. One encoded with the dropped
@@ -112,7 +121,9 @@ public struct Preferences: Codable, Hashable, Sendable {
             inboxNotifications: (try? container.decodeIfPresent(InboxNotificationRules.self, forKey: .inboxNotifications))
                 ?? defaults.inboxNotifications,
             menuBarLayout: (try? container.decodeIfPresent(MenuBarLayout.self, forKey: .menuBarLayout))
-                ?? defaults.menuBarLayout)
+                ?? defaults.menuBarLayout,
+            appearance: (try? container.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? defaults.appearance,
+            shortcuts: (try? container.decodeIfPresent(ShortcutMap.self, forKey: .shortcuts)) ?? defaults.shortcuts)
     }
 
     /// 30 s, 1 min (default), 2, 5 or 10 min
@@ -166,10 +177,22 @@ public struct Preferences: Codable, Hashable, Sendable {
         }
     }
 
-    /// The alert window (default) or a banner, never both (ALERT-03).
+    /// How a finished build announces itself: the alert window (default), a banner, or nothing beyond the Inbox, never
+    /// two of them (ALERT-03, ALERT-10). It is the one "Failed Builds" setting of Settings → Notifications, shown there as
+    /// Big Panel, Desktop Notification or Inbox Only (``InboxDelivery``); the Inbox's own delivery never adds a second
+    /// pop-up for a failed build.
     public enum AlertStyle: String, Codable, Hashable, Sendable, CaseIterable {
         case window
         case banner
+        /// no sound and no pop-up; the build is an entry of the Inbox, and in Activity
+        case inboxOnly
+    }
+
+    /// How the app looks: like macOS (default), always light, or always dark (Settings → Appearance).
+    public enum Appearance: String, Codable, Hashable, Sendable, CaseIterable {
+        case system
+        case light
+        case dark
     }
 
     /// The status icon's symbols: monochrome (default) or colored (PIPE-05).

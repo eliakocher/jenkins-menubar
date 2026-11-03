@@ -147,15 +147,13 @@ public struct LinkRoutingSwitch {
     }
 }
 
-/// Settings → General's form: how MegaMonitor starts and shows, the window's shortcut, the links, and the easter eggs.
+/// Settings → General's form: how MegaMonitor starts and shows, the links, and the easter eggs.
 /// It draws only what it is given.
 public struct GeneralSettingsForm: View {
     @Binding private var preferences: Preferences
     private let openAtLogin: Binding<Bool>
     private let loginStatus: LoginItemStatus
     private let loginError: String?
-    private let hotkey: HotkeyStatus
-    private let isRecordingShortcut: Bool
     private let actions: GeneralSettingsActions
     private let linkRouting: LinkRoutingSwitch?
 
@@ -164,21 +162,17 @@ public struct GeneralSettingsForm: View {
     ///   - openAtLogin: the switch of the login item
     ///   - loginStatus: the login item's status
     ///   - loginError: why turning it on or off was refused
-    ///   - hotkey: whether the global hotkey works, or why it doesn't (APP-08)
-    ///   - isRecordingShortcut: whether the shortcut recorder looks as if it records, for the gallery
     ///   - actions: what the buttons do
     ///   - linkRouting: the link router's switch; `nil` leaves it out
     public init(
         preferences: Binding<Preferences>, openAtLogin: Binding<Bool>, loginStatus: LoginItemStatus, loginError: String?,
-        hotkey: HotkeyStatus = .off, isRecordingShortcut: Bool = false, actions: GeneralSettingsActions,
+        actions: GeneralSettingsActions,
         linkRouting: LinkRoutingSwitch? = nil
     ) {
         _preferences = preferences
         self.openAtLogin = openAtLogin
         self.loginStatus = loginStatus
         self.loginError = loginError
-        self.hotkey = hotkey
-        self.isRecordingShortcut = isRecordingShortcut
         self.actions = actions
         self.linkRouting = linkRouting
     }
@@ -195,20 +189,6 @@ public struct GeneralSettingsForm: View {
                 SettingsSectionHeader("Startup")
             } footer: {
                 SettingsFooter("The menu bar item and its menu have a pane of their own: Menu Bar.")
-            }
-            Section {
-                LabeledContent {
-                    ShortcutRecorder(shortcut: $preferences.globalShortcut, isRecording: isRecordingShortcut)
-                } label: {
-                    SettingsRowLabel(
-                        "Open the window with", "From any app; press it again to hide the window")
-                }
-                .settingsAnchor(.shortcut)
-                if let problem = hotkey.problem {
-                    StatusLine(.problem, problem)
-                }
-            } header: {
-                SettingsSectionHeader("Keyboard")
             }
             Section {
                 if let linkRouting {
@@ -288,25 +268,11 @@ public struct NotificationsSettingsForm: View {
         Form {
             SettingsPaneHeader(pane: .notifications)
             Section {
-                LabeledContent {
-                    SwiftUI.Picker("When a build finishes", selection: $preferences.alertStyle) {
-                        ForEach(Preferences.AlertStyle.allCases, id: \.self) { style in
-                            Text(SettingsOptionTitles.alertStyle(style)).tag(style)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
-                } label: {
-                    SettingsRowLabel(
-                        "When a build finishes",
-                        "The window stays until you close it; a banner goes away by itself")
-                }
-                .settingsAnchor(.buildAlerts)
                 Toggle(isOn: $preferences.stageAlerts) {
                     SettingsRowLabel("Banner when a stage fails", "Before the build has finished")
                 }
                 .settingsSwitch()
+                .settingsAnchor(.buildAlerts)
                 if let notification {
                     StatusLine(notification.kind, notification.text) {
                         Button(notification.buttonTitle) {
@@ -326,10 +292,16 @@ public struct NotificationsSettingsForm: View {
                     .disabled(!canPreview)
                 } label: {
                     SettingsRowLabel(
-                        "Preview", canPreview ? nil : "Needs a project first")
+                        "Preview",
+                        !canPreview
+                            ? "Needs a project first"
+                            : preferences.alertStyle == .inboxOnly ? "Failed Builds is Inbox Only, so nothing shows" : nil)
                 }
             } header: {
                 SettingsSectionHeader("Builds")
+            } footer: {
+                SettingsFooter(
+                    "How a finished build announces itself, the alert window or a banner, is the Failed Builds row of Inbox and Delivery below.")
             }
             Section {
                 Toggle(isOn: Binding(get: { policy.mine }, set: { setGroup(.mine, $0) })) {
@@ -358,7 +330,9 @@ public struct NotificationsSettingsForm: View {
             } footer: {
                 SettingsFooter("Quiet builds stay in the lists and the menu bar; only their alerts and banners stop.")
             }
-            InboxNotificationsSection(rules: $preferences.inboxNotifications, permission: inboxPermission, actions: actions)
+            InboxNotificationsSection(
+                rules: $preferences.inboxNotifications, buildAlertStyle: $preferences.alertStyle, permission: inboxPermission,
+                actions: actions)
             Section {
                 Toggle(isOn: $preferences.slotAlerts) {
                     SettingsRowLabel(
@@ -405,10 +379,12 @@ extension ChangesOutline {
     static let foldersOpenKey = "changes.foldersOpen"
 }
 
-/// Settings → Appearance's form: the details' width, the reading size, how code changes and discussions show. The
-/// values are the same `@AppStorage` keys the View menu and the cards change in place, so both stay in step. Never
-/// the colors yet (plan Task 7.10).
+/// Settings → Appearance's form: light, dark or automatic, the details' width, the reading size, how code changes and
+/// discussions show. Apart from the look, the values are the same `@AppStorage` keys the View menu and the cards change
+/// in place, so both stay in step.
 struct AppearanceSettingsForm: View {
+    /// whether the app follows macOS, or draws light or dark; the app applies it (`NSApp.appearance`) when it changes
+    @Binding var appearance: Preferences.Appearance
     @AppStorage(MarkdownReadingSize.key) private var readingStep = MarkdownReadingSize.defaultStep
     @AppStorage("mergeRequestDiffLayout") private var diffLayout: DiffLayoutChoice = .inline
     @AppStorage(ChangesOutline.foldersOpenKey) private var foldersOpen = false
@@ -418,6 +394,23 @@ struct AppearanceSettingsForm: View {
     var body: some View {
         Form {
             SettingsPaneHeader(pane: .appearance)
+            Section {
+                LabeledContent {
+                    Picker("Appearance", selection: $appearance) {
+                        ForEach(Preferences.Appearance.allCases, id: \.self) { choice in
+                            Text(verbatim: SettingsOptionTitles.appearance(choice)).tag(choice)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                } label: {
+                    SettingsRowLabel("Appearance", "Automatic follows macOS")
+                }
+                .settingsAnchor(.appearance)
+            } footer: {
+                SettingsFooter("The icon in the menu bar always follows the menu bar itself.")
+            }
             Section {
                 ContentWidthRows()
                     .settingsAnchor(.contentWidth)
@@ -510,7 +503,7 @@ struct GeneralPane: View {
             openAtLogin: Binding(
                 get: { settings.openAtLogin.isOn },
                 set: { on in Task { await settings.setOpenAtLogin(on) } }),
-            loginStatus: settings.openAtLogin, loginError: settings.openAtLoginError, hotkey: model.hotkey.status,
+            loginStatus: settings.openAtLogin, loginError: settings.openAtLoginError,
             actions: GeneralSettingsActions.of(settings: settings, model: model, system: system, permission: nil),
             linkRouting: system.linkRouting.map(linkRoutingSwitch))
             .onAppear(perform: refresh)
@@ -563,8 +556,11 @@ struct NotificationsPane: View {
 
 /// Settings → Appearance.
 struct AppearancePane: View {
+    @Environment(SettingsStore.self) private var settings
+
     var body: some View {
-        AppearanceSettingsForm()
+        @Bindable var settings = settings
+        AppearanceSettingsForm(appearance: $settings.preferences.appearance)
     }
 }
 

@@ -20,10 +20,13 @@ struct WelcomeFlowTests {
         let suiteName = "menubar-monitor-tests.\(UUID().uuidString)"
         let loginItem = FakeLoginItem()
         let settings: SettingsStore
+        let model: AppModel
+        let defaults: UserDefaults
 
         init() {
-            let defaults = UserDefaults(suiteName: suiteName)!
-            settings = AppModel(dependencies: .fake(root: root, defaults: defaults, loginItem: loginItem)).settings
+            defaults = UserDefaults(suiteName: suiteName)!
+            model = AppModel(dependencies: .fake(root: root, defaults: defaults, loginItem: loginItem))
+            settings = model.settings
         }
 
         deinit {
@@ -164,6 +167,65 @@ struct WelcomeFlowTests {
         }
         #expect(notifications.requests == (before == .notAsked ? 1 : 0))
         #expect(flow.notifications == (before == .notAsked ? .allowed : before))
+    }
+
+    @Test(
+        "AI-01 the welcome flow shows the Claude step only when claude was found",
+        arguments: [(ClaudeAvailability.found, true), (.missing, false), (.unknown, false)])
+    func claudeStepOnlyWithTheCLI(availability: ClaudeAvailability, shows: Bool) async {
+        let harness = Harness()
+        let flow = WelcomeFlow()
+        flow.claude = availability
+        flow.page = .notifications
+        let app = Notifications(.allowed)
+
+        #expect(WelcomePage.sequence(offersClaude: shows).contains(.claude) == shows)
+        #expect(WelcomePage.sequence(offersClaude: shows).count == (shows ? 7 : 6))
+        #expect(WelcomePage.menuBarAndLogin.stepText(offersClaude: shows) == (shows ? "Step 6 of 7" : "Step 5 of 6"))
+        _ = await flow.next(settings: harness.settings, actions: app.actions, ai: harness.model.ai)
+        #expect(flow.page == (shows ? .claude : .menuBarAndLogin))
+        // Back skips the step the same way; only a missing claude puts the install line on the last page.
+        flow.page = .menuBarAndLogin
+        flow.back()
+        #expect(flow.page == (shows ? .claude : .notifications))
+        #expect(flow.data(settings: harness.settings).claude.isMissing == (availability == .missing))
+    }
+
+    @Test("AI-01 the Claude step saves through the settings: the defaults on Continue, a change at once")
+    func claudeStepSaves() async {
+        let harness = Harness()
+        let ai = harness.model.ai
+        let flow = WelcomeFlow()
+        flow.claude = .found
+        flow.page = .claude
+        // Nothing saved yet: the step shows the defaults, all on, Sonnet.
+        #expect(harness.defaults.data(forKey: AISettings.defaultsKey) == nil)
+        #expect(ai.settings.isEnabled && ai.settings.morningDigest && ai.settings.model == .sonnet)
+        #expect(harness.settings.preferences.inboxNotifications.coffeeBreak)
+
+        // A switch changes the settings and the Inbox's rules at once.
+        var input = WelcomeInput()
+        input.claude = ai.settings
+        input.claude.model = .opus
+        input.claude.morningDigest = false
+        input.claude.digestMinutes = 8 * 60
+        input.coffee = false
+        input.coffeeMinutes = 9 * 60 + 15
+        flow.applyClaude(input, ai: ai, settings: harness.settings)
+        #expect(AISettings.load(from: harness.defaults).model == .opus)
+        #expect(!AISettings.load(from: harness.defaults).morningDigest)
+        #expect(AISettings.load(from: harness.defaults).digestMinutes == 8 * 60)
+        #expect(!harness.settings.preferences.inboxNotifications.coffeeBreak)
+        #expect(harness.settings.preferences.inboxNotifications.coffeeMinutes == 9 * 60 + 15)
+
+        // Continue keeps the defaults of a user who changed nothing, so a later default doesn't move them.
+        let untouched = Harness()
+        let other = WelcomeFlow()
+        other.claude = .found
+        other.page = .claude
+        _ = await other.next(settings: untouched.settings, actions: Notifications(.allowed).actions, ai: untouched.model.ai)
+        #expect(other.page == .menuBarAndLogin)
+        #expect(AISettings.load(from: untouched.defaults) == AISettings())
     }
 
     @Test(

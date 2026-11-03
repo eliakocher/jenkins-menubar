@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// A detail header's aside (``DetailHeader``'s `aside`): the item's facts as lines, a quiet name and its value, on a
-/// faint panel, as an inspector has them; in two or three columns when there is room (``DetailFactColumns``). Each line is a ``DetailFactRow``; a panel without lines is left out by its
+/// faint panel, as an inspector has them; in two columns when there is room (``DetailFactColumns``). Each line is a ``DetailFactRow``; a panel without lines is left out by its
 /// caller, so the header's main part gets the full width.
 struct DetailFactsPanel<Content: View>: View {
     @ViewBuilder var content: Content
@@ -29,8 +29,8 @@ struct DetailFactRow<Value: View>: View {
     let name: String
     @ViewBuilder var value: Value
 
-    /// the names' column
-    static var nameWidth: CGFloat { 96 }
+    /// the names' column: room for two words, like "Prerequisite status", on one line
+    static var nameWidth: CGFloat { 128 }
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -71,17 +71,17 @@ struct DetailFactValue: View {
 }
 
 /// The lines of a ``DetailFactsPanel``: as many columns of at least `minColumnWidth` as the width has room for, up to
-/// three, the lines filling the first column, then the next, so they read down as one list; each column keeps the names
+/// two, the lines filling the first column, then the next, so they read down as one list; each column keeps the names
 /// and the values aligned.
 struct DetailFactColumns: Layout {
     var minColumnWidth: CGFloat = Self.minColumnWidth
     var spacing: CGFloat = 10
     var columnGap: CGFloat = Self.columnGap
 
-    static let minColumnWidth: CGFloat = 240
+    static let minColumnWidth: CGFloat = 280
     static let columnGap: CGFloat = 28
-    /// the most columns, however wide
-    static let maxColumns = 3
+    /// the most columns, however wide: three took the room the title needs and wrapped it (the user, 2026-11-03)
+    static let maxColumns = 2
 
     /// the panel's padding on each side
     static let panelPadding: CGFloat = 14

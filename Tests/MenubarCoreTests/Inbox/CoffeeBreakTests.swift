@@ -203,7 +203,7 @@ struct CoffeeBreakTests {
 
         #expect(line == "Coffee first, merge later.")
         let call = try #require(await fake.calls.first)
-        #expect(call.arguments.starts(with: ["-p", "--output-format", "json", "--model", "claude-haiku-5-5", "--tools", "", "--safe-mode"]))
+        #expect(call.arguments.starts(with: ["-p", "--output-format", "json", "--model", "haiku", "--tools", "", "--safe-mode"]))
         #expect(call.arguments.contains("0.05"))
         #expect(!call.arguments.contains("--allowedTools") && !call.arguments.contains("--add-dir"))
         #expect(call.input?.contains("Today is Monday") == true)
@@ -214,6 +214,7 @@ struct CoffeeBreakTests {
     func noLine() async throws {
         let fake = ScriptedClaude([.text("never")])
         let off = AIStore(defaults: TemporaryDefaults().defaults, runner: fake, resolver: fake.resolver())
+        off.update(AISettings(isEnabled: false))
         #expect(await off.coffeeLine(on: Self.date(2, 8, 59), calendar: Self.utc) == nil)
         #expect(await fake.calls.isEmpty)
 

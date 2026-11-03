@@ -134,7 +134,7 @@ extension GalleryCatalog {
             GalleryEntry(screen: "work-items", state: "detail-typical", size: CGSize(width: 820, height: 1300)) { f in
                 WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 820, height: 1300))
             },
-            // The facts panel in as many columns as keep it no taller than the left part: three at 1400, two at 1000.
+            // The facts panel in as many columns as keep it no taller than the left part: two at 1400, one or two at 1000.
             GalleryEntry(screen: "work-items", state: "detail-many-labels-wide", size: CGSize(width: 1400, height: 640)) { f in
                 WorkItemDetailGalleryView(fixtures: f, sparse: false, size: CGSize(width: 1400, height: 640), manyLabels: true)
             },

@@ -11,6 +11,8 @@ public enum AISubject: Hashable, Sendable {
     case codeChat(String)
     /// a question about a work item, by its full reference (AI-08)
     case workItem(String)
+    /// the inline chat about a build, whatever its result; apart from ``build(_:)``, which holds "Why Did It Fail?"
+    case buildChat(BuildID)
 }
 
 /// An answer or a failure that landed while its subject's card wasn't on screen (``AIStore/onAnswerLanded``).
@@ -59,7 +61,7 @@ public struct AIAnswer: Hashable, Sendable {
     /// the digest's cards: the app's items with Claude's priorities (AI-04); `nil` when Claude's answer wasn't the
     /// digest's JSON, which shows ``text`` as Markdown instead
     public var digest: DigestReport?
-    /// the model that answered, like `claude-opus-5-5`
+    /// the model that answered as `claude` reports it, like `claude-opus-5-5`; the alias when it reported none
     public var model: String
     /// what was sent
     public var prompt: ClaudePrompt
@@ -80,7 +82,7 @@ public struct AIAnswer: Hashable, Sendable {
 
     /// the model that answered, for the card: "Opus 5.5", or the name as reported when it is none of the app's
     public var modelName: String {
-        ClaudeModel(rawValue: model)?.shortName ?? model
+        ClaudeModel.displayName(ofModel: model)
     }
 }
 
@@ -103,8 +105,9 @@ public enum AIAnswerState: Hashable, Sendable {
 /// digest, and "Continue in Claude Code", through the developer's own Claude Code (`claude`).
 ///
 /// The rules it keeps:
-/// - off by default, one switch in Settings → General; hidden entirely while `claude` isn't installed;
-/// - nothing is sent without a click, except the morning digest the user turns on; the first send of each use case shows
+/// - on by default, one switch in Settings → Claude; hidden entirely while `claude` isn't installed;
+/// - nothing is sent without a click, except the morning digest (on by default, one switch) and the coffee break's line,
+///   which carries no data of the user's; the first send of each use case shows
 ///   what it sends and waits for Send;
 /// - everything sent is redacted first (``SecretRedactor``): the app's tokens, cookies, keys and passwords never go out;
 /// - the answer is marked as Claude's; a failure stays plainly a failure;
@@ -116,6 +119,11 @@ public final class AIStore {
 
     public private(set) var settings: AISettings
     public private(set) var availability: ClaudeAvailability = .unknown
+    /// the version of the `claude` found ("2.1.317"), read once with `claude --version` when it is looked for
+    public private(set) var claudeVersion: String?
+    /// set when the last run found the `claude` too old for the models' aliases, with the version it asked for; cleared by
+    /// the next run that works or by `claude` being looked for again. Settings → Claude says so.
+    public internal(set) var outdatedClaude: OutdatedClaude?
     /// whether a digest was written, in the morning or by a click, that the Digest section hasn't shown yet: the dot on the
     /// sidebar's row. One Bool, so the sidebar reads nothing else of the store.
     public internal(set) var hasUnreadDigest = false
@@ -166,7 +174,7 @@ public final class AIStore {
     @ObservationIgnored private let log: ActivityLog?
     @ObservationIgnored private let clock: any Clock<Duration>
     @ObservationIgnored let now: @Sendable () -> Date
-    @ObservationIgnored private let jenkins: PipelinesServices?
+    @ObservationIgnored let jenkins: PipelinesServices?
     @ObservationIgnored let gitLab: GitLabServices?
     /// runs `git` to read a checkout's commit for a question about code
     @ObservationIgnored let runner: any ProcessRunner
@@ -248,6 +256,8 @@ public final class AIStore {
             let engine = engine
             detecting = Task { [weak self] in
                 let found = await engine.locate() != nil
+                let version = found ? await engine.version() : nil
+                self?.claudeVersion = version
                 self?.availability = found ? .found : .missing
             }
         }
@@ -257,8 +267,15 @@ public final class AIStore {
     /// Looks for `claude` again, as after installing it.
     public func detectAgain() async {
         await engine.forgetLocation()
+        outdatedClaude = nil
         detecting = nil
         await detect()
+    }
+
+    /// Keeps the settings as they are now, defaults included, so a later change of a default doesn't move a choice the
+    /// user has seen: the welcome flow's Claude step does it on Continue.
+    public func persistSettings() {
+        settings.save(to: defaults)
     }
 
     /// Saves changed settings. Logs what changed: on or off, the model, the effort, the digest; never anything sent.
@@ -602,6 +619,10 @@ public final class AIStore {
         reviewModels[subject] = nil
         states[subject] = .running(prompt)
         let model = chosen ?? settings.model
+        if outdatedClaude != nil {
+            // The user may have run `claude update` since.
+            claudeVersion = await engine.version(refresh: true)
+        }
         do {
             let setup = await setupForChat(of: prompt)
             let run = try await engine.run(
@@ -610,6 +631,7 @@ public final class AIStore {
             // A new first answer starts the conversation anew.
             clearConversation(of: subject)
             count(run, prompt: prompt, model: model)
+            outdatedClaude = nil
             guard let answer = Self.answer(of: run, prompt: prompt, model: model, at: now()).flatMap({
                 prompt.useCase == .digest ? completeDigest($0, run: run) : $0
             }) else {
@@ -626,9 +648,12 @@ public final class AIStore {
             if let run = error.run {
                 count(run, prompt: prompt, model: model)
             } else {
-                let status = if case .failed(let status, _) = error { "exit \(status)" } else { "no answer" }
+                let status =
+                    if case .failed(let status, _) = error { "exit \(status)" }
+                    else if case .outdated = error { "claude is too old for the model" } else { "no answer" }
                 record("Claude: \(prompt.useCase.logName) failed, \(status)", level: .warning, source: .app)
             }
+            noteOutdated(error)
             states[subject] = .failed(error.message, prompt)
             landed(subject, prompt.useCase, failure: error.message)
         }
@@ -650,7 +675,7 @@ public final class AIStore {
             let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines)
             answer.text = text?.isEmpty == false ? text : nil
             guard answer.text != nil || run.structured != nil else { return nil }
-        case .openInClaudeCode, .askAboutCode, .askAboutItem, .coffeeBreak:
+        case .openInClaudeCode, .askAboutCode, .askAboutItem, .buildChat, .coffeeBreak:
             guard let text = run.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             answer.text = text
         }
@@ -681,7 +706,7 @@ public final class AIStore {
     }
 
     /// Reads what a failed build tells from Jenkins, with the client of the build's project.
-    private nonisolated static func buildFacts(
+    nonisolated static func buildFacts(
         _ build: Build, failedTests: [FailedTest]?, flakyHints: [FlakyHint], services: PipelinesServices
     ) async throws -> BuildFailureFacts {
         let project = services.team.project(build.project) ?? services.team.primaryProject()

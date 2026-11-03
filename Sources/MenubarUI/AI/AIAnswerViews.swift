@@ -119,7 +119,7 @@ struct AIAnswerRows<Answer: View, Actions: View>: View {
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     if let subject {
-                        AskAgainMenu(subject: subject, answered: ClaudeModel(rawValue: result.model))
+                        AskAgainMenu(subject: subject, answered: ClaudeModel(modelName: result.model))
                     }
                     actions(result)
                     if let subject, let item {
@@ -139,7 +139,10 @@ struct AIAnswerRows<Answer: View, Actions: View>: View {
         case .failed(let message, let sent):
             StatusLine(.problem, message) {
                 HStack(spacing: 10) {
-                    if let subject, sent != nil {
+                    if ClaudeFailure.isOutdated(message: message) {
+                        // Asking again can't help until Claude Code is updated.
+                        ClaudeUpdateCommandButton()
+                    } else if let subject, sent != nil {
                         Button("Try Again") {
                             Task { await model?.ai.askAgain(subject, model: model?.ai.settings.model ?? AISettings().model) }
                         }

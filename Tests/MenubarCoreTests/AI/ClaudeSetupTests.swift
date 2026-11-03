@@ -78,7 +78,7 @@ struct ClaudeSetupTests {
         // The facts are never an argument.
         #expect(!on.joined(separator: " ").contains("price"))
         // The fixed parts stay: the model, the system prompt.
-        #expect(Self.value(after: "--model", in: on) == "claude-sonnet-5-5")
+        #expect(Self.value(after: "--model", in: on) == "sonnet")
         #expect(Self.value(after: "--system-prompt", in: on) == "Instructions")
     }
 
@@ -452,6 +452,10 @@ private actor SetupFake: ProcessRunner {
     func run(_ executable: URL, arguments: [String], input: Data?) async throws -> ProcessOutput {
         if executable.lastPathComponent == "zsh" {
             return ProcessOutput(status: 1)
+        }
+        // `claude --version`, read once when claude is looked for, is not a call the tests count.
+        if arguments == ["--version"] {
+            return ProcessOutput(status: 0, standardOutput: Data("2.1.317 (Claude Code)\n".utf8))
         }
         // The program may be env with claude after its options.
         calls.append(Call(arguments: arguments, input: input.map { String(decoding: $0, as: UTF8.self) }))
