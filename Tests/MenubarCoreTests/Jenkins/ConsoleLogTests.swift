@@ -301,7 +301,7 @@ struct ConsoleLogTests {
 
     @Test("PIPE-12 follows a running build's end, showing its last line once it ends")
     @MainActor
-    func follows() async throws {
+    func follows() async {
         let fake = ConsoleLogFake(stored: Data("[Pipeline] sh\n+ make\nhalf a li".utf8), isRunning: true)
         let clock = TestClock()
         let loader = ConsoleLogLoader(source: fake.source, limits: Self.limits(), clock: clock)
@@ -314,12 +314,12 @@ struct ConsoleLogTests {
         await clock.waitForSleepers()
         await fake.append(Data("ne\nERROR: make failed\nmore".utf8))
         clock.advance(by: .seconds(3))
-        try await Self.waitUntil { Self.text(loader).hasSuffix("ERROR: make failed\n") }
+        // The follower sleeps again only after its read is parsed and published.
+        await clock.waitForSleepers()
         #expect(Self.text(loader) == "[Pipeline] sh\n+ make\nhalf a line\nERROR: make failed\n")
         #expect(loader.errorCount == 1)
 
         // Once the card closes, nothing more is read.
-        await clock.waitForSleepers()
         follow.cancel()
         await follow.value
         let reads = await fake.reads.count
@@ -331,10 +331,10 @@ struct ConsoleLogTests {
         await fake.append(Data(" output\nFinished: FAILURE".utf8))
         await fake.finish()
         clock.advance(by: .seconds(3))
-        try await Self.waitUntil { loader.isFinished }
-        #expect(Self.text(loader) == "[Pipeline] sh\n+ make\nhalf a line\nERROR: make failed\nmore output\nFinished: FAILURE")
-        // A complete log ends the following.
+        // A complete log ends the following, once its last read is published (`isFinished` is set before the parse).
         await again.value
+        #expect(loader.isFinished)
+        #expect(Self.text(loader) == "[Pipeline] sh\n+ make\nhalf a line\nERROR: make failed\nmore output\nFinished: FAILURE")
     }
 
     @Test("PIPE-12 a failed first read shows the reason")
@@ -365,15 +365,5 @@ struct ConsoleLogTests {
         #expect(lines >= 200_000 - 20)
         // About half a second in a debug build (2026-11-03); generous for a busy machine.
         #expect(elapsed < .seconds(5))
-    }
-
-    private static func waitUntil(_ condition: @MainActor () -> Bool) async throws {
-        for _ in 0..<2000 {
-            if await condition() {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(2))
-        }
-        Issue.record("timed out waiting")
     }
 }
