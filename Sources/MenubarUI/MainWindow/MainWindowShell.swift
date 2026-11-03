@@ -162,7 +162,7 @@ struct MainWindowShell<Content: View, Detail: View, SectionToolbar: ToolbarConte
     }
 
     private var sidebar: some View {
-        MainWindowSidebar(section: $section, sections: sections, moveSections: moveSections, badges: model.badges, markers: model.markers, unread: model.unread, opened: opened)
+        MainWindowSidebar(section: $section, sections: sections, moveSections: moveSections, badges: model.badges, markers: model.markers, unread: model.unread, gifts: model.gifts, opened: opened)
             .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
     }
 

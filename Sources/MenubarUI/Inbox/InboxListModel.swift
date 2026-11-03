@@ -25,12 +25,17 @@ struct InboxData: Sendable {
     var teamValuesMissing: Bool
     /// the groups in the user's order (Settings → Notifications)
     var groupOrder: [InboxGroup]
+    /// the update's "What's New" entry while it is pending and not opened: the list shows it as the hero card on top
+    var unreadWhatsNew: InboxEntry?
+    /// the changelog sections that entry opens, for the hero's lines; empty without the changelog in the bundle
+    var whatsNewSections: [ChangelogSection]
 
     init(
         now: Date, pending: [InboxEntry] = [], snoozed: [InboxEntry] = [], done: [InboxEntry] = [], fetchedAt: Date? = nil,
         problem: Problem? = nil, actionProblem: Problem? = nil, hasLoadedDone: Bool = true, isLoadingDone: Bool = false,
         isLoading: Bool = false, appWideProblems: [PanelModel.ProblemItem] = [], teamValuesMissing: Bool = false,
-        groupOrder: [InboxGroup] = InboxGroup.allCases
+        groupOrder: [InboxGroup] = InboxGroup.allCases, unreadWhatsNew: InboxEntry? = nil,
+        whatsNewSections: [ChangelogSection] = []
     ) {
         self.now = now
         self.pending = pending
@@ -45,6 +50,20 @@ struct InboxData: Sendable {
         self.appWideProblems = appWideProblems
         self.teamValuesMissing = teamValuesMissing
         self.groupOrder = groupOrder
+        self.unreadWhatsNew = unreadWhatsNew
+        self.whatsNewSections = whatsNewSections
+    }
+
+    /// the bundled changelog, read once: it can't change while the app runs
+    private static let bundledChangelog = Changelog.bundled()
+
+    /// the sections the "What's New" entry opens, from the bundled changelog
+    @MainActor
+    private static func sections(of entry: InboxEntry?) -> [ChangelogSection] {
+        guard let entry, case .whatsNew(let from, let to)? = entry.appRoute else {
+            return []
+        }
+        return Changelog.sections(bundledChangelog, from: from, to: to)
     }
 
     /// Returns what the store holds now. It reads the lists, so only the Inbox list calls it, not the window's root.
@@ -61,7 +80,8 @@ struct InboxData: Sendable {
             isLoadingDone: store.isLoadingDone, isLoading: store.isLoading,
             appWideProblems: MainWindowProblems.appWide(jenkins: model.projects.problem, update: model.updates.state),
             teamValuesMissing: MainWindowProblems.teamValuesMissing(model.projects.problem),
-            groupOrder: store.rules.groupOrder)
+            groupOrder: store.rules.groupOrder, unreadWhatsNew: store.unreadWhatsNew,
+            whatsNewSections: Self.sections(of: store.unreadWhatsNew))
     }
 }
 
@@ -90,6 +110,9 @@ struct InboxListModel: Sendable {
     var isPlaceholder: Bool
     /// a load that failed with nothing to show: the error with Try Again
     var failure: String?
+    /// the update's "What's New" card, pinned above the groups while the entry is unread (pending, not opened) and nothing
+    /// narrows or searches the list; its entry is then not among the group's rows
+    var hero: Hero?
     /// the groups that have rows after the filter and the search, in the Inbox's order
     var sections: [Section]
     /// the empty state's words; `nil` while rows show
@@ -105,6 +128,28 @@ struct InboxListModel: Sendable {
     var projects: [String]
     /// how many rows Mark All Done would clear: every pending row, whatever the filter, as GitLab's does
     var markAllCount: Int
+
+    /// The hero card: the unread "What's New" entry, with what it tells.
+    struct Hero: Hashable, Sendable {
+        var entry: InboxEntry
+        /// "1.0.5"
+        var version: String
+        /// the first changes of that version, three at most, without Markdown marks
+        var highlights: [String]
+
+        /// how many changes the card lists
+        static let highlightLimit = 3
+
+        /// "What's New in 1.0.5"
+        var title: String { "What's New in \(version)" }
+
+        init(entry: InboxEntry, sections: [ChangelogSection]) {
+            self.entry = entry
+            let prefix = InboxEvent.whatsNewIDPrefix
+            version = entry.id.hasPrefix(prefix) ? String(entry.id.dropFirst(prefix.count)) : (sections.first?.version ?? "")
+            highlights = WhatsNew.highlights(of: sections, limit: Self.highlightLimit)
+        }
+    }
 
     /// One group of rows.
     struct Section: Hashable, Sendable, Identifiable {
@@ -171,6 +216,7 @@ struct InboxListModel: Sendable {
         needsToken = data.problem == .noToken(.gitLab)
         isPlaceholder = false
         failure = nil
+        hero = nil
         sections = []
         empty = nil
         // TEAM-03 shows alone: nothing can be asked without the values.
@@ -209,8 +255,15 @@ struct InboxListModel: Sendable {
             case .snoozed: data.snoozed
             case .done: data.done
             }
+        // The update's card sits on top of the plain pending list; searched or narrowed, it is an ordinary row again.
+        if filter.state == .pending, !filter.isNarrowed, query.isEmpty, let unread = data.unreadWhatsNew,
+            source.contains(where: { $0.id == unread.id })
+        {
+            hero = Hero(entry: unread, sections: data.whatsNewSections)
+        }
         let rows = source
             .filter { (filter.group == nil || $0.group == filter.group) && (filter.project == nil || $0.projectPath == filter.project) }
+            .filter { $0.id != hero?.entry.id }
             .map { InboxRowModel($0, now: data.now, calendar: calendar) }
             .filter { $0.matches(query) }
         // The add field shows while the pending list isn't narrowed or searched, so My To-Dos is there even when empty.
@@ -223,7 +276,7 @@ struct InboxListModel: Sendable {
             }
             return inGroup.isEmpty ? nil : Section(group: group, rows: inGroup)
         }
-        if sections.isEmpty {
+        if sections.isEmpty, hero == nil {
             empty = Self.empty(filter: filter, query: query)
         }
     }
@@ -259,6 +312,7 @@ extension InboxGroup {
     var systemImage: String {
         switch self {
         case .myToDos: "checklist"
+        case .whatsNew: "gift.fill"
         case .coffee: "cup.and.saucer.fill"
         case .claude: "sparkles"
         case .mentions: "at"

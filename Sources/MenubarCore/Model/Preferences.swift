@@ -48,6 +48,8 @@ public struct Preferences: Codable, Hashable, Sendable {
     public var appearance: Appearance
     /// the shortcuts the user changed, by command id; every other command has its default (KEYS-01); kept as JSON text in one key
     public var shortcuts: ShortcutMap
+    /// Settings → Hot Corners: the switch, and per corner the delay and its actions (HOT-01); kept as JSON text in one key
+    public var hotCorners: HotCornerSettings
 
     public init(
         checkIntervalSeconds: Int = 60,
@@ -69,9 +71,11 @@ public struct Preferences: Codable, Hashable, Sendable {
         inboxNotifications: InboxNotificationRules = InboxNotificationRules(),
         menuBarLayout: MenuBarLayout = MenuBarLayout(),
         appearance: Appearance = .system,
-        shortcuts: ShortcutMap = ShortcutMap()
+        shortcuts: ShortcutMap = ShortcutMap(),
+        hotCorners: HotCornerSettings = HotCornerSettings()
     ) {
         self.shortcuts = shortcuts
+        self.hotCorners = hotCorners
         self.menuBarLayout = menuBarLayout
         self.appearance = appearance
         self.checkIntervalSeconds = checkIntervalSeconds
@@ -97,6 +101,7 @@ public struct Preferences: Codable, Hashable, Sendable {
         case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds, alertStyle
         case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
         case globalShortcut, easterEggs, funLevel, slotAlerts, inboxNotifications, menuBarLayout, appearance, shortcuts
+        case hotCorners
     }
 
     // A value encoded before a field existed decodes with that field's default. One encoded with the dropped
@@ -129,7 +134,8 @@ public struct Preferences: Codable, Hashable, Sendable {
             menuBarLayout: (try? container.decodeIfPresent(MenuBarLayout.self, forKey: .menuBarLayout))
                 ?? defaults.menuBarLayout,
             appearance: (try? container.decodeIfPresent(Appearance.self, forKey: .appearance)) ?? defaults.appearance,
-            shortcuts: (try? container.decodeIfPresent(ShortcutMap.self, forKey: .shortcuts)) ?? defaults.shortcuts)
+            shortcuts: (try? container.decodeIfPresent(ShortcutMap.self, forKey: .shortcuts)) ?? defaults.shortcuts,
+            hotCorners: (try? container.decodeIfPresent(HotCornerSettings.self, forKey: .hotCorners)) ?? defaults.hotCorners)
     }
 
     /// 30 s, 1 min (default), 2, 5 or 10 min

@@ -72,6 +72,15 @@ struct InboxListContent: View {
             if model.showsFilterBar {
                 InboxFilterBar(model: model, filter: $filter, isConfirmingMarkAll: $isConfirmingMarkAll)
             }
+            if let hero = model.hero {
+                // The update's card: pinned above the groups until it is opened or dismissed (done).
+                InboxWhatsNewHero(hero: hero, open: { actions.open(hero.entry) }, dismiss: { actions.done([hero.entry]) })
+                    .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 18, trailing: 12))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .selectionDisabled()
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
             if model.isPlaceholder {
                 SectionPlaceholderRows()
             }
@@ -128,6 +137,7 @@ struct InboxListContent: View {
             return .handled
         }
         .animation(.snappy(duration: 0.25), value: model.rows.map(\.id))
+        .animation(.snappy(duration: 0.3), value: model.hero?.entry.id)
         .overlay { emptyState }
         .alert("Mark All as Done?", isPresented: $isConfirmingMarkAll) {
             Button("Mark All Done") { actions.markAllDone() }

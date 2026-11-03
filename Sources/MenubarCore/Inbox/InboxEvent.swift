@@ -32,6 +32,8 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
     case buildFailed
     /// the daily coffee break, at 08:59 by default: a local entry with a line Claude's Haiku wrote
     case coffeeBreak
+    /// the app was updated: a local entry that opens "What's New" with the changelog since the last version seen
+    case whatsNew
     /// one of the user's own to-dos, kept on this Mac (``MyTodo``): only its Badge toggle matters, it is always in the Inbox
     /// and never announced
     case myTodo
@@ -57,6 +59,7 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
         case .claudeAnswered, .digestReady: .claude
         case .buildFailed, .pipelineFailed: .builds
         case .coffeeBreak: .coffee
+        case .whatsNew: .whatsNew
         case .myTodo: .myToDos
         default: .other
         }
@@ -87,6 +90,7 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
         case .digestReady: "Morning Digest"
         case .buildFailed: "Failed Builds"
         case .coffeeBreak: "Coffee Break"
+        case .whatsNew: "What's New"
         case .myTodo: "My To-Dos"
         }
     }
@@ -169,6 +173,7 @@ public struct InboxEvent: Codable, Hashable, Sendable, Identifiable {
         case .digestReady: return "Your digest is ready"
         case .buildFailed: return "\(shortReference ?? "A build") failed"
         case .coffeeBreak: return "Time for a break"
+        case .whatsNew: return "The app was updated"
         case .myTodo: return "To-do"
         }
     }

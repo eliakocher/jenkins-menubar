@@ -96,7 +96,12 @@ struct AIAnswerRows<Answer: View, Actions: View>: View {
             }
             .padding(.vertical, 2)
         case .running:
-            progress
+            if let subject, let turn = model?.ai.hostChats[subject]?.turn, turn.result == nil {
+                // Claude Code works in the card: its tool calls, text and requests as they come (AI-10).
+                HostLiveTurn(turn: turn, subject: subject) { model?.ai.stop(subject) }
+            } else {
+                progress
+            }
         case .answered(let result):
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
@@ -134,6 +139,9 @@ struct AIAnswerRows<Answer: View, Actions: View>: View {
                     SentText(prompt: result.prompt)
                 }
                 .font(.callout)
+                if let raw = result.raw {
+                    RawResponseDisclosure(raw: raw)
+                }
             }
             .padding(.vertical, 2)
         case .failed(let message, let sent):

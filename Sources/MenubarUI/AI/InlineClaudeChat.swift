@@ -45,8 +45,14 @@ struct InlineClaudeChat<Footer: View>: View {
             VStack(alignment: .leading, spacing: 10) {
                 if state == .idle {
                     ClaudeComposer(
-                        placeholder: placeholder, quickPicks: quickPicks, scope: scope, clearScope: clearScope,
-                        focusCount: focusCount, commandsFolder: commandsFolder, isThinking: false, send: ask, stop: { nil },
+                        subject: subject, placeholder: placeholder, quickPicks: quickPicks, scope: scope,
+                        clearScope: clearScope, focusCount: focusCount, commandsFolder: commandsFolder, isThinking: false,
+                        send: { question, picked in
+                            // Claude Code starts in the item's checkout when there is one (AI-10).
+                            model.ai.noteWorkingFolder(workingFolder(in: model), for: subject)
+                            ask(question, picked)
+                        },
+                        stop: { nil },
                         // A stopped question comes back, to be sent again or changed.
                         restore: { model.ai.takeStoppedQuestion(of: subject) })
                 } else if let question = model.ai.openingQuestions[subject] {
@@ -69,6 +75,16 @@ struct InlineClaudeChat<Footer: View>: View {
                     placeholder: followUpPlaceholder, quickPicks: quickPicks, scope: scope, clearScope: clearScope,
                     focusCount: focusCount, commandsFolder: commandsFolder, followUp: followUp))
         }
+    }
+}
+
+extension InlineClaudeChat {
+    /// the checkout of the item's branch, which a hosted chat starts in; the code chat's own readable checkout wins
+    @MainActor
+    fileprivate func workingFolder(in model: AppModel) -> String? {
+        commandsFolder ?? item.checkout(
+            in: model.workspaces.checkouts, readings: model.workspaces.readings,
+            mergeRequests: model.mergeRequests.list?.mergeRequests ?? [])?.path
     }
 }
 

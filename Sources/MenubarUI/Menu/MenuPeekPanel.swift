@@ -53,8 +53,11 @@ final class MenuPeekPanelController {
     }
 
     /// the width of him that shows outside the pane: what is past his cut line
-    static var shownWidth: CGFloat {
-        let art = PeekArt.art(for: .left)
+    static var shownWidth: CGFloat { shownWidth(hat: nil) }
+
+    /// the width of him that shows outside the pane, in the hat's picture when he wears one
+    static func shownWidth(hat: ButlerHat?) -> CGFloat {
+        let art = PeekArt.art(for: .left, hat: hat)
         let frame = ButlerPeekFigure.size(of: art, edge: .left, length: length)
         return (frame.width * (1 - art.hidden)).rounded(.up)
     }
@@ -117,7 +120,8 @@ final class MenuPeekPanelController {
             Self.isSound(pane.frame), let screen = pane.screen ?? NSScreen.main,
             let placement = Self.placement(
                 pane: pane.frame, flyout: flyout?.isVisible == true ? flyout?.frame : nil,
-                visible: screen.visibleFrame, along: CGFloat(playing.along), width: Self.shownWidth),
+                visible: screen.visibleFrame, along: CGFloat(playing.along),
+                width: Self.shownWidth(hat: FunModel.peekHat(catches: fun.catches))),
             Self.isSound(placement.frame)
         else {
             hide()
@@ -232,9 +236,10 @@ struct MenuPeekPanelView: View {
         // Leaning out to the right is the left-edge art, whose cut line is the panel's left edge, and the other way round.
         // He is laid out once, fully out; the slide is an offset, which only moves his drawing, so the animation never
         // asks for layout (and never for the window's constraints).
-        let back = (1 - slide) * MenuPeekPanelController.shownWidth
+        let hat = FunModel.peekHat(catches: fun.catches)
+        let back = (1 - slide) * MenuPeekPanelController.shownWidth(hat: hat)
         ButlerPeekFigure(
-            edge: side == .right ? .left : .right, along: 0.5, slide: 1, hat: FunModel.peekHat(catches: fun.catches),
+            edge: side == .right ? .left : .right, along: 0.5, slide: 1, hat: hat,
             length: MenuPeekPanelController.length)
             .offset(x: side == .right ? -back : back)
             .contentShape(Rectangle())

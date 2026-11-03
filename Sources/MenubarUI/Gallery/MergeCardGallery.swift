@@ -126,7 +126,7 @@ extension GalleryCatalog {
         let narrow: CGFloat = 400
         func card(
             _ state: String, width: CGFloat = wide, height: CGFloat = 520, phase: MergeCardPhase? = nil,
-            activity: MergeActivity = .idle, failed: Bool = false,
+            activity: MergeActivity = .idle, failed: Bool = false, cached: Bool = false,
             pick: @escaping @MainActor (MergeRequestsFixtures) -> MergeState?
         ) -> GalleryEntry {
             GalleryEntry(screen: "merge-requests", state: state, size: CGSize(width: width, height: height)) { f in
@@ -138,7 +138,9 @@ extension GalleryCatalog {
                         project: "group/subgroup/project", iid: 18874, title: "Exports fail when the connection drops",
                         origin: .title)
                 ]
-                let load = pick(m).map { MergeStateLoad(state: $0) } ?? MergeStateLoad(state: nil, failed: failed)
+                // `cached`: the copy kept on disk, while GitLab is asked again (a failed ask stays on the cached copy).
+                let load = pick(m).map { MergeStateLoad(state: $0, failed: failed, isCached: cached, isRefreshing: cached && !failed) }
+                    ?? MergeStateLoad(state: nil, failed: failed)
                 return MergeCard(model: model, details: m.details16, actions: .gallery) { _ in }
                     .padding(20)
                     .frame(width: width, alignment: .top)
@@ -169,6 +171,10 @@ extension GalleryCatalog {
             card("merge-message", height: 720, phase: .editingMessage) { $0.mergeSquash },
             card("merge-failed", activity: shaError) { $0.mergeReady },
             card("merge-done", height: 300, activity: .succeeded(.merge)) { $0.mergeMerged },
+            card("merge-cached", cached: true) { $0.mergeReady },
+            card("merge-cached-narrow", width: narrow, cached: true) { $0.mergeReady },
+            card("merge-cached-pending", cached: true) { $0.mergePending },
+            card("merge-cached-failed", height: 560, failed: true, cached: true) { $0.mergeReady },
             card("merge-loading", height: 260) { _ in nil },
             card("merge-load-failed", height: 200, failed: true) { _ in nil },
         ]

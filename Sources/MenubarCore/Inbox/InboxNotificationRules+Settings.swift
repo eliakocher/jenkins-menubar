@@ -5,7 +5,7 @@ extension InboxNotificationRules {
     /// my merge requests, then the rest.
     public static let settingsKinds: [InboxEventKind] = [
         .assigned, .reviewRequested, .mentioned, .approved, .changesRequested, .reviewed, .merged, .pipelineFailed,
-        .buildFailed, .claudeAnswered, .digestReady, .coffeeBreak, .otherTodo, .myTodo,
+        .buildFailed, .claudeAnswered, .digestReady, .coffeeBreak, .whatsNew, .otherTodo, .myTodo,
     ]
 
     /// Returns whether a kind goes to a route, as the user set it (before quiet hours and the projects filter).

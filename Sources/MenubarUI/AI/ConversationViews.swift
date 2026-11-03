@@ -21,7 +21,7 @@ struct ConversationThread: View {
                     }
                 }
                 ClaudeComposer(
-                    placeholder: chat?.placeholder ?? "Ask a follow-up…",
+                    subject: subject, placeholder: chat?.placeholder ?? "Ask a follow-up…",
                     quickPicks: chat?.quickPicks ?? [], scope: chat?.scope, clearScope: chat?.clearScope ?? {},
                     focusCount: chat?.focusCount ?? 0, commandsFolder: chat?.commandsFolder,
                     isThinking: turns.contains { $0.status == .thinking },
@@ -55,18 +55,23 @@ private struct TurnView: View {
             QuestionBubble(question: turn.question, scope: turn.scope)
             switch turn.status {
             case .thinking:
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Claude is thinking…")
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Button("Stop") { model?.ai.stopFollowUp(of: subject) }
-                        .buttonStyle(.link)
-                        .font(.callout)
+                if let live = model?.ai.hostChats[subject]?.turn, live.result == nil {
+                    // Claude Code works in the card (AI-10).
+                    HostLiveTurn(turn: live, subject: subject) { model?.ai.stopFollowUp(of: subject) }
+                } else {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Claude is thinking…")
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        Button("Stop") { model?.ai.stopFollowUp(of: subject) }
+                            .buttonStyle(.link)
+                            .font(.callout)
+                    }
                 }
             case .answered(let text, _, _):
-                ClaudeReply(text: text, modelName: turn.modelName)
+                ClaudeReply(text: text, modelName: turn.modelName, raw: turn.raw)
             case .failed(let message):
                 StatusLine(.problem, message) {
                     HStack(spacing: 10) {
@@ -92,6 +97,8 @@ private struct TurnView: View {
 private struct ClaudeReply: View {
     let text: String
     let modelName: String?
+    /// what the run reported, for Raw Response
+    var raw: ClaudeRawResponse?
 
     @ViewState private var copied = false
 
@@ -123,6 +130,9 @@ private struct ClaudeReply: View {
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+            if let raw {
+                RawResponseDisclosure(raw: raw)
+            }
         }
     }
 }
@@ -131,6 +141,8 @@ private struct ClaudeReply: View {
 /// placeholder, the model of the next question as a menu with names only, and a send button (⌘↩), which is Stop while
 /// Claude answers; stopping puts the question back in the field.
 struct ClaudeComposer: View {
+    /// the chat, whose Claude Code reports the commands of the "/" list once it runs (AI-10)
+    var subject: AISubject?
     var placeholder = "Ask a follow-up…"
     /// buttons above the box that fill the question: a title and the words
     var quickPicks: [(title: String, question: String)] = []
@@ -290,7 +302,7 @@ struct ClaudeComposer: View {
 
     private var slashMatches: [SlashCommand] {
         guard let query = slashQuery, let model else { return [] }
-        return SlashCommandCatalog.filter(model.ai.slashCommands, query: query)
+        return SlashCommandCatalog.filter(model.ai.commands(for: subject), query: query)
     }
 
     @ViewBuilder private var slashList: some View {

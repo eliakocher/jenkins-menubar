@@ -10,6 +10,8 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
     case appearance
     /// the keyboard shortcuts of the window's commands, and the one that opens MegaMonitor from anywhere (KEYS-01)
     case shortcuts
+    /// what the screen corners do when the pointer rests in them, with a modifier held or without (HOT-01)
+    case hotCorners
     case accounts
     case projects
     /// the team's shared values: labels, the slot schedule, squads, and the team file
@@ -30,7 +32,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
 
     /// The sidebar's groups, in their order, each a short list of panes.
     public static let groups: [[SettingsPane]] = [
-        [.general, .menuBar, .notifications, .appearance, .shortcuts],
+        [.general, .menuBar, .notifications, .appearance, .shortcuts, .hotCorners],
         [.accounts, .projects, .team],
         [.pipelines, .workItems, .workspaces, .claude],
         [.advanced],
@@ -44,6 +46,7 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
         case .notifications: "Notifications"
         case .appearance: "Appearance"
         case .shortcuts: "Shortcuts"
+        case .hotCorners: "Mega Corners"
         case .accounts: "Accounts"
         case .projects: "Projects"
         case .team: "Team"
@@ -72,6 +75,8 @@ public enum SettingsPane: String, CaseIterable, Hashable, Sendable {
              "comments", "sort", "folders", "folded", "layout"]
         case .shortcuts:
             ["keyboard", "shortcut", "hotkey", "keys", "key", "sidebar", "toggle sidebar", "record", "rebind", "command", "menu", "global", "anywhere", "reset"]
+        case .hotCorners:
+            ["mega corner", "mega corners", "hot corner", "hot corners", "corner", "corners", "screen", "pointer", "mouse", "modifier", "mission control", "desktop", "lock screen", "screen saver", "launchpad", "shortcut", "delay", "display sleep"]
         case .accounts:
             ["token", "keychain", "sign in", "signed in", "jenkins", "gitlab", "url", "server", "user", "check"]
         case .projects:

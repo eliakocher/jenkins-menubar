@@ -59,7 +59,7 @@ struct InboxDeliveryTests {
         for kind in InboxEventKind.allCases {
             #expect(rules.delivery(for: kind) == .inboxOnly)
         }
-        #expect(InboxNotificationRules.deliveryKinds.count == 12)
+        #expect(InboxNotificationRules.deliveryKinds.count == 13)
         #expect(!InboxNotificationRules.deliveryKinds.contains(.myTodo))
         // A failed build is announced by the build alerts, once (ALERT-10).
         #expect(!InboxNotificationRules.deliveryKinds.contains(.buildFailed))
@@ -331,9 +331,10 @@ struct InboxDeliveryTests {
 
     @Test("INBOX-15 the default group order puts my to-dos and the coffee first, builds and other last")
     func defaultOrder() {
-        #expect(InboxGroup.allCases == [.myToDos, .coffee, .claude, .mentions, .reviewRequests, .assigned, .builds, .other])
+        #expect(InboxGroup.allCases == [.myToDos, .whatsNew, .coffee, .claude, .mentions, .reviewRequests, .assigned, .builds, .other])
         #expect(InboxNotificationRules().groupOrder == InboxGroup.allCases)
         #expect(InboxEventKind.coffeeBreak.group == .coffee)
+        #expect(InboxEventKind.whatsNew.group == .whatsNew)
         #expect(InboxEventKind.buildFailed.group == .builds)
         #expect(InboxEventKind.pipelineFailed.group == .builds)
         #expect(InboxEventKind.myTodo.group == .myToDos)
@@ -346,11 +347,11 @@ struct InboxDeliveryTests {
         let saved = ["other", "claude", "mentions", "reviewRequests", "assigned", "myToDos"]
         #expect(
             InboxGroupOrder.merged(stored: saved)
-                == [.other, .claude, .mentions, .reviewRequests, .assigned, .builds, .myToDos, .coffee])
+                == [.other, .claude, .mentions, .reviewRequests, .assigned, .builds, .myToDos, .whatsNew, .coffee])
         // Unknown names and repeats are dropped.
         #expect(
             InboxGroupOrder.merged(stored: ["retired", "other", "other", "builds"])
-                == [.myToDos, .coffee, .claude, .mentions, .reviewRequests, .assigned, .other, .builds])
+                == [.myToDos, .whatsNew, .coffee, .claude, .mentions, .reviewRequests, .assigned, .other, .builds])
         #expect(InboxGroupOrder.merged(stored: []) == InboxGroup.allCases)
         // The default order is kept as nothing, so a later group lands in its place.
         #expect(InboxGroupOrder.stored(InboxGroup.allCases).isEmpty)
@@ -360,8 +361,8 @@ struct InboxDeliveryTests {
         rules.setGroupOrder(InboxGroup.allCases)
         #expect(rules.groupOrderNames.isEmpty)
         // A drag, with SwiftUI's offsets: the last group to the top, the first to the end.
-        #expect(InboxGroupOrder.moving(InboxGroup.allCases, from: [7], to: 0).first == .other)
-        #expect(InboxGroupOrder.moving(InboxGroup.allCases, from: [0], to: 8).last == .myToDos)
+        #expect(InboxGroupOrder.moving(InboxGroup.allCases, from: [8], to: 0).first == .other)
+        #expect(InboxGroupOrder.moving(InboxGroup.allCases, from: [0], to: 9).last == .myToDos)
         #expect(InboxGroupOrder.moving([.mentions, .assigned, .other], from: [0], to: 2) == [.assigned, .mentions, .other])
     }
 

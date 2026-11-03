@@ -33,6 +33,21 @@ public final class FunModel {
             }
         }
 
+        /// whether he comes out here only while the surface is focused (its window key and the app active): a window of the
+        /// app, yes; the menu bar pane is a panel that doesn't activate the app, and being open already means it is looked at
+        public var requiresFocus: Bool {
+            self == .window
+        }
+
+        /// whether he may come out of this surface now
+        ///
+        /// - Parameters:
+        ///   - isShown: whether the surface shows
+        ///   - isFocused: whether its window is key and the app active
+        public func showsButler(isShown: Bool, isFocused: Bool) -> Bool {
+            isShown && (isFocused || !requiresFocus)
+        }
+
         /// where along the edge he comes out, as a fraction of its length, for a peek's id: the pane's footer rows are in the
         /// lower part; a window anywhere in the middle
         func along(id: Int) -> Double {
@@ -207,6 +222,10 @@ public final class FunModel {
     public static let paneQueuePatience: TimeInterval = 60
     /// how long after an alert nothing surprising happens
     public static let alertQuiet: TimeInterval = 90
+    /// how long a surface that shows waits before he comes out, so he leans out a moment after the pane or window opens
+    public static let peekSettle: Duration = .milliseconds(400)
+    /// how often he looks again while the moment isn't calm
+    public static let peekRetry: Duration = .seconds(1)
     /// how often the loop looks
     public static let tickInterval: Duration = .seconds(5 * 60)
 
@@ -512,6 +531,46 @@ public final class FunModel {
             await self.leave()
         }
         return armed
+    }
+
+    /// Claims the armed peek for a surface once it shows: waits ``peekSettle`` on the model's clock, then tries, and tries
+    /// again every ``peekRetry`` while the moment isn't calm. Returns when he plays, the peek is gone, the surface isn't shown
+    /// (the surface's view starts this again when it is) or the task is cancelled.
+    ///
+    /// A surface that shows later than the peek was armed (the pane opened after Surprise Me) still gets him about
+    /// ``peekSettle`` after it appeared, not after some long retry.
+    ///
+    /// - Parameters:
+    ///   - isShown: whether the surface shows now
+    ///   - busy: whether the user types or drags, or he can't come out of this surface now
+    ///   - edges: the edges the surface lets him come out of
+    ///   - owner: the surface's own name
+    ///   - surface: the kind of surface
+    public func claimPeekWhenShown(
+        isShown: @MainActor () -> Bool, busy: @MainActor () -> Bool, edges: Set<PeekEdge> = Set(PeekEdge.allCases),
+        owner: String = "surface", surface: PeekSurface? = nil
+    ) async {
+        guard isShown() else {
+            return
+        }
+        try? await clock.sleep(for: Self.peekSettle)
+        while !Task.isCancelled, peek != nil, isShown() {
+            if claimPeek(busy: busy(), edges: edges, owner: owner, surface: surface) != nil {
+                return
+            }
+            try? await clock.sleep(for: Self.peekRetry)
+        }
+    }
+
+    /// Takes him back at once because his surface lost the focus: no grace time, no catch and no count.
+    ///
+    /// - Parameter owner: the surface's own name; he leaves only if he is out of this one
+    public func retreat(owner: String) {
+        guard let playing, playing.owner == owner, playing.phase != .slidingOut else {
+            return
+        }
+        playback?.cancel()
+        playback = Task { [weak self] in await self?.leave() }
     }
 
     /// Takes him back: slides out, then he is gone.

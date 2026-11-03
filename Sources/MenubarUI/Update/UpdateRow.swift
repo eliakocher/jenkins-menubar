@@ -53,8 +53,15 @@ private struct UpdateProgressRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 0) {
+                Text(title)
+                Spacer(minLength: 8)
+                if let fraction {
+                    Text(UpdateText.percent(fraction))
+                        .monospacedDigit()
+                }
+            }
+            .foregroundStyle(.secondary)
             if let fraction {
                 ProgressView(value: fraction)
                     .progressViewStyle(.linear)
@@ -110,6 +117,17 @@ enum UpdateText {
     static let rebuilding = "Rebuilding…"
     static let relaunching = "Relaunching…"
     static let installed = "Installed"
+
+    /// "42%", for a fraction from 0 to 1, clamped
+    static func percent(_ fraction: Double) -> String {
+        "\(Int((min(max(fraction, 0), 1) * 100).rounded()))%"
+    }
+
+    /// "Rebuilding 42%" for the toolbar, which has no room for a bar; "Rebuilding…" until the first count
+    static func rebuildingLabel(_ fraction: Double?) -> String {
+        guard let fraction else { return rebuilding }
+        return "Rebuilding \(percent(fraction))"
+    }
 
     /// "Update failed: <reason>", as `RebuildError.message` and the Activity entry say it
     static func failed(_ reason: String) -> String {

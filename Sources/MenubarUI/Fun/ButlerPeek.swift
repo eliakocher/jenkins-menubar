@@ -17,6 +17,8 @@ enum PeekArt {
         var hidden: CGFloat
         /// a turn for the stand-in, which isn't straight
         var rotation: Angle = .zero
+        /// whether the picture already has the hat on (the user's `peek-side-<hat>`), so no hat is drawn over it
+        var wearsHat = false
 
         var aspect: CGFloat { size.width / max(size.height, 1) }
     }
@@ -24,9 +26,18 @@ enum PeekArt {
     private static var cache: [String: Art?] = [:]
 
     /// Returns the art that comes out of an edge: left and right share one file, the right one mirrored by the view.
-    static func art(for edge: FunModel.PeekEdge) -> Art {
+    ///
+    /// - Parameters:
+    ///   - edge: the edge he comes out of
+    ///   - hat: the hat he wears; a side peek uses the user's picture with that hat when its file is there (see
+    ///     ``AppImages/peekHatArtName(_:)``), else the plain one with the hat drawn over it
+    static func art(for edge: FunModel.PeekEdge, hat: ButlerHat? = nil) -> Art {
         switch edge {
         case .left, .right:
+            if let hat, let name = AppImages.peekHatArtName(hat), var worn = load(name, cut: 0.18, axis: .horizontal) {
+                worn.wearsHat = true
+                return worn
+            }
             return load("peek-side", cut: 0.18, axis: .horizontal) ?? standIn(hidden: 0.5, rotation: edge == .left ? .degrees(16) : .degrees(-16))
         case .bottom:
             return load("peek-bottom", cut: 0.81, axis: .vertical, inverted: true) ?? standIn(hidden: 0.5, rotation: .zero)
@@ -137,7 +148,7 @@ struct ButlerPeekFigure: View {
     var length: CGFloat = 120
 
     var body: some View {
-        let art = PeekArt.art(for: edge)
+        let art = PeekArt.art(for: edge, hat: hat)
         let frame = Self.size(of: art, edge: edge, length: length)
         GeometryReader { proxy in
             let origin = Self.origin(art: art, edge: edge, frame: frame, in: proxy.size, along: along, slide: slide)
@@ -154,7 +165,7 @@ struct ButlerPeekFigure: View {
                 .interpolation(.high)
                 .rotationEffect(art.rotation)
                 .scaleEffect(x: edge == .right ? -1 : 1)
-            if let hat, edge == .left || edge == .right {
+            if let hat, !art.wearsHat, edge == .left || edge == .right {
                 // The hats show on the side peeks, where his head is upright.
                 SeasonalHatOverlay(hat: hat, head: UnitPoint(x: edge == .right ? 0.38 : 0.62, y: 0.075))
                     .frame(width: frame.width, height: frame.width)
@@ -212,8 +223,15 @@ struct ButlerPeekOverlay: View {
     var drawsFigure = true
     /// whether he can't come out now: the menu bar pane has no room for his panel
     var isBlocked: (@MainActor () -> Bool)?
+    /// whether this surface shows; he comes about a third of a second after it starts to (the menu bar pane sets it from
+    /// its own appearing, which runs after this overlay's first task)
+    var isShown = true
     @Environment(AppModel.self) private var model: AppModel?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// `.key` while this window is the key window of the active app
+    @Environment(\.controlActiveState) private var activeState
+    /// whether this overlay told the model that its surface shows
+    @ViewState private var registered = false
     /// this surface's own name, so he is drawn only where he was taken
     @ViewState private var ownerID = UUID().uuidString
     /// how far out he is drawn, 0 to 1; follows the model's phase with an animation
@@ -221,6 +239,12 @@ struct ButlerPeekOverlay: View {
     @ViewState private var fuse: Task<Void, Never>?
 
     private var owner: String { surface == .menuPane ? FunModel.paneOwner : ownerID }
+
+    /// whether he may come out of this surface: a window of the app only while it is key and the app active; the pane's
+    /// own showing is enough for it
+    private var showsButler: Bool {
+        surface.showsButler(isShown: isShown, isFocused: activeState == .key)
+    }
 
     var body: some View {
         let fun = model?.fun
@@ -255,18 +279,43 @@ struct ButlerPeekOverlay: View {
                 withAnimation(phase == .slidingOut ? .easeIn(duration: 0.2) : .spring(duration: 0.38, bounce: 0.3)) { slide = target }
             }
         }
-        // The model knows which surfaces show, so a random peek picks one that is on screen.
-        .onAppear { model?.fun.surface(surface, isShown: true) }
-        .onDisappear { model?.fun.surface(surface, isShown: false) }
-        .task(id: fun?.peek?.id) {
-            // Armed: try now, then every few seconds while this surface shows and the moment may be calm.
-            while !Task.isCancelled, let fun, fun.peek != nil {
-                if fun.claimPeek(busy: FunQuiet.isBusy() || isBlocked?() == true, edges: edges, owner: owner, surface: surface) != nil {
-                    return
-                }
-                try? await Task.sleep(for: .seconds(6))
+        // The model knows which surfaces show, so a random peek picks one that is on screen: a window counts while it has
+        // the focus. Only state changes here, never the window itself.
+        .onChange(of: surface.showsButler(isShown: true, isFocused: activeState == .key), initial: true) { _, focused in
+            setRegistered(focused)
+            // Focus went away while he is out: he ducks back at once, no catch.
+            if !focused {
+                fun?.retreat(owner: owner)
             }
         }
+        .onDisappear {
+            setRegistered(false)
+            if surface.requiresFocus {
+                fun?.retreat(owner: owner)
+            }
+        }
+        .task(id: ClaimKey(peek: fun?.peek?.id, isShown: showsButler)) {
+            // Armed and shown: he comes a moment after the surface shows (a window: after it gets the focus), then every
+            // second while the moment isn't calm.
+            let shown = showsButler
+            await fun?.claimPeekWhenShown(
+                isShown: { shown }, busy: { FunQuiet.isBusy() || isBlocked?() == true }, edges: edges, owner: owner,
+                surface: surface)
+        }
+    }
+
+    private func setRegistered(_ shown: Bool) {
+        guard shown != registered else {
+            return
+        }
+        registered = shown
+        model?.fun.surface(surface, isShown: shown)
+    }
+
+    /// what restarts the claim: another armed peek, or the surface starting to show
+    private struct ClaimKey: Equatable {
+        var peek: Int?
+        var isShown: Bool
     }
 
     /// The pointer rests on him: after a third of a second he ducks, if he has been out long enough to be seen.
@@ -393,12 +442,16 @@ extension View {
     ///   - reveal: how much of him shows, 1 for all of what would
     ///   - drawsFigure: whether the overlay draws him; the pane's panel does it for the pane
     ///   - isBlocked: whether he can't come out now
+    ///   - isShown: whether the surface shows now; it must change when the surface appears if that happens after the view's own
+    ///     first task (the menu bar pane's)
     func butlerPeek(
         surface: FunModel.PeekSurface = .window, edges: Set<FunModel.PeekEdge> = Set(FunModel.PeekEdge.allCases),
-        reveal: CGFloat = 1, drawsFigure: Bool = true, isBlocked: (@MainActor () -> Bool)? = nil
+        reveal: CGFloat = 1, drawsFigure: Bool = true, isBlocked: (@MainActor () -> Bool)? = nil,
+        isShown: Bool = true
     ) -> some View {
         overlay {
-            ButlerPeekOverlay(surface: surface, edges: edges, reveal: reveal, drawsFigure: drawsFigure, isBlocked: isBlocked)
+            ButlerPeekOverlay(surface: surface, edges: edges, reveal: reveal, drawsFigure: drawsFigure, isBlocked: isBlocked,
+                isShown: isShown)
         }
     }
 }

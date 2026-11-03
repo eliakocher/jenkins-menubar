@@ -104,6 +104,9 @@ public final class WindowRouter {
     /// closes
     public var rebuildRequest: RebuildRequest?
 
+    /// the versions the "What's New" sheet shows on the main window; the sheet clears it when it closes
+    public var whatsNewRequest: WhatsNewRequest?
+
     /// whether "Open by Link…" shows (⌘⇧O, WIN-06), as a sheet on the main window
     public var isOpeningByLink = false
 
@@ -191,6 +194,16 @@ public final class WindowRouter {
             watchRequest = request
         }
         opener(route)
+    }
+
+    /// Opens the main window with the "What's New" sheet: the Inbox entry of an update, and Help › What's New….
+    ///
+    /// - Parameters:
+    ///   - from: the version the changelog starts after; nil for no lower end
+    ///   - to: the version it ends at; nil for no upper end
+    public func showWhatsNew(from: String? = nil, to: String? = nil) {
+        whatsNewRequest = WhatsNewRequest(from: from, to: to)
+        open(.main)
     }
 
     /// Shows a build in Pipelines and opens the "Rebuild with Changes…" sheet over it (PIPE-09), from the build's detail, the

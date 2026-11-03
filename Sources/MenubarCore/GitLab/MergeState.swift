@@ -6,7 +6,10 @@ import Foundation
 /// Read with GraphQL (`project.mergeRequest`), checked against GitLab's schema (gitlab.com, 19.6) on 2026-11-03; never
 /// sent to the team's GitLab by the author. `mergeabilityChecks` is an experiment in GitLab's reference: a GitLab that
 /// refuses it is asked again without it, and the checks come from `detailedMergeStatus` alone.
-public struct MergeState: Hashable, Sendable {
+///
+/// Codable for the ``DetailCache``, which keeps the last one per merge request so the card shows at once (MR-16): a
+/// copy that no longer decodes, like one from before a field was added, is ignored. A new field should be optional.
+public struct MergeState: Codable, Hashable, Sendable {
     public var lifecycle: Lifecycle
     public var isDraft: Bool
     /// GitLab's `detailedMergeStatus`
@@ -86,7 +89,7 @@ public struct MergeState: Hashable, Sendable {
     }
 
     /// GitLab's `MergeRequestState`.
-    public enum Lifecycle: String, Hashable, Sendable {
+    public enum Lifecycle: String, Codable, Hashable, Sendable {
         case opened
         case merged
         case closed
@@ -94,7 +97,7 @@ public struct MergeState: Hashable, Sendable {
     }
 
     /// One of GitLab's merge checks, as it comes: `identifier` like `NOT_APPROVED`, `status` like `FAILED`.
-    public struct GitLabCheck: Hashable, Sendable {
+    public struct GitLabCheck: Codable, Hashable, Sendable {
         public var identifier: String
         public var status: String
 
@@ -105,7 +108,7 @@ public struct MergeState: Hashable, Sendable {
     }
 
     /// The project's squash setting, as the merge request's `squash`, `squashOnMerge` and `squashReadOnly` tell it.
-    public enum Squash: Hashable, Sendable {
+    public enum Squash: Codable, Hashable, Sendable {
         /// the project never squashes: no choice
         case never
         /// the project always squashes: no choice
@@ -124,7 +127,7 @@ public struct MergeState: Hashable, Sendable {
     }
 
     /// An auto-merge that is set: GitLab's strategy, like `merge_when_checks_pass`, and who set it.
-    public struct AutoMerge: Hashable, Sendable {
+    public struct AutoMerge: Codable, Hashable, Sendable {
         public var strategy: String?
         public var setBy: MergeRequest.Person?
 
@@ -135,7 +138,7 @@ public struct MergeState: Hashable, Sendable {
     }
 
     /// What the token's user may do with the merge request (`userPermissions`).
-    public struct Permissions: Hashable, Sendable {
+    public struct Permissions: Codable, Hashable, Sendable {
         public var canMerge: Bool
         /// edit the merge request, which marking it ready needs
         public var canUpdate: Bool

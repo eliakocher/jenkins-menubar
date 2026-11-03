@@ -10,6 +10,9 @@ public final class InboxSeen {
     /// the most ids kept; the oldest go first
     public nonisolated static let limit = 500
 
+    /// called after an id was marked or unmarked, for what is derived from the marks
+    public var onChange: @MainActor () -> Void = {}
+
     private let entries = ObservedEntries<String, Bool>()
     private var dates: [String: Date]
     private let file: FileStore<[String: Date]>
@@ -47,6 +50,7 @@ public final class InboxSeen {
         entries[id] = true
         prune()
         try? file.save(dates)
+        onChange()
     }
 
     /// Forgets that a row was opened, for a row that comes back as new.
@@ -58,6 +62,7 @@ public final class InboxSeen {
         }
         entries[id] = nil
         try? file.save(dates)
+        onChange()
     }
 
     private func prune() {

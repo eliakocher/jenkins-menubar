@@ -272,6 +272,86 @@ struct FunModelTests {
         _ = clock
     }
 
+    @Test("FUN-11 a peek is claimed a moment after its surface shows, not on a long retry; again while busy; not while hidden")
+    func claimWhenShown() async {
+        let wall = Clock(Self.date(4, 10))
+        let test = TestClock()
+        let fun = FunModel(
+            store: FunStore(calendar: Self.calendar), now: { wall.now }, clock: test, calendar: Self.calendar, random: { _ in 0 })
+        fun.apply(Preferences(easterEggs: true, funLevel: .normal))
+        fun.queuePanePeek(at: wall.now)
+        var shown = false
+        var busy = true
+        func claim() -> Task<Void, Never> {
+            Task { @MainActor in
+                await fun.claimPeekWhenShown(
+                    isShown: { shown }, busy: { busy }, edges: [.right], owner: FunModel.paneOwner, surface: .menuPane)
+            }
+        }
+        // not shown yet (the pane's first task runs before its appearing): nothing waits, nothing is claimed
+        await claim().value
+        #expect(fun.peek != nil && fun.playing == nil && test.sleeperCount == 0)
+        // shown: he waits only the settle time, then comes; a user who is busy keeps him waiting a second at a time
+        shown = true
+        let task = claim()
+        await test.waitForSleepers()
+        test.advance(by: FunModel.peekSettle - .milliseconds(1))
+        await Task.yield()
+        #expect(fun.playing == nil)
+        test.advance(by: .milliseconds(1))
+        await test.waitForSleepers()
+        #expect(fun.playing == nil && FunModel.peekRetry <= .seconds(1))
+        busy = false
+        test.advance(by: FunModel.peekRetry)
+        await task.value
+        #expect(fun.playing?.owner == FunModel.paneOwner && fun.peek == nil)
+    }
+
+    @Test("FUN-11 a window's peek waits while its window isn't key and the app active, comes a moment after; the pane needs no focus")
+    func windowPeekNeedsFocus() async {
+        #expect(FunModel.PeekSurface.window.showsButler(isShown: true, isFocused: false) == false)
+        #expect(FunModel.PeekSurface.window.showsButler(isShown: true, isFocused: true))
+        #expect(FunModel.PeekSurface.menuPane.showsButler(isShown: true, isFocused: false))
+        #expect(FunModel.PeekSurface.menuPane.showsButler(isShown: false, isFocused: true) == false)
+        let wall = Clock(Self.date(4, 10))
+        let test = TestClock()
+        let fun = FunModel(
+            store: FunStore(calendar: Self.calendar), now: { wall.now }, clock: test, calendar: Self.calendar, random: { _ in 0 })
+        fun.apply(Preferences(easterEggs: true, funLevel: .normal))
+        fun.fireSurprise(at: wall.now, kind: .peek)
+        // the overlay's rule: the window shows, but isn't focused: nothing waits, nothing plays
+        var focused = false
+        func claim() -> Task<Void, Never> {
+            Task { @MainActor in
+                let shown = FunModel.PeekSurface.window.showsButler(isShown: true, isFocused: focused)
+                await fun.claimPeekWhenShown(isShown: { shown }, busy: { false }, owner: "window", surface: .window)
+            }
+        }
+        await claim().value
+        #expect(fun.peek != nil && fun.playing == nil && test.sleeperCount == 0)
+        // focus returns: the settle time, then he comes
+        focused = true
+        let task = claim()
+        await test.waitForSleepers()
+        test.advance(by: FunModel.peekSettle - .milliseconds(1))
+        await Task.yield()
+        #expect(fun.playing == nil)
+        test.advance(by: .milliseconds(1))
+        await task.value
+        #expect(fun.playing?.owner == "window")
+        // focus goes while he is out: he leaves at once, whatever the duck grace; another surface's peek stays
+        fun.retreat(owner: "other")
+        #expect(fun.playing?.phase != .slidingOut)
+        let catches = fun.catches
+        fun.retreat(owner: "window")
+        await test.waitForSleepers()
+        #expect(fun.playing?.phase == .slidingOut && fun.catches == catches)
+        test.advance(by: FunModel.leaveDuration)
+        await Task.yield()
+        for _ in 0..<5 where fun.playing != nil { await Task.yield() }
+        #expect(fun.playing == nil)
+    }
+
     @Test("FUN-11 a random peek picks a surface that shows now, the pane's only from the right; none showing, he waits for any")
     func peekPicksVisibleSurface() {
         let (model, clock, _) = model(at: Self.date(4, 10))

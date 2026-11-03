@@ -195,25 +195,81 @@ struct ReviewerSuggestionTests {
 
     // MARK: - Adding the required
 
-    @Test("MR-15 the required reviewers to add are the fewest who satisfy the open rules")
-    func minimalRequired() {
-        let rules = [
-            Self.regularRule("Backend Review", eligible: ["slee", "pwu", "tgreen"]),
-            Self.regularRule("Security", eligible: ["pwu", "cnovak"]),
-            Self.regularRule("Docs Review", required: 2, eligible: ["tgreen", "akim", "slee"]),
-        ]
-
+    @Test("MR-15 the required reviewers to add are the fewest who satisfy the open rules", arguments: [
+        // one per rule
+        RequiredCase(
+            rules: [.init("Backend Review", eligible: ["slee", "tgreen"]), .init("Security", eligible: ["cnovak", "pwu"])],
+            picks: ["cnovak": ["Security"], "slee": ["Backend Review"]]),
+        // a person who counts for two rules is one pick, and the rest of both pools stays out
+        RequiredCase(
+            rules: [.init("Backend Review", eligible: ["pwu", "slee"]), .init("Security", eligible: ["pwu", "cnovak"])],
+            picks: ["pwu": ["Backend Review", "Security"]]),
+        // a rule that needs two approvals names two people, and a code owner rule is named by its pattern and section
+        RequiredCase(
+            rules: [.init("Docs Review", required: 2, eligible: ["tgreen", "akim", "slee"]),
+                    .init("*.swift", section: "Core", eligible: ["pwu"])],
+            picks: ["pwu": ["*.swift in Core"], "akim": ["Docs Review"], "slee": ["Docs Review"]]),
+        // a rule that is satisfied needs nobody
+        RequiredCase(
+            rules: [.init("Backend Review", isSatisfied: true, eligible: ["slee"]), .init("Security", eligible: ["cnovak"])],
+            picks: ["cnovak": ["Security"]]),
+        // the author is never added, also when they alone could satisfy a rule or share one
+        RequiredCase(
+            rules: [.init("Backend Review", eligible: ["jdoe", "slee"]), .init("Security", eligible: ["jdoe"])],
+            picks: ["slee": ["Backend Review"]]),
+    ])
+    func minimalRequired(_ testCase: RequiredCase) {
+        let rules = testCase.rules.map { spec -> Facts.Rule in
+            if let section = spec.section {
+                return Self.codeOwnerRule(spec.name, section: section, required: spec.required, eligible: spec.eligible)
+            }
+            var rule = Self.regularRule(spec.name, required: spec.required, eligible: spec.eligible)
+            rule.isApproved = spec.isSatisfied
+            return rule
+        }
         let list = ReviewerSuggester.suggest(facts: Self.facts(rules))
 
-        // Everyone is in 1 or 2 rules; the picks cover all three with the fewest people.
-        let picks = list.minimalRequired
-        var remaining = ["/Backend Review": 1, "/Security": 1, "/Docs Review": 2]
-        for pick in picks {
-            for key in pick.coveredRules { remaining[key, default: 0] -= 1 }
+        let picks = list.requiredPicks()
+        #expect(Dictionary(uniqueKeysWithValues: picks.map { ($0.person.username, $0.rules) }) == testCase.picks)
+        #expect(picks.count == testCase.picks.count)
+        #expect(list.minimalRequired.map(\.username) == picks.map(\.person.username))
+        #expect(!picks.contains { $0.person.username == "jdoe" })
+    }
+
+    @Test("MR-15 a person added a moment ago counts for their rules: the others of the pool are not picked")
+    func requiredAfterAnAdd() {
+        let list = ReviewerSuggester.suggest(
+            facts: Self.facts([Self.regularRule("Backend Review", eligible: ["slee", "tgreen"]), Self.regularRule("Security", eligible: ["cnovak"])]))
+
+        #expect(list.requiredPicks().map(\.person.username) == ["cnovak", "slee"])
+        // tgreen was not the pick, but tgreen's approval satisfies Backend Review all the same.
+        #expect(list.requiredPicks(alreadyAdded: ["TGreen"]).map(\.person.username) == ["cnovak"])
+        #expect(list.requiredPicks(alreadyAdded: ["tgreen", "cnovak"]).isEmpty)
+    }
+
+    struct RuleSpec: Sendable {
+        var name: String
+        /// a code owner rule when set
+        var section: String?
+        var required: Int
+        var isSatisfied: Bool
+        var eligible: [String]
+
+        init(_ name: String, section: String? = nil, required: Int = 1, isSatisfied: Bool = false, eligible: [String]) {
+            self.name = name
+            self.section = section
+            self.required = required
+            self.isSatisfied = isSatisfied
+            self.eligible = eligible
         }
-        #expect(remaining.values.allSatisfy { $0 <= 0 })
-        #expect(picks.count == 3)
-        #expect(picks.count < list.items.count)
+    }
+
+    struct RequiredCase: Sendable, CustomTestStringConvertible {
+        var rules: [RuleSpec]
+        /// the usernames taken, with the rules each is taken for
+        var picks: [String: [String]]
+
+        var testDescription: String { picks.keys.sorted().joined(separator: ", ") }
     }
 
     // MARK: - The write

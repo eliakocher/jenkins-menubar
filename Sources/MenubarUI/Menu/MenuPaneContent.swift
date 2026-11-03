@@ -13,6 +13,8 @@ struct MenuPaneEvents {
     var activate: @MainActor (MenuNavigation.PaneRow) -> Void = { _ in }
     /// whether the peeking butler can come out beside the pane now
     var canPeek: @MainActor () -> Bool = { true }
+    /// whether the pane is on screen; the butler comes out a moment after this turns true
+    var isPaneVisible = true
     /// an area row's AppKit view, whose frame places the flyout
     var anchor: @MainActor (MainWindowSection, NSView) -> Void = { _, _ in }
 
@@ -74,7 +76,8 @@ struct MenuPaneContent: View {
         // The butler peeks out of the pane's edge now and then; a click on him is a catch (the fun layer).
         // The butler leans out from behind the pane's edge in a panel of his own beside it (``MenuPeekPanelController``); the
         // overlay only claims him and shows the catch.
-        .butlerPeek(surface: .menuPane, edges: [.right], drawsFigure: false, isBlocked: { !events.canPeek() })
+        .butlerPeek(surface: .menuPane, edges: [.right], drawsFigure: false, isBlocked: { !events.canPeek() },
+            isShown: events.isPaneVisible)
     }
 
     /// The red row on top: the problem in the label color, and the pane that fixes it as its grey line.
@@ -146,6 +149,9 @@ struct MenuAreaRow: View {
                     if let problem = area.problem {
                         ProblemSymbol()
                             .help(problem)
+                    }
+                    if area.showsGift {
+                        WhatsNewGiftBadge(isHighlighted: isHighlighted)
                     }
                 }
                 MenuSummaryLine(parts: area.summary)

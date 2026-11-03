@@ -83,6 +83,7 @@ final class AppShell {
         router.onRebuilt = { app in AppShell.relaunch(app) }
         router.openInBrowser = { [weak self] url in self?.openInBrowser(url) }
         model.hotkey.onPress = { [weak self] in self?.hotkeyPressed() }
+        model.hotCorners.onAppAction = { [weak self] action in self?.hotCornerFired(action) }
         followAppearance()
     }
 
@@ -105,6 +106,30 @@ final class AppShell {
             NSApp.hide(nil)
         } else {
             router.open(.main)
+        }
+    }
+
+    /// MegaMonitor's own Hot Corner actions (HOT-01); the macOS ones never come here.
+    func hotCornerFired(_ action: HotCornerAction) {
+        switch action {
+        case .openSection(let section):
+            open(.open(section))
+        case .showMainWindow:
+            hotkeyPressed()
+        case .search:
+            router.open(.main)
+            // A window that opens just now reads the request as its first value and wouldn't react, so the request
+            // comes a moment later, once the window shows.
+            Task { @MainActor [router] in
+                try? await Task.sleep(for: .milliseconds(300))
+                router.focusSearch()
+            }
+        case .refreshNow:
+            model.checkNow()
+        case .muteAlerts:
+            model.toggleMuteAlerts()
+        case .none, .system, .runShortcut, .openApp:
+            break
         }
     }
 
@@ -135,7 +160,7 @@ final class AppShell {
     static func standard(effects: NativeEffects) -> AppShell {
         let dependencies = Dependencies.standard(
             effects: effects, systemEvents: WorkspaceSystemEvents(), loginItem: MainAppLoginItem(),
-            hotkeys: CarbonHotkeys())
+            hotkeys: CarbonHotkeys(), hotCornerSystem: NativeHotCornerSystem(), pointerSource: NSEventPointerSource())
         let model = AppModel(dependencies: dependencies)
         // The fun layer holds its surprises back while the user types or drags, and keeps still under Reduce Motion.
         model.fun.isBusy = { FunQuiet.isBusy() }
@@ -475,6 +500,8 @@ final class AppShell {
             // Settings → Team fetches the file and asks before anything changes (TEAM-02).
             route.requestTeamFileImport(on: model.settings)
             router.open(.settings(pane: .team))
+        case .whatsNew(let from, let to):
+            router.showWhatsNew(from: from, to: to)
         case .mainWindow:
             // The window opens at the section it showed last.
             router.open(.main)

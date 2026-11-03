@@ -66,6 +66,8 @@ public struct AIAnswer: Hashable, Sendable {
     /// what was sent
     public var prompt: ClaudePrompt
     public var answeredAt: Date
+    /// what the run reported, for Raw Response
+    public var raw: ClaudeRawResponse?
 
     public init(
         explanation: BuildExplanation? = nil, summary: ThreadsSummary? = nil, text: String? = nil,
@@ -151,6 +153,8 @@ public final class AIStore {
     public internal(set) var setupInventory: SetupInventoryState = .unknown
     /// the user's slash commands and skills for the "/" list; empty until read
     public internal(set) var slashCommands: [SlashCommand] = []
+    /// the chats Claude Code runs in their card, by subject: the turn in progress and the commands (AI-10)
+    public internal(set) var hostChats: [AISubject: ClaudeHostChat] = [:]
 
     /// Called when an answer or a failure landed while no card of its subject was on screen, so the Inbox can say so
     /// (Task 7.03). The app sets it; nothing is called while the card is visible, as the answer is right there.
@@ -197,6 +201,18 @@ public final class AIStore {
     @ObservationIgnored public var configuredMcpServers: (@Sendable (_ folder: String?) async -> Set<String>)?
     /// the folder the slash commands were read for
     @ObservationIgnored var slashCommandsProject: String??
+    /// starts the `claude` of a hosted chat (AI-10); tests set a fake
+    @ObservationIgnored public var hostLauncher: any ClaudeHostLauncher = ProcessHostLauncher()
+    /// the hosted chats' processes, by subject
+    @ObservationIgnored var hostSessions: [AISubject: ClaudeHostSession] = [:]
+    /// the checkout a chat's Claude Code starts in, as its card found it
+    @ObservationIgnored var hostFolders: [AISubject: String] = [:]
+    /// the folder a hosted chat without a checkout starts in: an empty one of its own, never the home folder
+    @ObservationIgnored public var hostScratchFolder = FileManager.default.temporaryDirectory
+        .appending(path: "megamonitor-claude-chat", directoryHint: .isDirectory)
+    /// how long a hosted chat's process may wait for the next question, and how long after its card left the screen
+    @ObservationIgnored public var hostIdleTimeout: Duration = .seconds(600)
+    @ObservationIgnored public var hostHiddenTimeout: Duration = .seconds(60)
     @ObservationIgnored private var digestLoop: Task<Void, Never>?
     /// the facts the last digest was written from, which its answer's cards are made of (AI-04)
     @ObservationIgnored var digestSent: DigestFacts?
@@ -328,6 +344,9 @@ public final class AIStore {
     public func cardDisappeared(_ subject: AISubject) {
         let count = (visibleCards[subject] ?? 0) - 1
         visibleCards[subject] = count > 0 ? count : nil
+        if count <= 0 {
+            hostCardLeft(subject)
+        }
     }
 
     /// whether a card of the subject is on screen
@@ -625,14 +644,24 @@ public final class AIStore {
         }
         do {
             let setup = await setupForChat(of: prompt)
-            let run = try await engine.run(
-                setup == nil ? prompt : prompt.startingWithCommand(), model: model, effort: settings.effort, setup: setup)
+            let run: ClaudeRun
+            let raw: ClaudeRawResponse
+            if let setup, hostsChats {
+                // A chat with the user's setup runs Claude Code as in a terminal, hosted by its card (AI-10).
+                (run, raw) = try await hostRun(
+                    subject, message: nil, opening: prompt.startingWithCommand().text,
+                    folder: hostFolder(of: subject, prompt: prompt), model: model, setup: setup)
+            } else {
+                run = try await engine.run(
+                    setup == nil ? prompt : prompt.startingWithCommand(), model: model, effort: settings.effort, setup: setup)
+                raw = ClaudeRawResponse(run: run)
+            }
             guard !Task.isCancelled else { return }
-            // A new first answer starts the conversation anew.
-            clearConversation(of: subject)
+            // A new first answer starts the conversation anew; its Claude Code goes on with it.
+            clearConversation(of: subject, keepingHost: true)
             count(run, prompt: prompt, model: model)
             outdatedClaude = nil
-            guard let answer = Self.answer(of: run, prompt: prompt, model: model, at: now()).flatMap({
+            guard var answer = Self.answer(of: run, prompt: prompt, model: model, at: now()).flatMap({
                 prompt.useCase == .digest ? completeDigest($0, run: run) : $0
             }) else {
                 let message = ClaudeFailure.unreadableAnswer(run).message
@@ -640,6 +669,7 @@ public final class AIStore {
                 landed(subject, prompt.useCase, failure: message)
                 return
             }
+            answer.raw = raw
             states[subject] = .answered(answer)
             landed(subject, prompt.useCase, answer: answer)
         } catch {

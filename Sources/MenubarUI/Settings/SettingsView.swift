@@ -57,6 +57,7 @@ public struct SettingsView: View {
             case .notifications: NotificationsPane(system: system)
             case .appearance: AppearancePane()
             case .shortcuts: ShortcutsPane()
+            case .hotCorners: HotCornersPane()
             case .accounts: AccountsPane()
             case .projects: ProjectsPane()
             case .team: TeamPane()
@@ -202,6 +203,7 @@ extension SettingsPane {
         case .notifications: "bell.badge.fill"
         case .appearance: "paintpalette.fill"
         case .shortcuts: "keyboard.fill"
+        case .hotCorners: "rectangle.inset.topleft.filled"
         case .accounts: "key.fill"
         case .projects: "shippingbox.fill"
         case .team: "person.2.fill"
@@ -221,6 +223,7 @@ extension SettingsPane {
         case .notifications: .red
         case .appearance: .indigo
         case .shortcuts: .pink
+        case .hotCorners: .mint
         case .accounts: .blue
         case .projects: .orange
         case .team: .teal
@@ -351,6 +354,7 @@ extension SettingsPane {
         case .notifications: "Which builds alert you, and what lands in your Inbox."
         case .appearance: "How details, text, code changes and discussions look."
         case .shortcuts: "The keys for the window's commands, and one for opening MegaMonitor from anywhere."
+        case .hotCorners: "Run an action when the pointer rests in a screen corner, a different one with a modifier held."
         case .accounts: "Sign in to GitLab and Jenkins. Tokens stay in your keychain."
         case .projects: "The Jenkins jobs and GitLab projects MegaMonitor watches."
         case .team: "Labels, slots and squads, the same for everyone on your team."

@@ -25,7 +25,8 @@ struct McpNewServerTests {
     private static func allowed(_ setup: ClaudeSetup) -> [String] {
         let prompt = ClaudePrompt(useCase: .askAboutItem, instructions: "i", text: "t")
         let arguments = ClaudeEngine.arguments(for: prompt, model: .sonnet, setup: setup)
-        return value(after: "--allowedTools", in: arguments)?.components(separatedBy: ",") ?? []
+        // The MCP tools only: a chat without a folder also allows the Skill tool.
+        return (value(after: "--allowedTools", in: arguments)?.components(separatedBy: ",") ?? []).filter { $0.hasPrefix("mcp__") }
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {
@@ -143,8 +144,10 @@ struct McpNewServerTests {
         let listing = try FixtureFiles.data("Claude/setup-init.jsonl")
         let fake = ChatFake(listing: listing)
         let clock = ClockBox(Date(timeIntervalSince1970: 1_000_000))
-        let store = AIStore(
-            defaults: TemporaryDefaults().defaults, runner: fake, now: { clock.date }, resolver: fake.resolver())
+        let defaults = TemporaryDefaults().defaults
+        // The headless run with the setup, the fallback of the hosted chats (AI-10).
+        defaults.set(false, forKey: AIStore.hostChatsKey)
+        let store = AIStore(defaults: defaults, runner: fake, now: { clock.date }, resolver: fake.resolver())
         store.update(AISettings(
             isEnabled: true, confirmedUseCases: [.askAboutItem], useMySetup: true,
             mcpServerChoices: ["plugin_demo_issues": true, "plugin_demo_builds": true]))

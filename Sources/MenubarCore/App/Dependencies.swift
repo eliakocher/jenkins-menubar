@@ -39,6 +39,10 @@ public struct Dependencies: @unchecked Sendable {
     public var buildStamp: BuildStamp?
     /// runs `build.sh` for the rebuild (APP-05)
     public var processRunner: any ProcessRunner
+    /// performs the Hot Corners' macOS actions and reads the old Hot Corners app (HOT-01)
+    public var hotCornerSystem: any HotCornerSystem
+    /// watches the pointer for Hot Corners (HOT-01)
+    public var pointerSource: any PointerSource
 
     public init(
         transport: any HTTPTransport,
@@ -55,7 +59,9 @@ public struct Dependencies: @unchecked Sendable {
         loginItem: any LoginItem,
         hotkeys: any HotkeyRegistrar,
         buildStamp: BuildStamp? = nil,
-        processRunner: any ProcessRunner = SystemProcessRunner()
+        processRunner: any ProcessRunner = SystemProcessRunner(),
+        hotCornerSystem: any HotCornerSystem = NoHotCornerSystem(),
+        pointerSource: any PointerSource = NoPointerSource()
     ) {
         self.transport = transport
         self.clock = clock
@@ -72,6 +78,8 @@ public struct Dependencies: @unchecked Sendable {
         self.hotkeys = hotkeys
         self.buildStamp = buildStamp
         self.processRunner = processRunner
+        self.hotCornerSystem = hotCornerSystem
+        self.pointerSource = pointerSource
     }
 
     /// Returns the real dependencies, with the parts that need AppKit or ServiceManagement passed in by the app.
@@ -83,6 +91,8 @@ public struct Dependencies: @unchecked Sendable {
     ///   - hotkeys: the app's Carbon hotkey registration
     ///   - defaults: the preferences' suite; the app's own domain by default, a suite of its own for the smoke check
     ///   - environment: the process environment, which may move the files (`MENUBAR_MONITOR_DATA_DIR`)
+    ///   - hotCornerSystem: the app's Hot Corners actions; none by default
+    ///   - pointerSource: the app's pointer monitors for Hot Corners; none by default
     /// - Returns: the dependencies: a `URLSessionTransport`, the continuous clock, the `security` keychain, the files in
     ///   `~/Library`, `NWPathMonitor`, the system's Low Power Mode, and the main bundle's build stamp
     public static func standard(
@@ -91,7 +101,9 @@ public struct Dependencies: @unchecked Sendable {
         loginItem: any LoginItem,
         hotkeys: any HotkeyRegistrar,
         defaults: UserDefaults = .standard,
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        hotCornerSystem: any HotCornerSystem = NoHotCornerSystem(),
+        pointerSource: any PointerSource = NoPointerSource()
     ) -> Dependencies {
         let clock = ContinuousClock()
         return Dependencies(
@@ -108,7 +120,9 @@ public struct Dependencies: @unchecked Sendable {
             powerMode: SystemPowerMode(),
             loginItem: loginItem,
             hotkeys: hotkeys,
-            buildStamp: BuildStamp(infoDictionary: Bundle.main.infoDictionary))
+            buildStamp: BuildStamp(infoDictionary: Bundle.main.infoDictionary),
+            hotCornerSystem: hotCornerSystem,
+            pointerSource: pointerSource)
     }
 }
 
@@ -132,6 +146,8 @@ extension Dependencies {
     ///   - hotkeys: the hotkey registration; `FakeHotkeyRegistrar` by default
     ///   - buildStamp: the build stamp; none by default, so no update is offered
     ///   - processRunner: runs `build.sh`; give a fake whenever a test passes a build stamp
+    ///   - hotCornerSystem: the Hot Corners' actions; a `FakeHotCornerSystem` that only records by default
+    ///   - pointerSource: the pointer for Hot Corners; a `FakePointerSource` by default
     /// - Returns: the dependencies
     @MainActor
     public static func fake(
@@ -149,7 +165,9 @@ extension Dependencies {
         loginItem: (any LoginItem)? = nil,
         hotkeys: (any HotkeyRegistrar)? = nil,
         buildStamp: BuildStamp? = nil,
-        processRunner: any ProcessRunner = SystemProcessRunner()
+        processRunner: any ProcessRunner = SystemProcessRunner(),
+        hotCornerSystem: (any HotCornerSystem)? = nil,
+        pointerSource: (any PointerSource)? = nil
     ) -> Dependencies {
         Dependencies(
             transport: transport,
@@ -166,7 +184,9 @@ extension Dependencies {
             loginItem: loginItem ?? FakeLoginItem(),
             hotkeys: hotkeys ?? FakeHotkeyRegistrar(),
             buildStamp: buildStamp,
-            processRunner: processRunner)
+            processRunner: processRunner,
+            hotCornerSystem: hotCornerSystem ?? FakeHotCornerSystem(),
+            pointerSource: pointerSource ?? FakePointerSource())
     }
 }
 #endif

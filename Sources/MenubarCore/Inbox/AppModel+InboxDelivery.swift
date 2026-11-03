@@ -20,6 +20,11 @@ extension AppModel {
     func deliver(_ routed: [RoutedInboxEvent]) async {
         let effects = dependencies.effects
         for item in routed {
+            // Muted for the hour, nothing pops up; the event stays in the Inbox (HOT-09).
+            if item.delivery != .inboxOnly, alertMute.isMuted {
+                await log.log(.info, .app, "Inbox: alerts are muted, so \(item.event.kind.title) stays in the Inbox")
+                continue
+            }
             switch item.delivery {
             case .bigPanel:
                 await effects.showInboxPanel(item.event)

@@ -84,7 +84,9 @@ public enum ClaudeFailure: Error, Hashable, Sendable {
 /// - With the user's setup (``ClaudeSetup``, AI-09) `--safe-mode` is left out: their skills, plugins, commands and MCP
 ///   servers load, but `--permission-mode dontAsk` lets only the named tools run, whatever their own settings allow:
 ///   the reading MCP tools by name, the use case's own `Read,Grep,Glob`; every other MCP tool and Bash, Edit, Write are
-///   denied by name too (a denial beats their own allow rules).
+///   denied by name too (a denial beats their own allow rules, and a skill's `allowed-tools`). A chat gets the Skill
+///   tool, so Claude can load a skill as in Claude Code (``tools(folder:setup:guarded:)``); with a folder only behind
+///   the read guard (``ClaudeReadGuard``), which keeps Read, Grep and Glob inside it whatever a skill allows.
 /// - The model goes in as the CLI's alias (`--model opus`, ``ClaudeModel``): `claude` picks the newest model of the
 ///   family it knows, so an old and a new Claude Code both work. An old one that still can't run it answers with
 ///   "does not support this model"; that is ``ClaudeFailure/outdated(required:)``, never sent again by itself.
@@ -115,9 +117,15 @@ public actor ClaudeEngine {
     public static let codeTimeout: Duration = .seconds(300)
     /// the tools of a question about code with a checkout: reading only, never Bash, Edit or Write (AI-07)
     static let readingTools = "Read,Grep,Glob"
+    /// the tool that loads a skill's text when Claude picks one, as `/name` does in Claude Code; only with the user's
+    /// setup and no folder to read (``tools(folder:setup:)``). Its name in Claude Code 2.1.317, where `SlashCommand` is
+    /// unknown and ignored.
+    static let skillTool = "Skill"
 
     private let runner: any ProcessRunner
     private let resolver: ProgramResolver
+    /// the program that runs the read guard's hook, the app's own; `nil` runs a folder's chat without the Skill tool
+    let guardProgram: String?
     /// `claude`'s path once looked for: `.some(nil)` when it wasn't found
     private var located: URL??
     /// `claude --version`'s answer once read: `.some(nil)` when it couldn't be read
@@ -126,9 +134,11 @@ public actor ClaudeEngine {
     /// - Parameters:
     ///   - runner: runs `claude` and the login shell
     ///   - resolver: finds `claude`; one of its own by default
-    public init(runner: any ProcessRunner, resolver: ProgramResolver? = nil) {
+    ///   - guardProgram: the program of the read guard's hook (``ClaudeReadGuard``); the app's own by default, none in tests
+    public init(runner: any ProcessRunner, resolver: ProgramResolver? = nil, guardProgram: String? = ClaudeReadGuard.appProgram()) {
         self.runner = runner
         self.resolver = resolver ?? ProgramResolver(runner: runner)
+        self.guardProgram = guardProgram
     }
 
     /// Returns `claude`'s full path, looked for once.
@@ -179,27 +189,37 @@ public actor ClaudeEngine {
     ///   - model: the model
     ///   - effort: how long Claude thinks; Default adds no flag
     ///   - setup: the user's Claude Code setup to load instead of `--safe-mode`; `nil` runs in safe mode
+    ///   - guardProgram: the read guard's program; with a folder and the setup it adds the hook and the Skill tool
     /// - Returns: the arguments
     public static func arguments(
-        for prompt: ClaudePrompt, model: ClaudeModel, effort: ClaudeEffort = .standard, setup: ClaudeSetup? = nil
+        for prompt: ClaudePrompt, model: ClaudeModel, effort: ClaudeEffort = .standard, setup: ClaudeSetup? = nil,
+        guardProgram: String? = nil
     ) -> [String] {
         let folder = readableFolder(of: prompt)
-        var arguments = ["-p", "--output-format", "json", "--model", model.rawValue, "--tools", folder == nil ? "" : readingTools]
+        let guarded = folder != nil && setup != nil && guardProgram != nil
+        var arguments = [
+            "-p", "--output-format", "json", "--model", model.rawValue, "--tools", tools(folder: folder, setup: setup, guarded: guarded),
+        ]
         if let setup {
             arguments += ["--no-session-persistence", "--max-budget-usd", budget(for: prompt, setup: true)]
             // Only what is allowed runs, by the names below and the user's own allow rules; a denial beats every allow rule.
             arguments += ["--permission-mode", "dontAsk"]
             // Read, Grep and Glob are not in the list: a bare `Read` allows every path, while without a rule they may read
             // only the working folders, the checkout (checked: a file outside is denied under `dontAsk`).
-            if !setup.readingTools.isEmpty {
-                arguments += ["--allowedTools", setup.readingTools.joined(separator: ",")]
+            let allowed = (folder == nil || guarded ? [skillTool] : []) + setup.readingTools
+            if !allowed.isEmpty {
+                arguments += ["--allowedTools", allowed.joined(separator: ",")]
             }
             let denied = deniedBuiltInTools
                 + (setup.blocksAllMcp ? ["mcp__*"] : setup.blockedServers.map { "mcp__\($0)__*" } + setup.otherTools)
             arguments += ["--disallowedTools", denied.joined(separator: ",")]
             if let folder {
-                // The setup's settings stay on, so no `--restricted`; `dontAsk` keeps Read inside the working folders.
+                // The setup's settings stay on, so no `--restricted`; `dontAsk` keeps Read inside the working folders,
+                // and the read guard's hook keeps it there when a skill's `allowed-tools` would let it out.
                 arguments += ["--add-dir", folder]
+                if guarded, let guardProgram {
+                    arguments += ["--settings", ClaudeReadGuard.settings(program: guardProgram)]
+                }
             }
         } else {
             arguments += ["--safe-mode", "--no-session-persistence", "--max-budget-usd", budget(for: prompt)]
@@ -217,6 +237,71 @@ public actor ClaudeEngine {
             arguments += ["--json-schema", schema]
         }
         return arguments
+    }
+
+    /// Returns the built-in tools of a run, `--tools`: none, `Read,Grep,Glob` with a folder to read, and the Skill tool
+    /// in a chat with the user's setup, so their skills load as in Claude Code (AI-09).
+    ///
+    /// A skill's `allowed-tools` grants its tools past `dontAsk` (probed with 2.1.317): only a tool that is missing from
+    /// `--tools` or denied by name stays off. Without a folder no file tool exists and Bash, Edit, Write and the changing
+    /// MCP tools are denied by name, so a skill can only read through the allowed MCP tools. With a folder a skill's bare
+    /// `Read` would read outside the checkout, so there the Skill tool comes only with the read guard's hook.
+    ///
+    /// - Parameters:
+    ///   - folder: the folder the prompt lets Claude read, if any
+    ///   - setup: the user's setup, or `nil` for safe mode
+    ///   - guarded: whether the read guard's hook runs (``ClaudeReadGuard``)
+    /// - Returns: the comma-separated tool names, or an empty text for none
+    static func tools(folder: String?, setup: ClaudeSetup?, guarded: Bool = false) -> String {
+        if folder != nil {
+            return setup != nil && guarded ? readingTools + "," + skillTool : readingTools
+        }
+        return setup == nil ? "" : skillTool
+    }
+
+    // MARK: - A hosted chat (AI-10)
+
+    /// the limit of a hosted chat's whole process, which lives for many turns; a chat that reaches it starts anew
+    static let maxHostBudgetUSD = "10.00"
+
+    /// what Claude Code's own system prompt gets added in a chat card; the item's facts come in the first message
+    static let hostInstructions = """
+        You run inside MegaMonitor, a developer's menu bar app, in the chat card of one item: a merge request, a work \
+        item or a build. The developer's first message has the item's facts. The developer reads your text in the card \
+        and approves each tool call there, so say briefly what you are about to do. Answer in Markdown, concise and \
+        concrete. Don't commit or push unless the developer asks.
+        """
+
+    /// Returns the arguments of a chat that Claude Code runs as in a terminal, hosted by the card (AI-10): stream-json
+    /// both ways, every permission question to the card (`--permission-prompt-tool stdio`), and
+    /// `--permission-mode default` always, since the user's own default mode may let calls run unasked (probed: `auto`
+    /// did). No tool is allowed by name: only the user's own allow rules and a skill's `allowed-tools` run a tool
+    /// without the card asking. WebFetch and WebSearch stay denied, and so do the MCP servers the user turned off or
+    /// the listing doesn't know. The facts never go here: they are the first message, on stdin.
+    ///
+    /// - Parameters:
+    ///   - model: the model
+    ///   - effort: how long Claude thinks
+    ///   - setup: the user's setup
+    /// - Returns: the arguments
+    public static func hostArguments(model: ClaudeModel, effort: ClaudeEffort, setup: ClaudeSetup) -> [String] {
+        var arguments = [
+            "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+            "--include-partial-messages", "--permission-prompt-tool", "stdio", "--permission-mode", "default",
+            "--model", model.rawValue, "--no-session-persistence", "--max-budget-usd", maxHostBudgetUSD,
+        ]
+        let denied = ["WebFetch", "WebSearch"] + (setup.blocksAllMcp ? ["mcp__*"] : setup.blockedServers.map { "mcp__\($0)__*" })
+        arguments += ["--disallowedTools", denied.joined(separator: ",")]
+        arguments += ["--append-system-prompt", hostInstructions]
+        if let level = effort.level {
+            arguments += ["--effort", level]
+        }
+        return arguments
+    }
+
+    /// Returns the environment a hosted chat adds to the app's own: CLAUDE.md off when the user turned it off.
+    public static func hostEnvironment(setup: ClaudeSetup) -> [String: String] {
+        setup.useClaudeMd ? [:] : ["CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1"]
     }
 
     /// Returns the safety limit of a prompt: the higher one for a question about code, else the fixed one.
@@ -252,13 +337,19 @@ public actor ClaudeEngine {
     ///   - model: the model
     ///   - effort: how long Claude thinks
     ///   - setup: the user's Claude Code setup, or `nil` for safe mode
+    ///   - guardProgram: the read guard's program; its folder goes to the hook as ``ClaudeReadGuard/folderVariable``
     /// - Returns: the program and its arguments
     public static func command(
-        claude: URL, for prompt: ClaudePrompt, model: ClaudeModel, effort: ClaudeEffort = .standard, setup: ClaudeSetup? = nil
+        claude: URL, for prompt: ClaudePrompt, model: ClaudeModel, effort: ClaudeEffort = .standard, setup: ClaudeSetup? = nil,
+        guardProgram: String? = nil
     ) -> (executable: URL, arguments: [String]) {
         let path = claude.path(percentEncoded: false)
         let folder = readableFolder(of: prompt)
-        let variables = setup.map { $0.useClaudeMd ? [] : ["CLAUDE_CODE_DISABLE_CLAUDE_MDS=1"] } ?? []
+        var variables = setup.map { $0.useClaudeMd ? [] : ["CLAUDE_CODE_DISABLE_CLAUDE_MDS=1"] } ?? []
+        if let folder, setup != nil, guardProgram != nil {
+            // One argument of `env`'s list: the hook reads it from its environment, never from a shell line.
+            variables.append(ClaudeReadGuard.folderVariable + "=" + folder)
+        }
         guard folder != nil || !variables.isEmpty else {
             return (claude, arguments(for: prompt, model: model, effort: effort, setup: setup))
         }
@@ -271,7 +362,8 @@ public actor ClaudeEngine {
         let options = folder.map { ["-C", $0] } ?? []
         return (
             URL(filePath: "/usr/bin/env"),
-            options + variables + [path] + arguments(for: prompt, model: model, effort: effort, setup: setup))
+            options + variables + [path]
+                + arguments(for: prompt, model: model, effort: effort, setup: setup, guardProgram: guardProgram))
     }
 
     /// Lists what the user's Claude Code setup offers a headless run: the MCP tools of the connected servers. It starts
@@ -322,7 +414,8 @@ public actor ClaudeEngine {
             throw .notFound
         }
         let output: ProcessOutput
-        let command = Self.command(claude: claude, for: prompt, model: model, effort: effort, setup: setup)
+        let command = Self.command(
+            claude: claude, for: prompt, model: model, effort: effort, setup: setup, guardProgram: guardProgram)
         do {
             output = try await runner.run(
                 command.executable, arguments: command.arguments, input: Data(prompt.text.utf8),

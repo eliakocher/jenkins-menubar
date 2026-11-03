@@ -69,11 +69,14 @@ struct MergeCard: View {
         fixtures?.writeAccess ?? appModel?.mergeRequestDetails.writeAccess ?? .unknown
     }
 
+    /// whether the state shown is the copy kept on disk (or being asked again): the writes stay off until GitLab confirms it
+    private var isChecking: Bool { load.isChecking }
+
     var body: some View {
         let load = load
         DetailCard("Merge", symbol: "arrow.triangle.merge", width: .fullWidth) {
             if let state = load.state {
-                content(state)
+                content(state, refreshFailed: load.failed)
             } else if load.failed {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("The merge state couldn't be loaded")
@@ -84,6 +87,13 @@ struct MergeCard: View {
             } else {
                 skeleton
             }
+        } accessory: {
+            // The last state shows at once; the spinner says GitLab is asked again.
+            if load.isChecking, !load.failed {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("Checking the merge state with GitLab")
+            }
         }
         .task(id: Ask(id: mergeRequest.id, updatedAt: mergeRequest.updatedAt)) { await loadOnce() }
     }
@@ -91,11 +101,14 @@ struct MergeCard: View {
     // MARK: The content
 
     @ViewBuilder
-    private func content(_ state: MergeState) -> some View {
+    private func content(_ state: MergeState, refreshFailed: Bool) -> some View {
         let overview = MergeOverview(
             state, approvals: details?.approvals.summary, openThreads: details.flatMap { $0.discussionsLoaded ? $0.threads.count : nil })
         let isOpen = state.lifecycle == .opened
         VStack(alignment: .leading, spacing: 14) {
+            if refreshFailed {
+                refreshFailure
+            }
             // With nothing open, the headline's "All 8 checks passed" unfolds them.
             let foldsInHeadline = overview.open.isEmpty && !overview.passed.isEmpty
             MergeHeadline(
@@ -125,6 +138,20 @@ struct MergeCard: View {
         }
     }
 
+    /// GitLab couldn't be asked again: the last state stays, with its writes off while it is the cached one
+    private var refreshFailure: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(MergeRequestStatus.Color.orange.swiftUI)
+            Text(isChecking ? "The merge state couldn't be checked. This is the last one seen." : "The merge state couldn't be refreshed.")
+                .foregroundStyle(.secondary)
+            Button("Try Again") { reload() }
+                .buttonStyle(.link)
+            Spacer(minLength: 0)
+        }
+        .font(.callout)
+    }
+
     /// the celebration of a merge made from the app, while its outcome shows
     private var mergeCelebration: FunModel.MergeCelebration? {
         activity == .succeeded(.merge) ? appModel?.fun.merges[mergeRequest.reference] : nil
@@ -136,7 +163,7 @@ struct MergeCard: View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(overview.open) { check in
                 MergeCheckRow(check: check, isRunning: isRunning(check)) { fix(check) }
-                    .disabled(activity.running != nil && !isRunning(check))
+                    .disabled((activity.running != nil && !isRunning(check)) || (isChecking && check.fix == .markReady))
             }
             if foldsInHeadline {
                 ForEach(overview.passed) { check in
@@ -328,11 +355,11 @@ struct MergeCard: View {
                         } else {
                             Image(systemName: Self.symbol(primary))
                         }
-                        Text(verbatim: running == primary ? Self.runningTitle(primary) : Self.title(primary, state: state))
+                        Text(verbatim: running == primary ? Self.runningTitle(primary) : isChecking ? "Checking…" : Self.title(primary, state: state))
                     }
                 }
                 .buttonStyle(MergeButtonStyle(tint: Self.tint(primary), isFilled: primary != .cancelAutoMerge))
-                .disabled(running != nil)
+                .disabled(running != nil || isChecking)
                 .help(Self.help(primary, state: state))
                 if writeAccess == .readOnly {
                     tokenNote
@@ -370,6 +397,7 @@ struct MergeCard: View {
                     Label("Merge", systemImage: "arrow.triangle.merge")
                 }
                 .buttonStyle(MergeButtonStyle(tint: MergeRequestStatus.Color.green.swiftUI))
+                .disabled(isChecking)
                 .keyboardShortcut(.defaultAction)
                 Button("Cancel") { withAnimation(.snappy) { phase = nil } }
                     .buttonStyle(MergeButtonStyle(tint: MergeRequestStatus.Color.neutral.swiftUI, isFilled: false))
@@ -437,7 +465,8 @@ struct MergeCard: View {
 
     /// Runs a write after the user's click; the store refreshes the merge request after it.
     private func run(_ action: MergeAction, state: MergeState?) {
-        guard let store, let state else {
+        // Nothing is sent on a state GitLab didn't confirm; the store refuses it too.
+        guard let store, let state, !isChecking else {
             return
         }
         let options = chosenOptions(state)

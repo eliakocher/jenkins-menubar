@@ -5,6 +5,45 @@ versions follow [Semantic Versioning](https://semver.org/). The version lives in
 
 ## [Unreleased]
 
+### Added
+- **Mega Corners** in Settings: each screen corner runs an action like macOS's own hot corners, a shortcut or an app,
+  and another one with ⌘, ⌥, ⌃ or ⇧ held.
+- Mega Corners can open a MegaMonitor section, Search, Refresh Now, or mute alerts for an hour.
+- **Corner glow:** a Mega Corner can light up its corner when it fires. Pick the color, Glow, Pulse or Ripple, the
+  duration, the opacity and the size, and try it on the screen from Settings.
+- The settings of the old Hot Corners app are imported once, with a warning and a Quit button while it still runs.
+- **What's New stands out:** after an update it shows as a colourful animated card on top of the Inbox, and the Inbox
+  in the sidebar and in the menu bar pane wears a small gift until you open it.
+
+### Changed
+- **Claude can use your skills in chats** when your Claude Code setup is on and the chat doesn't read a checkout, but
+  only skills that read. A skill that needs git or wants to change something still doesn't run there.
+- **Add Required Reviewers shows who it adds:** those people come first in the Suggested row, marked "Required".
+  Hovering the button highlights them, and its tooltip lists them by approval rule.
+
+### Fixed
+- The suggested reviewers no longer use the sparkles symbol, which means Claude.
+- A window opened by a Mega Corner now comes in front of other apps.
+- **The peeking butler only shows up in a MegaMonitor window while you're looking at it** (the window is focused). If
+  you switch away while he's out, he ducks back right away. The menu bar pane works as before.
+
+## [1.0.5] - 2026-11-03
+
+### Added
+- **What's New:** after an update, the Inbox gets a "What's new in x.y.z" entry in its own What's New group. It opens
+  every version's changes since the one you last ran, and **Help → What's New…** shows them all anytime. Its delivery
+  is Inbox Only by default (Settings → Notifications).
+
+### Fixed
+- **The butler peeks out about half a second after you open the menu bar pane**, instead of making you wait 5 to 10
+  seconds (Surprise Me and the random peeks).
+
+### Changed
+- **Rebuilding shows a percentage:** "Rebuilding 42%" with a progress ring in the window's toolbar, and the percentage
+  in the menu bar pane.
+- **The Merge card** of a merge request shows its last known state at once, with a small spinner while it reloads,
+  instead of a skeleton. Merging stays off ("Checking…") until GitLab has confirmed the state.
+
 ## [1.0.4] - 2026-11-03
 
 ### Fixed

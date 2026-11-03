@@ -19,6 +19,8 @@ public struct ConversationTurn: Hashable, Sendable, Identifiable {
     public var status: Status
     /// what the question is about in a merge request's code chat (AI-07); `nil` elsewhere
     public var scope: CodeScope?
+    /// what the run reported, for Raw Response, once answered
+    public var raw: ClaudeRawResponse?
 
     public init(
         id: UUID = UUID(), question: String, askedAt: Date, status: Status = .thinking, scope: CodeScope? = nil

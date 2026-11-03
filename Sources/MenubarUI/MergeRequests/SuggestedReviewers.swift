@@ -13,18 +13,27 @@ struct SuggestedReviewerChip: Hashable, Sendable, Identifiable {
     var fullName: String
     /// whether an approval rule that blocks the merge needs the person, or someone else of its pool
     var isRequired: Bool
+    /// whether "Add Required Reviewers" adds the person: they are marked, and shown first
+    var isPick: Bool
     /// the tooltip: what Add does, the strongest reason, and the other reasons
     var help: String
 
     var id: String { username }
 
-    init(_ suggestion: ReviewerSuggestion) {
+    /// - Parameters:
+    ///   - suggestion: the person and why
+    ///   - pickedFor: the open rules "Add Required Reviewers" takes the person for; `nil` when it doesn't add them
+    init(_ suggestion: ReviewerSuggestion, pickedFor: [String]? = nil) {
         username = suggestion.username
         name = suggestion.displayName
         fullName = suggestion.name
         isRequired = suggestion.isRequired
+        isPick = pickedFor != nil
         var lines = ["Add \(suggestion.displayName) as a reviewer", suggestion.reason]
         lines += suggestion.otherReasons.map { "Also: \($0)" }
+        if let pickedFor {
+            lines.append("Add Required Reviewers adds them for \(pickedFor.formatted(.list(type: .and)))")
+        }
         help = lines.joined(separator: "\n")
     }
 }
@@ -35,10 +44,19 @@ struct SuggestedReviewersModel: Equatable, Sendable {
     /// how many chips show before "Show More"
     static let visibleLimit = 8
 
-    /// the people not yet reviewers, ranked: the required ones first
+    /// the people not yet reviewers: those "Add Required Reviewers" adds first, then the rest in the ranking
     var chips: [SuggestedReviewerChip]
-    /// the fewest people who satisfy the open required rules and aren't reviewers yet
+    /// the fewest people who satisfy the open required rules and aren't reviewers yet: what the button adds
     var required: [SuggestedReviewerChip]
+    /// the open rules with the people the button adds for each, in the order the rules first appear; a person who
+    /// counts for two rules is under both
+    var requiredGroups: [RuleGroup]
+
+    /// One open approval rule and the names of those the button adds for it.
+    struct RuleGroup: Equatable, Sendable {
+        var rule: String
+        var names: [String]
+    }
     /// what couldn't be read ("CODEOWNERS couldn't be read: …"); the chips are what the rest gave
     var notes: [String]
 
@@ -47,16 +65,38 @@ struct SuggestedReviewersModel: Equatable, Sendable {
     ///   - current: the usernames that are reviewers already, in any case, also those added a moment ago
     init(_ list: ReviewerSuggestionList, current: Set<String>) {
         let taken = Set(current.map { $0.lowercased() })
-        chips = list.items.filter { !taken.contains($0.username.lowercased()) }.map(SuggestedReviewerChip.init)
-        required = list.minimalRequired.filter { !taken.contains($0.username.lowercased()) }.map(SuggestedReviewerChip.init)
+        let picks = list.requiredPicks(alreadyAdded: taken)
+        let pickChips = picks.map { SuggestedReviewerChip($0.person, pickedFor: $0.rules) }
+        let picked = Set(picks.map { $0.person.username.lowercased() })
+        required = pickChips
+        chips = pickChips + list.items
+            .filter { !taken.contains($0.username.lowercased()) && !picked.contains($0.username.lowercased()) }
+            .map { SuggestedReviewerChip($0) }
+        var groups: [RuleGroup] = []
+        for (pick, chip) in zip(picks, pickChips) {
+            for rule in pick.rules {
+                if let index = groups.firstIndex(where: { $0.rule == rule }) {
+                    groups[index].names.append(chip.name)
+                } else {
+                    groups.append(RuleGroup(rule: rule, names: [chip.name]))
+                }
+            }
+        }
+        requiredGroups = groups
         notes = list.notes
     }
 
     var isEmpty: Bool { chips.isEmpty }
 
-    /// the chips before "Show More", or all of them
+    /// the chips before "Show More", or all of them; the people the button adds are never folded away
     func shown(showsAll: Bool) -> [SuggestedReviewerChip] {
-        showsAll ? chips : Array(chips.prefix(Self.visibleLimit))
+        showsAll ? chips : Array(chips.prefix(max(Self.visibleLimit, required.count)))
+    }
+
+    /// The button's tooltip: who it adds, by approval rule ("Backend: Alex Kim").
+    var requiredHelp: String {
+        let lines = requiredGroups.map { "\($0.rule): \($0.names.joined(separator: ", "))" }
+        return (["Adds the fewest people who satisfy the approval rules that still need someone:"] + lines).joined(separator: "\n")
     }
 
     /// "Add Required Reviewers", with how many when it is more than one; `nil` when no rule needs anyone
@@ -118,6 +158,8 @@ struct SuggestedReviewersSection: View {
     @Environment(\.mergeRequestDetailsFixtures) private var fixtures
     @ViewState private var phase: SuggestionAddPhase?
     @ViewState private var showsAll = false
+    /// whether the pointer is on "Add Required Reviewers": the chips it adds light up
+    @ViewState private var highlightsRequired = false
 
     private var currentPhase: SuggestionAddPhase { phase ?? fixtures?.suggestionPhase ?? .idle }
 
@@ -164,7 +206,7 @@ struct SuggestedReviewersSection: View {
                         header(suggestions, phase: phase)
                         chips(suggestions, phase: phase)
                         if !suggestions.required.isEmpty {
-                            Text("Tinted: an approval rule needs one of them")
+                            Text("Marked: Add Required Reviewers adds them, just enough for each approval rule")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -192,7 +234,7 @@ struct SuggestedReviewersSection: View {
             Label {
                 Text("Suggested")
             } icon: {
-                Image(systemName: "sparkles")
+                Image(systemName: "person.badge.shield.checkmark")
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.secondary)
@@ -213,7 +255,8 @@ struct SuggestedReviewersSection: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(isBusy(phase))
-                .help("Adds the fewest people who satisfy the approval rules that still need someone")
+                .onHover { highlightsRequired = $0 }
+                .help(suggestions.requiredHelp)
             }
         }
     }
@@ -222,7 +265,10 @@ struct SuggestedReviewersSection: View {
         let shown = suggestions.shown(showsAll: showsAll)
         return PillFlowLayout(spacing: 6, lineSpacing: 6) {
             ForEach(shown) { chip in
-                SuggestedChipView(chip: chip, isSending: sending(chip, in: phase), isDisabled: isBusy(phase)) {
+                SuggestedChipView(
+                    chip: chip, isSending: sending(chip, in: phase), isDisabled: isBusy(phase),
+                    emphasis: emphasis(of: chip, in: suggestions)
+                ) {
                     add([chip])
                 }
             }
@@ -233,6 +279,12 @@ struct SuggestedReviewersSection: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// How a chip shows while the pointer is on "Add Required Reviewers": the ones it adds light up, the rest step back.
+    private func emphasis(of chip: SuggestedReviewerChip, in suggestions: SuggestedReviewersModel) -> SuggestedChipView.Emphasis {
+        guard highlightsRequired, !suggestions.required.isEmpty else { return .normal }
+        return chip.isPick ? .lit : .dimmed
     }
 
     private func confirmation(_ suggestions: SuggestedReviewersModel) -> some View {
@@ -332,12 +384,17 @@ struct SuggestedReviewersSection: View {
 
 // MARK: - A suggested chip
 
-/// The avatar and the name of a suggested person, with a plus: a click adds them. A required one is tinted in the accent
-/// color and has a solid border, the others a dashed one. The reason is the tooltip.
+/// The avatar and the name of a suggested person, with a plus: a click adds them. One "Add Required Reviewers" adds is
+/// filled in the accent color with a solid border and a "Required" mark; the others have a dashed border. The reason is
+/// the tooltip.
 private struct SuggestedChipView: View {
+    /// how the chip shows while the pointer is on "Add Required Reviewers"
+    enum Emphasis { case normal, lit, dimmed }
+
     let chip: SuggestedReviewerChip
     let isSending: Bool
     let isDisabled: Bool
+    let emphasis: Emphasis
     let add: () -> Void
 
     @ViewState private var isHovered = false
@@ -345,12 +402,21 @@ private struct SuggestedChipView: View {
     var body: some View {
         // Not orange: that is the outdated review's color next to these chips.
         let tint = Color.accentColor
+        let lit = emphasis == .lit
         Button(action: add) {
             HStack(spacing: 7) {
                 InitialsAvatar(name: chip.fullName, username: chip.username, size: 24)
                 Text(verbatim: chip.name)
                     .font(.callout)
                     .lineLimit(1)
+                if chip.isPick {
+                    Text("Required")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(tint, in: Capsule())
+                }
                 if isSending {
                     ProgressView()
                         .controlSize(.mini)
@@ -365,18 +431,24 @@ private struct SuggestedChipView: View {
             .padding(.leading, 4)
             .padding(.trailing, 9)
             .padding(.vertical, 4)
-            .background(chip.isRequired ? AnyShapeStyle(tint.opacity(0.12)) : AnyShapeStyle(.fill.quaternary), in: Capsule())
+            .background(background(tint: tint, lit: lit), in: Capsule())
             .overlay {
                 Capsule().strokeBorder(
-                    chip.isRequired ? tint.opacity(0.5) : Color.secondary.opacity(isHovered ? 0.5 : 0.25),
-                    style: StrokeStyle(lineWidth: 0.75, dash: chip.isRequired ? [] : [3, 2]))
+                    chip.isPick ? tint.opacity(lit ? 1 : 0.7) : Color.secondary.opacity(isHovered ? 0.5 : 0.25),
+                    style: StrokeStyle(lineWidth: lit ? 1.5 : 0.75, dash: chip.isPick ? [] : [3, 2]))
             }
             .contentShape(Capsule())
+            .opacity(emphasis == .dimmed ? 0.45 : 1)
+            .animation(.easeOut(duration: 0.12), value: emphasis)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
         .onHover { isHovered = $0 }
         .help(chip.help)
-        .accessibilityLabel("Add \(chip.name) as a reviewer")
+        .accessibilityLabel(chip.isPick ? "Add \(chip.name) as a reviewer, required" : "Add \(chip.name) as a reviewer")
+    }
+
+    private func background(tint: Color, lit: Bool) -> AnyShapeStyle {
+        chip.isPick ? AnyShapeStyle(tint.opacity(lit ? 0.28 : 0.16)) : AnyShapeStyle(.fill.quaternary)
     }
 }

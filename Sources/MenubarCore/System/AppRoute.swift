@@ -19,6 +19,9 @@ import Foundation
 ///   that card. Only an `http` or `https` link in exactly one `url` parameter counts; an unknown `card` shows the page
 ///   from the top; a refused link opens the main window.
 ///
+/// - `megamonitor://whats-new?from=<version>&to=<version>`: the main window with the "What's New" sheet: the changelog's
+///   versions after `from` up to `to`. Either can be left out; without both it shows the whole changelog.
+///
 /// Any other link of the scheme opens the main window.
 public enum AppRoute: Hashable, Sendable {
     case settings(SettingsPane)
@@ -31,6 +34,8 @@ public enum AppRoute: Hashable, Sendable {
     /// a build, merge request or work item by its web link, with the card of its page to bring into view
     case openItem(link: URL, card: DetailCardID?)
     case mainWindow
+    /// the "What's New" sheet on the main window: the changelog's versions after `from` up to `to`; nil for no end
+    case whatsNew(from: String?, to: String?)
 
     /// A section of the main window's sidebar, named as in its link.
     public enum Section: String, Hashable, Sendable, CaseIterable {
@@ -84,6 +89,11 @@ public enum AppRoute: Hashable, Sendable {
             } else {
                 self = .mainWindow
             }
+        case "whats-new":
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            self = .whatsNew(
+                from: items.first { $0.name == "from" }?.value.flatMap { $0.isEmpty ? nil : $0 },
+                to: items.first { $0.name == "to" }?.value.flatMap { $0.isEmpty ? nil : $0 })
         case "open":
             self = name.flatMap(Section.init(rawValue:)).map(AppRoute.open) ?? .mainWindow
         default:
@@ -115,6 +125,10 @@ public enum AppRoute: Hashable, Sendable {
                 + (card.map { [URLQueryItem(name: "card", value: $0.rawValue)] } ?? [])
         case .mainWindow:
             components.host = "open"
+        case .whatsNew(let from, let to):
+            components.host = "whats-new"
+            let items = [("from", from), ("to", to)].compactMap { name, value in value.map { URLQueryItem(name: name, value: $0) } }
+            components.queryItems = items.isEmpty ? nil : items
         }
         // Every part above is valid in a URL, so this never fails.
         return components.url!

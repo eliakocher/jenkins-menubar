@@ -115,6 +115,17 @@ extension Fixtures {
             hasLoadedDone: hasLoadedDone)
     }
 
+    /// the Inbox right after an update: the unread "What's New" entry among a few pending rows
+    func inboxWhatsNewData() -> InboxData {
+        let sections = WhatsNewGallery.sections(from: "1.0.2", to: "1.0.4")
+        let update = InboxEntry(
+            event: .whatsNew(WhatsNewEntry(version: "1.0.4", from: "1.0.2", sections: sections), at: minutesAgo(2)))
+        var data = inboxData(pending: [update] + inboxPending.prefix(4))
+        data.unreadWhatsNew = update
+        data.whatsNewSections = sections
+        return data
+    }
+
     /// the ids of the rows the gallery shows as opened
     var inboxSeen: Set<String> {
         ["gid://gitlab/Todo/2", "gid://gitlab/Todo/5"]
@@ -141,7 +152,7 @@ struct InboxGalleryView: View {
     var body: some View {
         let shell = InboxShell(
             badge: data.pending.count, problem: data.problem,
-            subtitle: data.fetchedAt.map { Formatting.lastChecked($0) })
+            subtitle: data.fetchedAt.map { Formatting.lastChecked($0) }, hasUnreadWhatsNew: data.unreadWhatsNew != nil)
         MainWindowGalleryView(
             model: MainWindowShellModel(panel, section: .inbox, inbox: shell), section: .inbox, searchText: query, size: size
         ) {
@@ -164,6 +175,30 @@ extension GalleryCatalog {
         return [
             GalleryEntry(screen: "inbox", state: "typical", size: CGSize(width: size.width, height: 820)) { f in
                 InboxGalleryView(data: f.inboxData(), panel: f.panel(), seen: f.inboxSeen, size: CGSize(width: size.width, height: 820))
+            },
+            // The first launch after an update: its card on top of the list, and the gift on the sidebar's Inbox row.
+            GalleryEntry(screen: "inbox", state: "whats-new", size: size) { f in
+                InboxGalleryView(data: f.inboxWhatsNewData(), panel: f.panel())
+            },
+            GalleryEntry(screen: "inbox", state: "whats-new-narrow", size: narrow) { f in
+                InboxGalleryView(data: f.inboxWhatsNewData(), panel: f.panel(), size: narrow)
+            },
+            // Reduce Motion: the same gradient, standing still.
+            GalleryEntry(screen: "inbox", state: "whats-new-reduce-motion", size: size) { f in
+                InboxGalleryView(data: f.inboxWhatsNewData(), panel: f.panel())
+                    .environment(\._accessibilityReduceMotion, true)
+            },
+            // Opened or dismissed: an ordinary row in its group, no card, no gift.
+            GalleryEntry(screen: "inbox", state: "whats-new-seen", size: size) { f in
+                var data = f.inboxWhatsNewData()
+                data.unreadWhatsNew = nil
+                return InboxGalleryView(data: data, panel: f.panel())
+            },
+            // The pane's Inbox row wears the gift too.
+            GalleryEntry(screen: "inbox", state: "pane-whats-new", size: CGSize(width: 400, height: 520)) { f in
+                var data = f.menuPaneData
+                data.inbox = PanelData.Inbox(entries: f.inboxPending.filter { !$0.isMine }, badgeCount: 3, hasUnreadWhatsNew: true)
+                return MenuPaneGalleryView(data: data)
             },
             GalleryEntry(screen: "inbox", state: "snoozed", size: size) { f in
                 InboxGalleryView(data: f.inboxData(), panel: f.panel(), filter: InboxViewFilter(state: .snoozed))

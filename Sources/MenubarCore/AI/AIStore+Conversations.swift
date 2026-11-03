@@ -176,12 +176,17 @@ extension AIStore {
 
     // MARK: Inside
 
-    /// Forgets a subject's conversation and ends the turn in progress.
-    func clearConversation(of subject: AISubject) {
+    /// Forgets a subject's conversation and ends the turn in progress, and its hosted Claude Code unless it goes on
+    /// with a new first answer.
+    func clearConversation(of subject: AISubject, keepingHost: Bool = false) {
         followUpTasks[subject]?.cancel()
         followUpTasks[subject] = nil
         conversations[subject] = nil
         conversationOrder.removeAll { $0 == subject }
+        if !keepingHost {
+            endHostSession(subject)
+            hostChats[subject] = nil
+        }
     }
 
     /// Marks a subject's conversation as the newest, and lets the oldest idle ones go beyond ``Conversation/kept``.
@@ -193,6 +198,7 @@ extension AIStore {
         {
             conversationOrder.removeAll { $0 == oldest }
             conversations[oldest] = nil
+            endHostSession(oldest)
         }
     }
 
@@ -220,10 +226,21 @@ extension AIStore {
             .redacted(by: redactor)
         let model = chosen ?? settings.model
         let status: ConversationTurn.Status
+        var raw: ClaudeRawResponse?
         do {
             let setup = await setupForChat(of: prompt, followUp: true)
-            let run = try await engine.run(
-                setup == nil ? prompt : prompt.startingWithCommand(), model: model, effort: settings.effort, setup: setup)
+            let run: ClaudeRun
+            if let setup, hostsChats {
+                // The chat's Claude Code has the facts and the conversation: only the question goes, unless it starts anew.
+                let message = redactor.redact(ClaudePrompt.hostFollowUp(question: turn.question, context: context))
+                (run, raw) = try await hostRun(
+                    subject, message: message, opening: prompt.startingWithCommand().text,
+                    folder: hostFolder(of: subject, prompt: prompt), model: model, setup: setup)
+            } else {
+                run = try await engine.run(
+                    setup == nil ? prompt : prompt.startingWithCommand(), model: model, effort: settings.effort, setup: setup)
+                raw = ClaudeRawResponse(run: run)
+            }
             guard !Task.isCancelled else { return }
             count(run, prompt: prompt, model: model, followUp: true)
             outdatedClaude = nil
@@ -249,6 +266,7 @@ extension AIStore {
             return
         }
         conversations[subject]?.turns[index].status = status
+        conversations[subject]?.turns[index].raw = raw
         switch status {
         case .answered(let text, _, _): landed(subject, subject.useCase, text: text)
         case .failed(let message): landed(subject, subject.useCase, failure: message)

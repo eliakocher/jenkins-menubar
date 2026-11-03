@@ -44,6 +44,11 @@ public final class ProjectsPipelines {
         didSet { stores.forEach { $0.funStore = funStore } }
     }
 
+    /// whether every alert is muted now (HOT-09), for every store. ``AppModel`` sets it.
+    @ObservationIgnored public var alertsMuted: @MainActor () -> Bool = { false } {
+        didSet { stores.forEach { $0.alertsMuted = alertsMuted } }
+    }
+
     @ObservationIgnored private let services: PipelinesServices
     @ObservationIgnored private var isOffline = false
 
@@ -86,6 +91,7 @@ public final class ProjectsPipelines {
                 store.requestCheck = requestCheck
                 store.onFinishedBuilds = onFinishedBuilds
                 store.funStore = funStore
+                store.alertsMuted = alertsMuted
                 store.notifications = notifications
                 store.setOffline(isOffline)
                 next.append(store)

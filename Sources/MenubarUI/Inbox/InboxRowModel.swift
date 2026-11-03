@@ -174,6 +174,7 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
         case .claudeAnswered: ("sparkles", .purple)
         case .digestReady: (MainWindowSection.digest.systemImage, .purple)
         case .coffeeBreak: ("cup.and.saucer.fill", .orange)
+        case .whatsNew: ("gift.fill", .blue)
         case .myTodo: ("circle", .accent)
         default: ("circle.fill", .secondary)
         }

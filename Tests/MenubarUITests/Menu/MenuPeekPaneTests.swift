@@ -69,8 +69,12 @@ struct MenuPeekPaneTests {
         }
         try await Self.spin(300)
         let paneFrame = window.frame
-        // He comes out as the pane's overlay claims him; the pane's own update asks for his panel.
-        #expect(model.fun.claimPeek(busy: false, edges: [.right], owner: FunModel.paneOwner, surface: .menuPane) != nil)
+        // He comes out as the pane's overlay claims him a moment after the pane shows (about 0.4 s after; 1.2 s is the limit here, the old retry was 6 s); the pane's own
+        // update asks for his panel.
+        for _ in 0..<12 where model.fun.playing == nil {
+            try await Self.spin(100)
+        }
+        #expect(model.fun.playing?.owner == FunModel.paneOwner)
         try await Self.spin(300)
         let peek = try #require(window.childWindows?.first as? MenuPeekPanel)
         #expect(peek.isVisible)

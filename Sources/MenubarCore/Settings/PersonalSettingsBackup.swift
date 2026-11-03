@@ -45,6 +45,8 @@ public enum PersonalSettingsBackup {
             Entry(PreferencesStore.menuBarLayoutKey, .string),
             // the keyboard shortcuts the user changed, as JSON text (`PreferencesStore.keyboardShortcutsKey`, KEYS-01)
             Entry(PreferencesStore.keyboardShortcutsKey, .string),
+            // the Hot Corners: the switch, the corners' delays and actions, as JSON text (HOT-01)
+            Entry(PreferencesStore.hotCornersKey, .string),
             // `RepositorySettings`, `TerminalChoice` and `AISettings` (MCP choices, no secret) in their own keys
             Entry(RepositorySettings.defaultsKey, .data),
             Entry(TerminalChoice.defaultsKey, .string),

@@ -10,6 +10,8 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
     case shortcut
     case sidebarShortcut
     case resetShortcuts
+    // Hot Corners
+    case hotCorners
     // Menu Bar
     case showInMenuBar
     case menuBarIcon
@@ -70,6 +72,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .openAtLogin, .linkRouting: .general
         case .shortcut, .sidebarShortcut, .resetShortcuts: .shortcuts
+        case .hotCorners: .hotCorners
         case .showInMenuBar, .menuBarIcon, .menuBarParts, .menuPaneRows, .menuPaneWidth: .menuBar
         case .buildAlerts, .mutedJobs, .slotWarning, .inboxNotifications, .coffeeBreak, .inboxGroupOrder: .notifications
         case .appearance, .contentWidth, .textSize, .diffLayout, .discussions, .sidebarOrder: .appearance
@@ -96,6 +99,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .shortcut: "Open MegaMonitor (anywhere)"
         case .sidebarShortcut: "Toggle Sidebar shortcut"
         case .resetShortcuts: "Reset all shortcuts"
+        case .hotCorners: "Mega Corners"
         case .linkRouting: "Open GitLab and Jenkins links in MegaMonitor"
         case .buildAlerts: "Build alerts and previews"
         case .mutedJobs: "Which builds alert"
@@ -150,6 +154,7 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .shortcut: ["hotkey", "keyboard", "global", "shortcut", "key", "anywhere", "open window"]
         case .sidebarShortcut: ["sidebar", "toggle", "keyboard", "shortcut", "⌘S", "cmd s", "show sidebar", "hide sidebar", "key"]
         case .resetShortcuts: ["reset", "default", "defaults", "restore", "keyboard", "shortcuts", "keys", "rebind"]
+        case .hotCorners: ["mega corner", "hot corner", "corners", "screen corner", "pointer", "mouse", "mission control", "desktop", "lock screen", "screen saver", "modifier", "delay"]
         case .linkRouting: ["links", "browser", "route", "gitlab", "jenkins", "hold option"]
         case .buildAlerts: ["alert", "banner", "window", "notification", "sound", "stage", "preview"]
         case .mutedJobs: ["mute", "muted", "quiet", "my builds", "watched builds", "job", "notify"]

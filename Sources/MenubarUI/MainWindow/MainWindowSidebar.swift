@@ -47,6 +47,8 @@ struct MainWindowSidebar: View {
     var markers: [MainWindowSection: String] = [:]
     /// the sections with something new to look at, which get a small accent dot
     var unread: Set<MainWindowSection> = []
+    /// the sections that wear the gift, while the update's "What's New" waits unopened
+    var gifts: Set<MainWindowSection> = []
     var opened = OpenedSidebar()
 
     /// What the list selects: a section, or an opened item.
@@ -68,6 +70,9 @@ struct MainWindowSidebar: View {
                         }
                         if unread.contains(section) {
                             SidebarUnreadDot()
+                        }
+                        if gifts.contains(section) {
+                            SidebarGift()
                         }
                     }
                 } icon: {
@@ -145,6 +150,15 @@ struct SidebarUnreadDot: View {
             .frame(width: 8, height: 8)
             .accessibilityLabel("New")
             .help("A digest you haven't seen yet")
+    }
+}
+
+/// The small gift after the Inbox row's title while the update's "What's New" waits, ringed white on the selected row.
+struct SidebarGift: View {
+    @Environment(\.backgroundProminence) private var prominence
+
+    var body: some View {
+        WhatsNewGiftBadge(isHighlighted: prominence == .increased)
     }
 }
 

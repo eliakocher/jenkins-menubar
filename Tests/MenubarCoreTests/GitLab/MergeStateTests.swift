@@ -386,7 +386,80 @@ struct MergeStateTests {
         #expect(store.load(of: Self.mergeRequest).failed)
     }
 
-    private static func services(stub: StubTransport, folder: TemporaryFolder, token: String? = "glpat-test") throws -> GitLabServices {
+    // MARK: - The cache on disk
+
+    @Test("MR-16 the merge state kept on disk shows at once, with its writes off until GitLab confirms it")
+    func keptStateIsCheckingUntilConfirmed() async throws {
+        let folder = try TemporaryFolder()
+        let details = DetailCache(folder: folder.file("details"))
+        let open = try FixtureFiles.string("GitLab/merge-state.json")
+        let first = StubTransport()
+        first.answer(operation: "MergeRequestMergeState", body: open)
+        first.answer("GET", path: "/api/v4/projects/group%2Fproject/merge_requests/16", body: #"{"diverged_commits_count":40}"#)
+        let firstStore = MergeRequestMergeStore(services: try Self.services(stub: first, folder: folder, details: details))
+        await firstStore.load(Self.mergeRequest)
+        #expect(firstStore.load(of: Self.mergeRequest).isChecking == false)
+
+        // A relaunch, GitLab failing: the kept state shows, still unconfirmed, with the failure. A write sends nothing.
+        let offline = StubTransport()
+        offline.fail(operation: "MergeRequestMergeState", with: .cannotConnect)
+        let store = MergeRequestMergeStore(services: try Self.services(stub: offline, folder: folder, details: details))
+        #expect(store.load(of: Self.mergeRequest).state == nil)
+        await store.load(Self.mergeRequest)
+        var load = store.load(of: Self.mergeRequest)
+        #expect(load.state?.headSHA == "4f2a9c1e5b7d3a8f0c6e2b9d1a4f7c3e5b8d0a2f" && load.state?.behindCount == 40)
+        #expect(load.isCached && load.failed && load.isChecking)
+        await store.perform(.merge, on: Self.mergeRequest)
+        await store.perform(.markReady, on: Self.mergeRequest)
+        #expect(offline.requests(operation: "MergeRequestAccept").isEmpty && offline.requests(operation: "MergeRequestSetDraft").isEmpty)
+        guard case .failed(.markReady, _, needsToken: false) = store.activity(of: Self.mergeRequest) else {
+            Issue.record("the write wasn't refused: \(store.activity(of: Self.mergeRequest))")
+            return
+        }
+        store.dismiss(Self.mergeRequest)
+
+        // Asked again, GitLab answers: confirmed, and the writes are on.
+        let online = StubTransport()
+        online.answer(operation: "MergeRequestMergeState", body: open)
+        online.answer("GET", path: "/api/v4/projects/group%2Fproject/merge_requests/16", body: #"{"diverged_commits_count":41}"#)
+        online.answer(operation: "MergeRequestAccept", body: #"{"data":{"mergeRequestAccept":{"errors":[],"mergeRequest":{"state":"opened"}}}}"#)
+        let relaunched = MergeRequestMergeStore(services: try Self.services(stub: online, folder: folder, details: details))
+        relaunched.pollInterval = .zero
+        await relaunched.load(Self.mergeRequest)
+        load = relaunched.load(of: Self.mergeRequest)
+        #expect(load.state?.behindCount == 41 && !load.isCached && !load.failed && !load.isChecking)
+        // Selected again, unchanged: nothing is asked.
+        await relaunched.load(Self.mergeRequest)
+        #expect(online.requests(operation: "MergeRequestMergeState").count == 1)
+        await relaunched.perform(.merge, on: Self.mergeRequest)
+        #expect(online.requests(operation: "MergeRequestAccept").count == 1)
+    }
+
+    @Test("MR-16 a kept merge state that no longer decodes is ignored, one without its optional fields decodes")
+    func keptStateDecodes() throws {
+        let folder = try TemporaryFolder()
+        let details = DetailCache(folder: folder.file("details"))
+        let state = try Self.decode("merge-state.json")
+        details.save(state, updatedAt: Self.updatedAt, as: .mergeState, key: "group/project!16")
+        #expect(details.load(.mergeState, key: "group/project!16")?.value == state)
+
+        // The optional fields a cache from before them lacks.
+        var object = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+        for key in ["checks", "headSHA", "commitCount", "behindCount", "pipelineStatus", "defaultMergeMessage", "autoMerge", "mergedBy", "mergeError"] {
+            object[key] = nil
+        }
+        let thin = try JSONDecoder().decode(MergeState.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(thin.checks == nil && thin.headSHA == nil && thin.targetBranch == "develop")
+
+        // A copy missing a field that isn't optional can't be read: the card shows its skeleton, as without a copy.
+        let broken = DetailEntry(value: ["lifecycle": "opened"], updatedAt: nil, savedAt: .now)
+        details.save(broken.value, updatedAt: nil, as: DetailKind<[String: String]>("merge-state"), key: "group/project!17")
+        #expect(details.load(.mergeState, key: "group/project!17") == nil)
+    }
+
+    private static func services(
+        stub: StubTransport, folder: TemporaryFolder, token: String? = "glpat-test", details: DetailCache? = nil
+    ) throws -> GitLabServices {
         let team = TeamStore(folder: folder.file("support"), report: { _ in })
         try team.save(Project(id: .main, team: TeamValues(
             jenkinsJobURL: "https://jenkins.example.com/job/project", gitLabURL: gitLab.absoluteString,
@@ -394,6 +467,7 @@ struct MergeStateTests {
         let values = token.map { [TokenAccount.gitlab.rawValue: $0] } ?? [:]
         return GitLabServices(
             transport: stub, clock: ContinuousClock(), tokens: TokenStore(keychain: InMemoryKeychain(values: values)), team: team,
-            caches: CacheStore(folder: folder.file("caches"), report: { _ in }), log: ActivityLog(folder: folder.file("logs")))
+            caches: CacheStore(folder: folder.file("caches"), report: { _ in }), log: ActivityLog(folder: folder.file("logs")),
+            details: details)
     }
 }

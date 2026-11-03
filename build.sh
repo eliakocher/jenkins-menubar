@@ -69,6 +69,10 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$bin/megamonitor" "$app/Contents/MacOS/MegaMonitor"
 cp icons/menubar.png icons/happy.png icons/sad.png icons/gitlab.png "$app/Contents/Resources/"
+# The changelog, for What's New (Help menu, and the Inbox's entry after an update); a missing file leaves the view empty.
+if [[ -f CHANGELOG.md ]]; then
+	cp CHANGELOG.md "$app/Contents/Resources/"
+fi
 # The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
 for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa coffee \
 	peek-side peek-bottom peek-top caught happy-halloween sad-halloween happy-carnival sad-carnival happy-easter sad-easter menubar-wink \
@@ -112,8 +116,8 @@ cat >"$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleExecutable</key><string>MegaMonitor</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0.4</string>
-	<key>CFBundleVersion</key><string>5</string>
+	<key>CFBundleShortVersionString</key><string>1.0.5</string>
+	<key>CFBundleVersion</key><string>6</string>
 	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>LSUIElement</key><true/>
 	<key>CFBundleURLTypes</key>

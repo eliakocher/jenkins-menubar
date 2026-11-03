@@ -82,6 +82,6 @@ enum PanelView {
     static func inbox(_ store: InboxStore) -> PanelData.Inbox {
         PanelData.Inbox(
             entries: store.sections.flatMap(\.entries), badgeCount: store.badgeCount, hasLoaded: store.fetchedAt != nil, isLoading: store.isLoading,
-            problem: store.problem, actionProblem: store.actionProblem)
+            problem: store.problem, actionProblem: store.actionProblem, hasUnreadWhatsNew: store.hasUnreadWhatsNew)
     }
 }

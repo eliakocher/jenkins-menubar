@@ -15,14 +15,14 @@ struct InboxZeroView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            let art = AppImages.alert(.happy, hat: hat)
+            let art = AppImages.inboxZero ?? AppImages.alert(.happy, hat: hat)
             let size = AppImages.alertSize(of: art, box: 88)
             Image(nsImage: art)
                 .resizable()
                 .interpolation(.high)
                 .frame(width: size.width, height: size.height)
                 .overlay {
-                    if AppImages.drawsFallbackHat(.happy, hat: hat), let hat {
+                    if AppImages.inboxZero == nil, AppImages.drawsFallbackHat(.happy, hat: hat), let hat {
                         SeasonalHatOverlay(hat: hat)
                     }
                 }

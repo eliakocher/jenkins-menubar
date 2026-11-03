@@ -205,8 +205,10 @@ public final class SettingsStore {
         let layoutChanged = new.menuBarLayout != storedPreferences.menuBarLayout
         // And the keyboard shortcuts (KEYS-01).
         let shortcutsChanged = new.shortcuts != storedPreferences.shortcuts
+        // And the Hot Corners (HOT-01).
+        let hotCornersChanged = new.hotCorners != storedPreferences.hotCorners
         let changes = preferencesStore.save(new)
-        guard !changes.isEmpty || routingChanged || layoutChanged || shortcutsChanged else { return }
+        guard !changes.isEmpty || routingChanged || layoutChanged || shortcutsChanged || hotCornersChanged else { return }
         storedPreferences = preferencesStore.load()
         var messages = changes
             .filter { labelMessage == nil || !Self.labelKeys.contains($0.key) }
@@ -222,6 +224,9 @@ public final class SettingsStore {
         }
         if shortcutsChanged {
             messages.append("keyboardShortcuts: \(storedPreferences.shortcuts.jsonText ?? "defaults")")
+        }
+        if hotCornersChanged {
+            messages.append("hotCorners: \(storedPreferences.hotCorners.summary)")
         }
         logInfo(messages)
         if changes.contains(where: { $0.key == .checkIntervalSeconds }) {

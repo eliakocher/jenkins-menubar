@@ -103,6 +103,16 @@ final class WindowPresenter {
         NSApp.unhide(nil)
         openWindow(id: Self.mainWindowID)
         NSApp.activate()
+        // Since macOS 14 activation is a request, which macOS refuses when the user's last input went to another app,
+        // as with a hot corner (HOT-01). The window then comes in front of every other one anyway; the next turn,
+        // once a window that opens just now exists.
+        DispatchQueue.main.async {
+            guard !NSApp.isActive else {
+                return
+            }
+            NSApp.windows.first { $0.identifier?.rawValue.contains(Self.mainWindowID) == true && $0.isVisible }?
+                .orderFrontRegardless()
+        }
     }
 
     /// Opens Settings, or brings it forward. The pane it shows is the settings store's `selectedPane`.

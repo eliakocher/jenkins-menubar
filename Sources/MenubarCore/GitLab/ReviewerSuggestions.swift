@@ -171,6 +171,8 @@ public struct ReviewerSuggestionList: Hashable, Sendable {
     public var items: [ReviewerSuggestion]
     /// the open required rules by key, with the approvals each still needs
     var openRules: [String: Int]
+    /// the open required rules' names by key, for the person: "Backend Review", "*.swift in Core"
+    var ruleLabels: [String: String] = [:]
     /// what couldn't be read, like "CODEOWNERS couldn't be read"; the list is what the rest gave
     public var notes: [String]
 
@@ -180,9 +182,10 @@ public struct ReviewerSuggestionList: Hashable, Sendable {
         self.notes = notes
     }
 
-    init(items: [ReviewerSuggestion], openRules: [String: Int], notes: [String] = []) {
+    init(items: [ReviewerSuggestion], openRules: [String: Int], ruleLabels: [String: String] = [:], notes: [String] = []) {
         self.items = items
         self.openRules = openRules
+        self.ruleLabels = ruleLabels
         self.notes = notes
     }
 
@@ -191,15 +194,43 @@ public struct ReviewerSuggestionList: Hashable, Sendable {
     /// Returns the fewest people who satisfy the open required rules: in the ranking, a suggestion is taken when it
     /// counts for a rule that still needs approvals. "Add Required Reviewers" adds these, not every eligible approver.
     public var minimalRequired: [ReviewerSuggestion] {
+        requiredPicks().map(\.person)
+    }
+
+    /// One person "Add Required Reviewers" adds, with the open rules their approval counts for.
+    public struct RequiredPick: Hashable, Sendable {
+        public var person: ReviewerSuggestion
+        /// the names of the open rules the person is taken for, like "Backend Review" or "*.swift in Core"
+        public var rules: [String]
+
+        public init(person: ReviewerSuggestion, rules: [String]) {
+            self.person = person
+            self.rules = rules
+        }
+    }
+
+    /// Returns the people "Add Required Reviewers" adds, the same as ``minimalRequired``, each with the rules they are
+    /// taken for: a rule needing two approvals names two people, a person who counts for two rules is one pick.
+    ///
+    /// - Parameter alreadyAdded: usernames added since the list was read, in any case; their approvals count for their
+    ///   rules, and they are not picked again
+    /// - Returns: the picks, in the ranking
+    public func requiredPicks(alreadyAdded: Set<String> = []) -> [RequiredPick] {
+        let added = Set(alreadyAdded.map { $0.lowercased() })
         var remaining = openRules
-        var picks: [ReviewerSuggestion] = []
-        for item in items where item.isRequired {
+        for item in items where added.contains(item.username.lowercased()) {
+            for key in item.coveredRules where (remaining[key] ?? 0) > 0 {
+                remaining[key, default: 0] -= 1
+            }
+        }
+        var picks: [RequiredPick] = []
+        for item in items where item.isRequired && !added.contains(item.username.lowercased()) {
             let useful = item.coveredRules.filter { (remaining[$0] ?? 0) > 0 }
             guard !useful.isEmpty else { continue }
             for key in useful {
                 remaining[key, default: 0] -= 1
             }
-            picks.append(item)
+            picks.append(RequiredPick(person: item, rules: useful.map { ruleLabels[$0] ?? $0 }))
         }
         return picks
     }
@@ -276,6 +307,7 @@ public enum ReviewerSuggester {
             }
             if remaining > 0 {
                 builder.openRules[key] = remaining
+                builder.ruleLabels[key] = label.replacingOccurrences(of: "`", with: "")
             }
         }
 
@@ -341,6 +373,7 @@ public enum ReviewerSuggester {
         let peopleAreComplete: Bool
         let load: [String: Int]
         var openRules: [String: Int] = [:]
+        var ruleLabels: [String: String] = [:]
         private var order: [String] = []
         private var candidates: [String: Candidate] = [:]
 
@@ -401,7 +434,7 @@ public enum ReviewerSuggester {
                     username: candidate.username, name: candidate.name, kind: strongest.kind, reason: strongest.text,
                     otherReasons: others, coveredRules: candidate.rules)
             }
-            return ReviewerSuggestionList(items: items, openRules: openRules)
+            return ReviewerSuggestionList(items: items, openRules: openRules, ruleLabels: ruleLabels)
         }
 
         private static func kind(_ candidate: Candidate) -> ReviewerSuggestion.Kind {

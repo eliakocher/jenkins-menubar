@@ -88,6 +88,10 @@ public final class AppModel {
     public let inbox: InboxStore
     /// the daily coffee break's entry in the Inbox, at 08:59 on weekdays by default (Settings → Notifications)
     public let coffeeBreak: CoffeeBreak
+    /// the screen corners' actions, with ⌘, ⌥, ⌃ or ⇧ for others (Settings → Hot Corners, HOT-01)
+    public let hotCorners: HotCornersController
+    /// Mute Alerts for 1 Hour: the build alerts and the Inbox's pop-ups stay quiet while it lasts (HOT-09)
+    public let alertMute: AlertMute
 
     /// the fun layer: the butler's tip, the surprises, the peeking butler and Haiku's daily lines (`docs/easter-eggs.md`)
     public let fun: FunModel
@@ -224,6 +228,12 @@ public final class AppModel {
 
         coffeeBreak = CoffeeBreak(
             inbox: inbox, clock: dependencies.clock, now: dependencies.now, line: { [ai] date in await ai.coffeeLine(on: date) })
+        hotCorners = HotCornersController(
+            system: dependencies.hotCornerSystem, pointer: dependencies.pointerSource, clock: dependencies.clock, log: log,
+            settings: preferences.hotCorners)
+        let alertMute = AlertMute(now: dependencies.now, clock: dependencies.clock, log: log)
+        self.alertMute = alertMute
+        projects.alertsMuted = { [weak alertMute] in alertMute?.isMuted ?? false }
 
         let funStore = FunStore(file: dependencies.fileLocations.applicationSupport.appending(path: "fun.json"))
         self.funStore = funStore
@@ -293,6 +303,9 @@ public final class AppModel {
         coffeeBreak.apply(settings.preferences.inboxNotifications)
         fun.apply(settings.preferences)
         fun.start()
+        importLegacyHotCorners()
+        hotCorners.start()
+        announceWhatsNew(info: Bundle.main.infoDictionary, changelog: Changelog.bundled())
     }
 
     /// Stops the background loop and cancels the check under way. ``start()`` starts it again.
@@ -306,6 +319,7 @@ public final class AppModel {
         onScheduler { await $0.stop() }
         coffeeBreak.stop()
         fun.stop()
+        hotCorners.stop()
     }
 
     /// Removes the global hotkey, as the app quits (APP-08).
@@ -404,6 +418,7 @@ public final class AppModel {
     private func apply(_ preferences: Preferences) {
         projects.preferences = preferences
         hotkey.apply(preferences.globalShortcut)
+        hotCorners.apply(preferences.hotCorners)
         fun.apply(preferences)
         if inbox.rules != preferences.inboxNotifications {
             inbox.rules = preferences.inboxNotifications

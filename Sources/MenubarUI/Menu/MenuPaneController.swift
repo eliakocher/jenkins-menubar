@@ -41,8 +41,9 @@ final class MenuPaneController {
     /// Places the flyout again when the pane's window resizes: a child window keeps its offset from the parent's
     /// origin, so without it a pane that shrinks under the menu bar pushes the flyout up and off the screen.
     @ObservationIgnored private var paneResizeObserver: (any NSObjectProtocol)?
-    /// whether the pane is on screen; the flyout never shows without it
-    @ObservationIgnored private(set) var isPaneVisible = false
+    /// Whether the pane is on screen; the flyout never shows without it. Observed, so the butler's overlay claims him when
+    /// the pane appears (``ButlerPeekOverlay``): that only reads here, and nothing in an update touches a window for it.
+    private(set) var isPaneVisible = false
 
     // MARK: - The pane's events
 

@@ -135,6 +135,7 @@ public final class InboxStore {
             problem = cached.problem
         }
         rebuild()
+        seen.onChange = { [weak self] in self?.hasUnreadWhatsNew = self?.unreadWhatsNew != nil }
     }
 
     // MARK: - What the views show
@@ -143,6 +144,18 @@ public final class InboxStore {
     public var sections: [InboxSection] {
         InboxSection.grouped(pending, order: rules.groupOrder)
     }
+
+    /// the "What's New" entry of an update that is still waiting: pending (not Done) and not opened yet. The Inbox shows it
+    /// as the hero card on top, and the sidebar's and the pane's Inbox rows wear the gift until it is opened or done. Opening
+    /// the entry marks it seen and clears it, so either way ends it. Reading it observes the pending list and this entry's
+    /// seen mark only.
+    public var unreadWhatsNew: InboxEntry? {
+        pending.first { $0.kind == .whatsNew && !seen.isSeen($0.id) }
+    }
+
+    /// whether ``unreadWhatsNew`` is there, kept apart so the window's sidebar and the pane's row observe this flag and not
+    /// the rows: it changes only when the entry arrives, is opened or is done
+    public private(set) var hasUnreadWhatsNew = false
 
     /// Returns the rows of a filter.
     ///
@@ -831,6 +844,7 @@ public final class InboxStore {
         let counted = pending.filter { rules.countsInBadge($0.kind, projectPath: $0.projectPath, myProjects: mine) }.count
         let beyond = max(0, (server?.pendingCount ?? 0) - (server?.pending.count ?? 0))
         badgeCount = counted + beyond
+        hasUnreadWhatsNew = unreadWhatsNew != nil
 
         // The local snoozes that woke, or whose to-do is gone, are forgotten.
         if server != nil {

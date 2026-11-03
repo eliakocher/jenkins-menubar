@@ -132,6 +132,7 @@ struct MenuPaneModel: Sendable {
         area.isLoading = state.isLoading && !state.hasLoaded && !offline && !needsToken
         area.problem = offline || needsToken ? nil : state.problem.map { PanelModel.problemItem($0).text }
         area.count = state.badgeCount > 0 ? state.badgeCount : nil
+        area.showsGift = state.hasUnreadWhatsNew
         guard !state.entries.isEmpty else {
             if needsToken {
                 area.summary = [.note(PanelModel.SetupText.summaryNeedsToken)]
@@ -160,6 +161,8 @@ struct MenuPaneModel: Sendable {
                 area.summary.append(.count(symbol: "checklist", tint: .gitLab(.blue), text: "\(count) to do"))
             case .coffee:
                 area.summary.append(.count(symbol: "cup.and.saucer.fill", tint: .gitLab(.orange), text: "coffee"))
+            case .whatsNew:
+                area.summary.append(.count(symbol: "gift.fill", tint: .gitLab(.blue), text: "what's new"))
             case .builds:
                 area.summary.append(.count(symbol: "xmark.circle.fill", tint: .gitLab(.red), text: "\(count) failing"))
             default:
@@ -304,6 +307,8 @@ struct MenuArea: Hashable, Sendable, Identifiable {
     var isLoading = false
     /// the problem's text, which shows as the red marker and its tooltip; `nil` without one (MR-05)
     var problem: String?
+    /// whether the row wears the gift: the update's "What's New" waits unopened (Inbox only)
+    var showsGift = false
     /// whether hovering the row opens its flyout; without one, the row has no chevron and a click opens the window
     var hasFlyout = true
     /// the most entries its flyout lists

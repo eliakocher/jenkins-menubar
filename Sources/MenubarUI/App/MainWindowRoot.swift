@@ -103,6 +103,15 @@ public struct MainWindowRoot: View {
                 rebuild: { [model] in model.projects.rebuild(request.build, with: $0) },
                 close: { [router] in router.rebuildRequest = nil })
         }
+        .sheet(item: whatsNewRequest) { request in
+            WhatsNewSheet(sections: request.sections(), close: { [router] in router.whatsNewRequest = nil })
+                .onAppear {
+                    // Opened from the Inbox, the Help menu or a link: the card on top of the Inbox has done its job.
+                    if let entry = model.inbox.unreadWhatsNew {
+                        model.inbox.seen.markSeen(entry.id)
+                    }
+                }
+        }
         // A link to a merge request or work item in a description or a comment opens in the app (WIN-06).
         .environment(\.openItemLink, OpenItemLink { [model, router] url in router.openItemLink(url, model: model) })
     }
@@ -168,7 +177,7 @@ public struct MainWindowRoot: View {
         return InboxShell(
             badge: inbox.badgeCount, problem: inbox.problem,
             subtitle: section == .inbox ? inbox.fetchedAt.map { Formatting.lastChecked($0) } : nil,
-            isBusy: section == .inbox && inbox.isLoading)
+            isBusy: section == .inbox && inbox.isLoading, hasUnreadWhatsNew: inbox.hasUnreadWhatsNew)
     }
 
     /// Saves the order after a drag of the sidebar's rows; a section the sidebar hides keeps its place.
@@ -366,6 +375,12 @@ public struct MainWindowRoot: View {
     private var rebuildRequest: Binding<RebuildRequest?> {
         @Bindable var router = router
         return $router.rebuildRequest
+    }
+
+    /// the "What's New" sheet shows while there is a request; closing it clears the request
+    private var whatsNewRequest: Binding<WhatsNewRequest?> {
+        @Bindable var router = router
+        return $router.whatsNewRequest
     }
 
     /// The sheet shows while there is a watch request; closing it clears the request.

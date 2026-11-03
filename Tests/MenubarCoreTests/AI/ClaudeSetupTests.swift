@@ -72,7 +72,7 @@ struct ClaudeSetupTests {
         #expect(!on.contains("--safe-mode"))
         #expect(!on.contains("--restricted"))
         #expect(Self.value(after: "--permission-mode", in: on) == "dontAsk")
-        #expect(Self.value(after: "--tools", in: on) == "")
+        #expect(Self.value(after: "--tools", in: on) == "Skill")
         #expect(on.contains("--no-session-persistence"))
         #expect(on.filter { $0 == "--max-budget-usd" }.count == 1)
         // The facts are never an argument.
@@ -97,6 +97,30 @@ struct ClaudeSetupTests {
         #expect(Self.value(after: "--add-dir", in: arguments) == folder)
         #expect(!arguments.contains("--safe-mode") && !arguments.contains("--restricted"))
         #expect(Self.value(after: "--max-budget-usd", in: arguments) == "10.00")
+    }
+
+    @Test("AI-09 a chat with the setup and no folder may load skills: the Skill tool and nothing else, with Bash, Edit and Write still denied; safe mode and a checkout never get it", arguments: [
+        (folder: nil as String?, setup: true, tools: "Skill", allowsSkill: true),
+        (folder: nil, setup: false, tools: "", allowsSkill: false),
+        // A skill's `allowed-tools` with a bare `Read` would read outside the checkout.
+        (folder: "/Users/dev/src/project", setup: true, tools: "Read,Grep,Glob", allowsSkill: false),
+        (folder: "/Users/dev/src/project", setup: false, tools: "Read,Grep,Glob", allowsSkill: false),
+    ])
+    func skillTool(folder: String?, setup: Bool, tools: String, allowsSkill: Bool) {
+        var prompt = ClaudePrompt(useCase: folder == nil ? .askAboutItem : .askAboutCode, instructions: "i", text: "t")
+        prompt.readableFolder = folder
+        let arguments = ClaudeEngine.arguments(for: prompt, model: .sonnet, setup: setup ? Self.setup() : nil)
+        #expect(Self.value(after: "--tools", in: arguments) == tools)
+        let allowed = Self.value(after: "--allowedTools", in: arguments)?.components(separatedBy: ",") ?? []
+        #expect(allowed.contains("Skill") == allowsSkill)
+        // Only the Skill tool and MCP tools are ever allowed by name: never a file tool or one that runs something.
+        #expect(allowed.allSatisfy { $0 == "Skill" || $0.hasPrefix("mcp__") })
+        if setup {
+            // The denials a skill's `allowed-tools` can't get past stay, whatever the tools.
+            let denied = Self.value(after: "--disallowedTools", in: arguments)?.components(separatedBy: ",") ?? []
+            #expect(Set(["Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"]).isSubset(of: denied))
+            #expect(Self.value(after: "--permission-mode", in: arguments) == "dontAsk")
+        }
     }
 
     @Test("AI-09 CLAUDE.md goes through env after its own options, only when it is turned off; a claude path env would misread runs in safe mode")
@@ -168,19 +192,19 @@ struct ClaudeSetupTests {
         }
         // The default: GitLab and Jenkins read by name, their writes denied by name, the others by prefix.
         let standard = try lists([:])
-        #expect(standard.allowed == ["mcp__claude_ai_Gitlab_MCP__get_issue", "mcp__plugin_acme_jenkins__getBuild"])
+        #expect(standard.allowed == ["Skill", "mcp__claude_ai_Gitlab_MCP__get_issue", "mcp__plugin_acme_jenkins__getBuild"])
         #expect(standard.denied == [
             "Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "mcp__claude_ai_Figma__*", "mcp__cmux-cua__*",
             "mcp__claude_ai_Gitlab_MCP__create_issue", "mcp__plugin_acme_jenkins__triggerBuild",
         ])
         // Figma on, GitLab off.
         let swapped = try lists(["claude_ai_Figma": true, "claude_ai_Gitlab_MCP": false])
-        #expect(swapped.allowed == ["mcp__claude_ai_Figma__get_screenshot", "mcp__plugin_acme_jenkins__getBuild"])
+        #expect(swapped.allowed == ["Skill", "mcp__claude_ai_Figma__get_screenshot", "mcp__plugin_acme_jenkins__getBuild"])
         #expect(swapped.denied.contains("mcp__claude_ai_Gitlab_MCP__*") && swapped.denied.contains("mcp__claude_ai_Figma__use_figma"))
         #expect(!swapped.denied.contains("mcp__claude_ai_Figma__*"))
         // Everything off: nothing allowed, a prefix for each server.
         let none = try lists(["claude_ai_Gitlab_MCP": false, "plugin_acme_jenkins": false])
-        #expect(none.allowed.isEmpty)
+        #expect(none.allowed == ["Skill"])
         #expect(Set(none.denied).isSuperset(of: ["mcp__claude_ai_Figma__*", "mcp__claude_ai_Gitlab_MCP__*", "mcp__cmux-cua__*", "mcp__plugin_acme_jenkins__*"]))
         // A tool is never allowed and denied; Bash, Edit and Write are denied, never allowed.
         for choice in [standard, swapped, none] {
@@ -196,7 +220,7 @@ struct ClaudeSetupTests {
         #expect(wide.firstIndex(of: "--allowedTools").map { wide[$0 + 2].hasPrefix("--") } == true)
         // With nothing listed yet, no MCP tool at all: a failed listing never turns a tool on.
         let unknown = ClaudeEngine.arguments(for: prompt, model: .opus, setup: ClaudeSetup(useClaudeMd: true, inventory: nil))
-        #expect(!unknown.contains("--allowedTools"))
+        #expect(Self.value(after: "--allowedTools", in: unknown) == "Skill")
         #expect(Self.value(after: "--disallowedTools", in: unknown)?.components(separatedBy: ",").contains("mcp__*") == true)
     }
 
@@ -297,7 +321,7 @@ struct ClaudeSetupTests {
             isEnabled: true, confirmedUseCases: [.askAboutItem], useMySetup: true, mcpServerChoices: Self.demoChoices))
         await broken.ask("Why?", about: item, description: nil)
         let chat = try #require(await brokenFake.calls.last)
-        #expect(!chat.arguments.contains("--allowedTools"))
+        #expect(Self.value(after: "--allowedTools", in: chat.arguments) == "Skill")
         #expect(Self.value(after: "--disallowedTools", in: chat.arguments)?.contains("mcp__*") == true)
         if case .failed = broken.setupInventory {} else { Issue.record("expected a failed listing") }
 
@@ -426,7 +450,10 @@ struct ClaudeSetupTests {
 
     @MainActor
     private static func store(_ fake: SetupFake, _ settings: AISettings) -> AIStore {
-        let store = AIStore(defaults: TemporaryDefaults().defaults, runner: fake, resolver: fake.resolver())
+        let defaults = TemporaryDefaults().defaults
+        // These tests are about the headless run with the setup, the fallback of the hosted chats (AI-10).
+        defaults.set(false, forKey: AIStore.hostChatsKey)
+        let store = AIStore(defaults: defaults, runner: fake, resolver: fake.resolver())
         store.update(settings)
         return store
     }

@@ -107,24 +107,49 @@ enum AppImages {
     }()
 
     /// Returns the image of an alert (ALERT-02), with the hat the alert's butler wears. The art files are
-    /// `icons/<happy|sad>-<name>.png`, where the name is `party` (also New Year's), `santa`, `halloween`, `carnival` or `easter`.
-    /// A file that isn't in the bundle changes nothing: the plain butler shows. New Year's sad butler has no file
-    /// (`sad-party` doesn't exist) and stays plain.
+    /// `icons/<happy|sad>-<name>.png` (see ``alertArtNames(_:hat:)`` for the names).
+    /// A file that isn't in the bundle changes nothing: the plain butler shows.
     static func alert(_ icon: AlertContent.Icon, hat: ButlerHat? = nil) -> NSImage {
-        if let hat, let image = hatted("\(icon.rawValue)-\(artName(of: hat))") {
+        if let hat, let image = hattedArt(icon, hat: hat) {
             return image
         }
         return icon == .happy ? happy : sad
     }
 
-    private static func artName(of hat: ButlerHat) -> String {
-        switch hat {
-        case .party, .newYear: "party"
-        case .santa: "santa"
-        case .witch: "halloween"
-        case .carnival: "carnival"
-        case .easter: "easter"
+    /// Returns the file names (without `.png`) of an alert's butler wearing a hat, the first that exists wins: the user's
+    /// own art first (`happy-witch`, `sad-witch`, `happy-newyear`, `sad-newyear`), then the older one (`halloween` for the
+    /// witch, `party` for New Year's, which wears the party hat; `sad-party` doesn't exist). `santa`, `carnival`, `easter`
+    /// and `party` have one name.
+    nonisolated static func alertArtNames(_ icon: AlertContent.Icon, hat: ButlerHat) -> [String] {
+        let names: [String] = switch hat {
+        case .party: ["party"]
+        case .newYear: ["newyear", "party"]
+        case .santa: ["santa"]
+        case .witch: ["witch", "halloween"]
+        case .carnival: ["carnival"]
+        case .easter: ["easter"]
         }
+        return names.map { "\(icon.rawValue)-\($0)" }
+    }
+
+    /// Returns the name (without `.png`) of the side peek's art that has a hat on, or `nil` for a hat that has none: the user's
+    /// `peek-side-party`, `peek-side-santa` and `peek-side-witch` (New Year's shares the party hat's).
+    nonisolated static func peekHatArtName(_ hat: ButlerHat) -> String? {
+        switch hat {
+        case .party, .newYear: "peek-side-party"
+        case .santa: "peek-side-santa"
+        case .witch: "peek-side-witch"
+        case .carnival, .easter: nil
+        }
+    }
+
+    private static func hattedArt(_ icon: AlertContent.Icon, hat: ButlerHat) -> NSImage? {
+        for name in alertArtNames(icon, hat: hat) {
+            if let image = hatted(name) {
+                return image
+            }
+        }
+        return nil
     }
 
     /// Returns whether a butler wearing a hat has no art and gets the drawn hat over the plain butler instead: the
@@ -133,8 +158,12 @@ enum AppImages {
         guard let hat, hat == .witch || hat == .newYear, !(hat == .newYear && icon == .sad) else {
             return false
         }
-        return hatted("\(icon.rawValue)-\(artName(of: hat))") == nil
+        return hattedArt(icon, hat: hat) == nil
     }
+
+    /// The butler of the Inbox's empty state, `icons/inbox-zero.png`; `nil` without the file, and the happy butler with the day's
+    /// hat stays.
+    static var inboxZero: NSImage? { hatted("inbox-zero") }
 
     /// The size to show an alert's butler at, in a box of `box` points. The plain art is square and fills the box. The
     /// seasonal art is taller than square, because the hat sits on top: it keeps the plain butler's scale (times

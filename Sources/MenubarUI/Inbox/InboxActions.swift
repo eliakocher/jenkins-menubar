@@ -91,6 +91,7 @@ enum InboxOpening {
                 case .open(let section): router.open(section)
                 case .settings(let pane): router.open(.settings(pane: pane))
                 case .openItem(let link, let card): links.follow(link, card: card)
+                case .whatsNew(let from, let to): router.showWhatsNew(from: from, to: to)
                 default: router.open(.main)
                 }
             } else {

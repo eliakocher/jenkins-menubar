@@ -144,6 +144,7 @@ private struct SettingsWindowGalleryView: View {
             case .menuBar: MenuBarSettingsForm(preferences: .constant(Preferences()))
             case .notifications: NotificationsGalleryView()
             case .shortcuts: ShortcutsSettingsForm(preferences: .constant(Preferences()))
+            case .hotCorners: HotCornersSettingsForm(preferences: .constant(Preferences()))
             case .appearance: AppearanceSettingsForm(appearance: .constant(.system))
             case .accounts:
                 AccountsGalleryView(model: {
@@ -169,7 +170,7 @@ extension GalleryCatalog {
     static var settingsEntries: [GalleryEntry] {
         settingsWindowEntries + settingsGeneralEntries + settingsJenkinsEntries + settingsGitLabEntries
             + settingsTeamEntries + settingsTeamLinkEntries + settingsProjectsEntries + settingsAccountsEntries + settingsAdvancedEntries
-            + settingsSidebarEntries + settingsShortcutsEntries
+            + settingsSidebarEntries + settingsShortcutsEntries + settingsHotCornersEntries
     }
 
     // MARK: - Window

@@ -27,6 +27,16 @@ public struct PreferencesStore: @unchecked Sendable {
         nonmutating set { defaults.set(newValue, forKey: Self.welcomeCompletedKey) }
     }
 
+    /// the UserDefaults key of ``lastSeenVersion``
+    static let lastSeenVersionKey = "lastSeenVersion"
+
+    /// The newest app version that was launched, like "1.0.4", for the "What's New" entry of an update (``WhatsNew``). Nil
+    /// until the first launch that kept one. It isn't one of the ``Preferences``: Settings neither shows nor logs it.
+    public var lastSeenVersion: String? {
+        get { defaults.string(forKey: Self.lastSeenVersionKey) }
+        nonmutating set { defaults.set(newValue, forKey: Self.lastSeenVersionKey) }
+    }
+
     /// the UserDefaults key of ``notificationPolicy``
     static let notificationPolicyKey = "notificationPolicy"
 
@@ -66,6 +76,10 @@ public struct PreferencesStore: @unchecked Sendable {
     /// the UserDefaults key of ``Preferences/shortcuts``, JSON text; outside ``Key`` like ``menuBarLayoutKey``, and absent
     /// while every command has its default shortcut (KEYS-01)
     public static let keyboardShortcutsKey = "keyboardShortcuts"
+
+    /// the UserDefaults key of ``Preferences/hotCorners``, JSON text; outside ``Key`` like ``keyboardShortcutsKey``, and
+    /// absent while Hot Corners have their defaults (HOT-01)
+    public static let hotCornersKey = "hotCorners"
 
     /// The UserDefaults key of each value, which is also its name in the log (SET-01).
     public enum Key: String, CaseIterable, Sendable {
@@ -172,6 +186,10 @@ public struct PreferencesStore: @unchecked Sendable {
         if let text = defaults.string(forKey: Self.keyboardShortcutsKey) {
             preferences.shortcuts = ShortcutMap(jsonText: text)
         }
+        // Text that doesn't decode reads as the defaults; a delay outside the options snaps to the nearest (HOT-01).
+        if let text = defaults.string(forKey: Self.hotCornersKey) {
+            preferences.hotCorners = HotCornerSettings(jsonText: text)
+        }
         // A case that isn't one of the value's options is caught here.
         return Self.validated(preferences)
     }
@@ -203,6 +221,13 @@ public struct PreferencesStore: @unchecked Sendable {
                 defaults.set(text, forKey: Self.keyboardShortcutsKey)
             } else {
                 defaults.removeObject(forKey: Self.keyboardShortcutsKey)
+            }
+        }
+        if new.hotCorners != old.hotCorners {
+            if let text = new.hotCorners.jsonText {
+                defaults.set(text, forKey: Self.hotCornersKey)
+            } else {
+                defaults.removeObject(forKey: Self.hotCornersKey)
             }
         }
         return changes
@@ -245,6 +270,7 @@ public struct PreferencesStore: @unchecked Sendable {
         check(\.hideFailedAfter, in: Preferences.hideFailedOptions)
         check(\.gitLabMaxAgeSeconds, in: Preferences.gitLabMaxAgeOptions)
         check(\.workItems.limit, in: WorkItemFilters.limitOptions)
+        valid.hotCorners = valid.hotCorners.snapped
         return valid
     }
 

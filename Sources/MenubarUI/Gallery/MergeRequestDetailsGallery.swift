@@ -154,6 +154,31 @@ extension MergeRequestsFixtures {
             facts: facts, people: people, peopleAreComplete: true, squads: SlotTeams("Alpha: jdoe, dbrown, asingh"))
     }
 
+    /// !17 with four open approval rules (MR-15): "Add Required Reviewers (4)" adds one person per rule, who come first
+    /// and are marked; the other eligible approvers and the squad's Avery Singh follow.
+    var suggestions17FourRules: ReviewerSuggestionList {
+        typealias Facts = ReviewerSuggestionFacts
+        func person(_ username: String, _ name: String) -> Facts.Person { .init(username: username, name: name) }
+        let people = [
+            person("tgreen", "Taylor Green"), person("mchen", "Morgan Chen"), person("lwu", "Lee Wu"),
+            person("dbrown", "Dana Brown"), person("rpark", "Riley Park"), person("qortiz", "Quinn Ortiz"),
+            person("nhaddad", "Noor Haddad"), person("slund", "Sky Lund"), person("asingh", "Avery Singh"),
+        ]
+        func rule(_ name: String, section: String? = nil, _ eligible: [Int]) -> Facts.Rule {
+            .init(
+                name: name, type: section == nil ? .regular : .codeOwner, section: section, approvalsRequired: 1,
+                eligible: eligible.map { people[$0] })
+        }
+        let facts = Facts(
+            author: "jdoe", reviewers: ["slee"], targetBranch: "develop", changedPaths: ["Sources/Export/ExportJob.swift"],
+            rules: [
+                rule("*.swift", section: "Core", [0, 1]), rule("Backend Review", [2, 3]), rule("Frontend Review", [4, 5]),
+                rule("Security", [6, 7]),
+            ])
+        return ReviewerSuggester.suggest(
+            facts: facts, people: people, peopleAreComplete: true, squads: SlotTeams("Alpha: jdoe, asingh"))
+    }
+
     /// !17 with nobody missing and a squad: only optional suggestions
     var suggestions17Optional: ReviewerSuggestionList {
         let facts = ReviewerSuggestionFacts(author: "jdoe", reviewers: ["slee"], targetBranch: "develop")
@@ -272,7 +297,7 @@ extension GalleryCatalog {
     /// The GitLab details of the merge request detail, tall enough for all of it.
     static var mergeRequestDetailsEntries: [GalleryEntry] {
         let size = CGSize(width: MainWindowGalleryView<EmptyView, EmptyView>.defaultSize.width, height: 1250)
-        let reviewersSize = CGSize(width: size.width, height: 820)
+        let reviewersSize = CGSize(width: size.width, height: 1000)
         func entry(
             _ state: String, merge: @escaping @MainActor (MergeRequestsFixtures) -> MergeStateLoad = { _ in .init(state: nil, failed: true) },
             _ pick: @escaping @MainActor (MergeRequestsFixtures) -> (MergeRequest, MergeRequestDetailsState)
@@ -350,6 +375,7 @@ extension GalleryCatalog {
             suggested("reviewers-suggested-confirm", phase: .confirming),
             suggested("reviewers-suggested-token", access: .readOnly, phase: .needsToken),
             suggested("reviewers-suggested-loading") { _ in .loading },
+            suggested("reviewers-suggested-four") { .loaded($0.suggestions17FourRules) },
             suggested("reviewers-suggested-optional") { .loaded($0.suggestions17Optional) },
             entry("details", merge: { .init(state: $0.mergeBlocked) }) { ($0.mr16, .loaded($0.details16)) },
             // The Changes card alone, at the detail's width: it sits below the other cards. Inline, then side by side.

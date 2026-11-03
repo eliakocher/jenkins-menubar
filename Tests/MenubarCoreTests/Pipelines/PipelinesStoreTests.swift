@@ -776,6 +776,31 @@ struct PipelinesStoreTests {
         #expect(await harness.effects.banners.map(\.build.job) == ["MR-4"])
     }
 
+    @Test("HOT-09 while the alerts are muted, no build shows a glass alert or a banner; Activity and the Inbox still get them")
+    func mutedForTheHour() async throws {
+        let harness = try Harness()
+        harness.answerJobs(["MR-1", "MR-4"])
+        for job in ["MR-1", "MR-4"] {
+            harness.answer(job, number: 7, result: nil, startedAgo: 600)
+        }
+        harness.store.alertsMuted = { true }
+        var finished: [BuildAlert] = []
+        harness.store.onFinishedBuilds = { finished += $0 }
+        try await harness.check()
+
+        harness.time.wait(60)
+        for job in ["MR-1", "MR-4"] {
+            harness.answer(job, number: 7, result: "FAILURE", startedAgo: 660)
+        }
+        try await harness.check()
+
+        #expect(await harness.effects.alertWindows.isEmpty)
+        #expect(await harness.effects.banners.isEmpty)
+        #expect(await harness.effects.sounds.isEmpty)
+        #expect(await harness.messages().filter { $0.hasSuffix("(muted)") }.count == 2)
+        #expect(finished.map(\.build.job).sorted() == ["MR-1", "MR-4"])
+    }
+
     @Test("OD-05 offline shows as the problem, over the check's own")
     func offlineIsTheProblem() async throws {
         let harness = try Harness(jenkinsToken: nil)

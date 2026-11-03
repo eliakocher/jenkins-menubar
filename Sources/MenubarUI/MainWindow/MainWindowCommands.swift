@@ -306,7 +306,13 @@ public struct MainWindowCommands: Commands {
             // Replaced, so ⌘0 goes through the activation helper and the welcome flow isn't listed (`main-window.md`).
             MainWindowMenuItem(router: router, handOver: handOver, shortcut: shortcut("openMainWindow"))
         }
-        CommandGroup(replacing: .help) {}
+        // No help book, but "What's New…" shows the changelog anytime, as the Inbox's entry after an update does.
+        CommandGroup(replacing: .help) {
+            Button("What's New…") {
+                router.showWhatsNew()
+            }
+            .disabled(sheetIsUp)
+        }
     }
 
     /// the user's shortcuts, which Settings → Shortcuts changes (KEYS-01)

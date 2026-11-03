@@ -37,7 +37,10 @@ struct SuggestedReviewersTests {
     func chips() throws {
         let model = SuggestedReviewersModel(Self.list, current: ["slee"])
 
+        // The two the button adds come first and are marked; the other eligible approvers follow, unmarked.
+        #expect(model.chips.prefix(2).allSatisfy { $0.isPick } && model.chips.dropFirst(2).allSatisfy { !$0.isPick })
         #expect(model.chips.prefix(4).allSatisfy { $0.isRequired })
+        #expect(model.chips.prefix(2).map(\.username) == model.required.map(\.username))
         let dana = try #require(model.chips.first { $0.username == "dbrown" })
         #expect(dana.name == "Dana Brown" && dana.isRequired)
         #expect(dana.help.hasPrefix("Add Dana Brown as a reviewer\nRequired by rule Backend Review"))
@@ -57,6 +60,12 @@ struct SuggestedReviewersTests {
         let model = SuggestedReviewersModel(Self.list, current: [])
         #expect(model.required.count == 2)
         #expect(model.addRequiredTitle == "Add Required Reviewers (2)")
+        // The tooltip says who is added for which rule.
+        #expect(Set(model.requiredGroups.map(\.rule)) == ["*.swift in Core", "Backend Review"])
+        #expect(model.requiredGroups.flatMap(\.names) == model.required.map(\.name))
+        // Dana is in the squad, so she is the pick of Backend Review.
+        #expect(model.requiredGroups.first { $0.rule == "Backend Review" }?.names == ["Dana Brown"])
+        #expect(model.requiredHelp.contains("\nBackend Review: Dana Brown"))
         #expect(model.requiredQuestion.hasPrefix("Add ") && model.requiredQuestion.hasSuffix(" as reviewers?"))
 
         // One of the two rules is met by the one just added: one person is left to add.
@@ -76,6 +85,14 @@ struct SuggestedReviewersTests {
         #expect(model.shown(showsAll: false).count == 8 && model.shown(showsAll: true).count == 12)
         #expect(model.notes == ["CODEOWNERS couldn't be read"])
         #expect(model.addRequiredTitle == nil)
+
+        // The people the button adds are never folded away, however many there are.
+        let rules = (1...10).map { n in
+            Facts.Rule(name: "Rule \(n)", type: .regular, approvalsRequired: 1, eligible: [Self.person("p\(n)", "P \(n)")])
+        }
+        let many = SuggestedReviewersModel(ReviewerSuggester.suggest(facts: Facts(author: "jdoe", rules: rules)), current: [])
+        #expect(many.required.count == 10 && many.shown(showsAll: false).count == 10)
+        #expect(many.shown(showsAll: false).allSatisfy { $0.isPick })
     }
 
     @Test("MR-15 what a click on chips sends: an append of exactly their usernames, in one request")

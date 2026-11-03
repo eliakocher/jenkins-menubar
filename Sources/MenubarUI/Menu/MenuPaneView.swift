@@ -102,6 +102,7 @@ public struct MenuPaneView: View {
             leave: { controller.leavePane() },
             activate: { activate($0) },
             canPeek: { controller.canPeek() },
+            isPaneVisible: controller.isPaneVisible,
             anchor: { controller.register($0, view: $1) })
     }
 

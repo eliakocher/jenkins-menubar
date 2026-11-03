@@ -194,11 +194,22 @@ public struct MergeStateLoad: Hashable, Sendable {
     public var state: MergeState?
     /// whether the last request failed
     public var failed: Bool
+    /// whether ``state`` is the copy kept on disk, not yet confirmed by GitLab in this launch
+    public var isCached: Bool
+    /// whether GitLab is being asked again while ``state`` shows
+    public var isRefreshing: Bool
 
-    public init(state: MergeState?, failed: Bool = false) {
+    public init(state: MergeState?, failed: Bool = false, isCached: Bool = false, isRefreshing: Bool = false) {
         self.state = state
         self.failed = failed
+        self.isCached = isCached
+        self.isRefreshing = isRefreshing
     }
+
+    /// Whether the shown state still waits for GitLab's answer, so Merge, Set to Auto-Merge and Mark as Ready stay off
+    /// ("Checking…"): a merge never goes out on a state GitLab didn't confirm. A cached copy stays unconfirmed when the
+    /// fresh load fails.
+    public var isChecking: Bool { state != nil && (isCached || isRefreshing) }
 
     /// asked, with no answer yet
     public static let loading = MergeStateLoad(state: nil)
@@ -231,6 +242,8 @@ public final class MergeRequestMergeStore {
         var isLoading = false
         var failed = false
         var activity: MergeActivity = .idle
+        /// whether `state` came from the disk and GitLab didn't confirm it in this launch yet
+        var fromDisk = false
     }
 
     private let entries = ObservedEntries<String, Entry>()
@@ -252,7 +265,8 @@ public final class MergeRequestMergeStore {
         guard let entry = entries[mergeRequest.reference] else {
             return .loading
         }
-        return MergeStateLoad(state: entry.state, failed: entry.failed && !entry.isLoading)
+        return MergeStateLoad(
+            state: entry.state, failed: entry.failed && !entry.isLoading, isCached: entry.fromDisk, isRefreshing: entry.isLoading)
     }
 
     /// Returns what the last write for a merge request is doing, or did.
@@ -275,13 +289,25 @@ public final class MergeRequestMergeStore {
     /// branch is behind, GitLab's REST answer adds by how many commits. Cancelling the calling task doesn't cancel the
     /// request.
     ///
+    /// The last state kept on disk shows at once and is asked again once per launch; until GitLab answers, it is
+    /// ``MergeStateLoad/isChecking`` and no write goes out on it.
+    ///
     /// - Parameters:
     ///   - mergeRequest: the merge request
     ///   - force: loads again although the state belongs to the last update, as after a write
     public func load(_ mergeRequest: MergeRequest, force: Bool = false) async {
         let key = mergeRequest.reference
         var entry = entries[key] ?? Entry()
-        if entry.isLoading || (!force && entry.state != nil && (entry.updatedAt.map { $0 >= mergeRequest.updatedAt } ?? false)) {
+        // The copy on disk shows at once; it is asked again below.
+        if entries[key] == nil, let kept = services.details?.load(.mergeState, key: key) {
+            entry.state = kept.value
+            entry.updatedAt = kept.updatedAt
+            entry.fromDisk = true
+            entries[key] = entry
+        }
+        if entry.isLoading
+            || (!force && !entry.fromDisk && entry.state != nil && (entry.updatedAt.map { $0 >= mergeRequest.updatedAt } ?? false))
+        {
             return
         }
         entry.isLoading = true
@@ -319,7 +345,10 @@ public final class MergeRequestMergeStore {
             entry.state = state
             entry.updatedAt = mergeRequest.updatedAt
             entry.failed = false
+            entry.fromDisk = false
+            services.details?.save(state, updatedAt: mergeRequest.updatedAt, as: .mergeState, key: key)
         } else {
+            // A cached state stays as it was, unconfirmed: the card keeps its writes off and says so.
             entry.failed = true
         }
         entries[key] = entry
@@ -340,6 +369,12 @@ public final class MergeRequestMergeStore {
         let key = mergeRequest.reference
         var entry = entries[key] ?? Entry()
         guard entry.activity.running == nil else {
+            return
+        }
+        // Nothing goes out on a state GitLab didn't confirm in this launch (the card keeps its buttons off too).
+        guard !entry.fromDisk else {
+            entry.activity = .failed(action, message: "The merge state is still being checked: try again in a moment", needsToken: false)
+            entries[key] = entry
             return
         }
         let state = entry.state
@@ -426,4 +461,9 @@ public final class MergeRequestMergeStore {
             try await client.send(operation)
         }
     }
+}
+
+extension DetailKind where Value == MergeState {
+    /// a merge request's last merge state, which the Merge card shows at once while GitLab is asked again (MR-16)
+    public static var mergeState: DetailKind { DetailKind("merge-state") }
 }

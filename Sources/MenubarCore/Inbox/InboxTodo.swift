@@ -144,6 +144,8 @@ public struct InboxTodo: Codable, Hashable, Sendable, Identifiable {
 public enum InboxGroup: String, Codable, Hashable, Sendable, CaseIterable {
     /// the user's own to-dos, kept on this Mac (``MyTodo``)
     case myToDos
+    /// what's new after an update, a local entry of this app
+    case whatsNew
     /// the coffee break, a local entry of this app
     case coffee
     /// Claude's answers and the digest: local entries of this app
@@ -159,6 +161,7 @@ public enum InboxGroup: String, Codable, Hashable, Sendable, CaseIterable {
     public var title: String {
         switch self {
         case .myToDos: "My To-Dos"
+        case .whatsNew: "What's New"
         case .coffee: "Coffee"
         case .claude: "Claude"
         case .mentions: "Mentions"

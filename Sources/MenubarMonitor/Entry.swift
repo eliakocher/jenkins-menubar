@@ -1,11 +1,21 @@
+import MenubarCore
 import SwiftUI
 
-/// Starts the app; with `--smoke`, the smoke check; with `--gallery` in debug builds, the design gallery.
+/// Starts the app; with `--smoke`, the smoke check; with `--gallery` in debug builds, the design gallery; with
+/// `--claude-read-guard`, the hook that keeps Claude's file tools in a checkout (``ClaudeReadGuard``).
 @main
 enum Entry {
     @MainActor
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments.first == ClaudeReadGuard.argument {
+            // Claude Code runs this before each tool call of a chat about code: its JSON in, the decision out, nothing
+            // else of the app starts.
+            let input = FileHandle.standardInput.readDataToEndOfFile()
+            FileHandle.standardOutput.write(
+                ClaudeReadGuard.hookOutput(for: input, environment: ProcessInfo.processInfo.environment))
+            exit(0)
+        }
         if arguments.contains("--smoke") {
             SmokeMode.run(arguments: arguments)
         }

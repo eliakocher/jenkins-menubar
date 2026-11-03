@@ -5,7 +5,8 @@ import SwiftUI
 ///
 /// It is hidden as a whole item while the app is up to date. Otherwise it offers "Update Ready — Rebuild" with
 /// `arrow.down.circle`, also after a failed rebuild (the window's problem rows show the failure); while the rebuild
-/// runs it reads "Rebuilding…", disabled, with a spinner in the symbol's place, and "Relaunching…" once the new app is
+/// runs it reads "Rebuilding…" with a spinner in the symbol's place until the first count, then "Rebuilding 42%" with a
+/// small determinate ring; it is disabled meanwhile, and "Relaunching…" once the new app is
 /// installed.
 ///
 /// The window passes the update store's state and ``rebuild(_:router:)``:
@@ -48,6 +49,27 @@ public struct UpdateToolbarItem: ToolbarContent {
     }
 }
 
+/// A small determinate ring, since a circular `ProgressView(value:)` shows a spinner on macOS.
+struct UpdateProgressRing: View {
+    let fraction: Double
+    private static let size: CGFloat = 14
+    private static let line: CGFloat = 2.5
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.secondary.opacity(0.3), lineWidth: Self.line)
+            Circle()
+                .trim(from: 0, to: min(max(fraction, 0), 1))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: Self.line, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: Self.size, height: Self.size)
+        .accessibilityElement()
+        .accessibilityLabel(UpdateText.percent(fraction))
+    }
+}
+
 /// The toolbar item's button, for a window that builds its own `ToolbarItem`; it draws nothing sensible while the app
 /// is up to date, so show it only while ``UpdateToolbarItem`` would.
 public struct UpdateToolbarButton: View {
@@ -65,12 +87,17 @@ public struct UpdateToolbarButton: View {
     public var body: some View {
         Button(action: rebuild) {
             switch state {
-            case .rebuilding:
+            case .rebuilding(let progress):
                 Label {
-                    Text(UpdateText.rebuilding)
+                    Text(UpdateText.rebuildingLabel(progress.fraction))
+                        .monospacedDigit()
                 } icon: {
-                    ProgressView()
-                        .controlSize(.small)
+                    if let fraction = progress.fraction {
+                        UpdateProgressRing(fraction: fraction)
+                    } else {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
                 }
             case .installed:
                 Label {

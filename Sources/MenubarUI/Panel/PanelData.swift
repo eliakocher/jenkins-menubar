@@ -139,11 +139,14 @@ public struct PanelData: Sendable {
         public var problem: Problem?
         /// the last Done, Restore or Snooze that GitLab refused and that was put back
         public var actionProblem: Problem?
+        /// whether the update's "What's New" waits unopened: the pane's Inbox row wears the gift
+        public var hasUnreadWhatsNew: Bool
 
         public init(
             entries: [InboxEntry] = [], badgeCount: Int = 0, hasLoaded: Bool = true, isLoading: Bool = false,
-            problem: Problem? = nil, actionProblem: Problem? = nil
+            problem: Problem? = nil, actionProblem: Problem? = nil, hasUnreadWhatsNew: Bool = false
         ) {
+            self.hasUnreadWhatsNew = hasUnreadWhatsNew
             self.actionProblem = actionProblem
             self.entries = entries
             self.badgeCount = badgeCount

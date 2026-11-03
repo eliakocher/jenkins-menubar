@@ -12,6 +12,8 @@ public struct MainWindowShellModel: Hashable, Sendable {
     /// the sections with something new to look at, which the sidebar marks with a small accent dot: Digest while a digest
     /// was written that it hasn't shown yet
     public var unread: Set<MainWindowSection>
+    /// the sections that wear the gift: Inbox while the update's "What's New" waits, unopened
+    public var gifts: Set<MainWindowSection>
     /// "Last checked 10:42" for what the shown section shows; `nil` before the first check or load
     public var subtitle: String?
     /// whether a check or load of the shown section runs: a spinner takes Reload's place (JERR-07)
@@ -42,6 +44,7 @@ public struct MainWindowShellModel: Hashable, Sendable {
         digestUnread: Bool = false, inbox: InboxShell = InboxShell()
     ) {
         unread = digestUnread ? [.digest] : []
+        gifts = inbox.hasUnreadWhatsNew ? [.inbox] : []
         update = data.update
         workItemFilters = data.workItems.filters
         showHiddenTitle = PipelinesStore.showHiddenTitle(count: data.jenkins.hiddenCount)
@@ -168,8 +171,13 @@ public struct InboxShell: Hashable, Sendable {
     public var subtitle: String?
     /// whether a load runs
     public var isBusy: Bool
+    /// whether the update's "What's New" waits unopened: the row wears the gift
+    public var hasUnreadWhatsNew: Bool
 
-    public init(badge: Int = 0, problem: Problem? = nil, subtitle: String? = nil, isBusy: Bool = false) {
+    public init(
+        badge: Int = 0, problem: Problem? = nil, subtitle: String? = nil, isBusy: Bool = false, hasUnreadWhatsNew: Bool = false
+    ) {
+        self.hasUnreadWhatsNew = hasUnreadWhatsNew
         self.badge = badge
         self.problem = problem
         self.subtitle = subtitle

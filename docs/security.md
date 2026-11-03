@@ -64,6 +64,38 @@ already running as you, and a compromised GitLab or Jenkins.
   you turned on, and denies every tool that changes or runs something, including servers that weren't connected when
   the tools were listed. Before each chat the app also reads the server names in your Claude Code config and denies
   every one the tool listing didn't know, so a server you add later stays off until the listing is made again.
+- With the setup on, a chat that doesn't read a checkout also gets the Skill tool, so Claude can load your skills as in
+  Claude Code. A skill's `allowed-tools` grants its tools past `--permission-mode dontAsk`; only a tool that is missing
+  from `--tools` or denied by name stays off. Probed with Claude Code 2.1.317 and a skill whose `allowed-tools` asked
+  for `Bash(touch:*)` and `Write` and whose text said to create a file: with the chat's flags the file was never
+  created, through the Skill tool or a typed `/command`, and its `` !`command` `` lines were refused too. Without those
+  denials the same skill created the file. The changing MCP tools are denied by name or by server prefix in the same
+  list, so they hold the same way (inferred from the flags, not probed against a real server).
+- With the setup on, the chats (a merge request's, a work item's and a build's Claude card, and every follow-up) run
+  Claude Code as in a terminal, hosted by the card: `--input-format stream-json --permission-prompt-tool stdio
+  --permission-mode default`, in the item's checkout when there is one, else in an empty folder of the app's. Every
+  tool call that the user's own allow rules (or a skill's `allowed-tools`) don't already allow shows in the card with
+  Allow, Always for This Chat and Deny, and nothing runs until the developer clicks; the app never answers a request
+  by itself. "Always for This Chat" sends only Claude Code's `addRules` suggestions that allow, with their destination
+  forced to `session`: never `setMode` (it would let later, different calls run unasked) and never a destination that
+  writes a settings file (sent back unchanged, a suggestion wrote the checkout's `.claude/settings.local.json` in the
+  probe; with `session` none was written, and the same command ran again unasked, probed with 2.1.317). The default
+  mode is set explicitly, since a user's own `defaultMode` of `auto` let calls run unasked. WebFetch, WebSearch and the
+  MCP servers that are off stay denied. The facts go in as the first message on stdin, redacted; the log keeps the use
+  case, the outcome and the names of the tools allowed or denied, never text or a tool's input. One process per card,
+  ended by Clear, a new first question, a minute after the card leaves the screen, or ten idle minutes; its budget
+  guard stays. The headless read-only run of the chats stays as the fallback
+  (`defaults write local.megamonitor ai.hostChats -bool NO`).
+- A question about code with a checkout keeps Read, Grep and Glob inside the checkout with a `PreToolUse` hook, so it
+  gets the Skill tool too. A skill's `allowed-tools: Read` lets Read open any path past `dontAsk`, but a hook's denial
+  beats that grant. The hook is the app's own program (`megamonitor --claude-read-guard`, passed with `--settings`);
+  the checkout reaches it through the environment, never through a shell line. It resolves symlinks, refuses `..`,
+  `~` and patterns that climb or start elsewhere, treats a missing path as the checkout, and a hook that can't run
+  blocks the call (`|| exit 2`). Its settings set `disableAllHooks: false`, which outranks the user's own. Probed with
+  Claude Code 2.1.317 and a skill allowing `Read, Grep, Glob`: an absolute path, `..`, a symlinked file and folder, a
+  Glob of `../**`, an absolute Glob pattern and a Grep with a path outside were all refused, a project setting
+  `disableAllHooks: true` and a project hook answering "allow" changed nothing, and a missing hook program refused the
+  read. Grep and Glob over the checkout don't follow symlinks out (probed).
 
 ## Accepted risks
 
@@ -75,10 +107,15 @@ already running as you, and a compromised GitLab or Jenkins.
 - **Rebuild builds what is in your checkout.** What you `git pull` is what you run.
 - **Continue in Claude Code** starts Claude Code with your own permissions and settings, on a prompt that includes the
   item's text.
+- **A hosted chat is Claude Code with you at the wheel.** What you allow in the card runs as you, in the checkout, like
+  in a terminal; your own allow rules and your skills' `allowed-tools` run without asking, as they do in Claude Code.
+  A Read outside the working folder asks, unless one of those allows it (inferred from the default mode, not probed).
 - **The opt-in Claude setup** uses your own MCP servers and allow rules, and tool output is not redacted.
   One gap is left: a connector you add on claude.ai that no Claude Code run on this Mac has seen yet isn't in any
   local file, so it is denied only after the next listing (a quiet refresh in the background at most 15 minutes after
   a chat, or Refresh in Settings). It matters only if your own allow rules would let that server's tools run.
+  The same holds for a tool a server adds after the listing: neither allowed nor denied by name, so your own allow
+  rules or a skill's `allowed-tools` could let it run until the next listing.
 - **Ad-hoc signing**, no hardened runtime: fine while everyone builds from source; never share a built bundle.
 
 ## Uninstalling
