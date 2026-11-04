@@ -1,79 +1,116 @@
 import Foundation
 
-/// How an event announces itself beyond the Inbox, chosen per kind in Settings → Notifications (Task 7.03, the user,
-/// 2026-11-03: "it should be configurable if we want a big notification, a normal desktop notification or only in the
-/// inbox"). The Inbox and Badge toggles stay as they are; this is the loud part.
+/// What an event does when it happens, chosen per event in Settings → Notifications: a pop-up, a banner, an Inbox entry
+/// or nothing (the user, 2026-11-03: "a single selection button toggle"). Every choice except ``off`` puts an entry in the
+/// Inbox, so a pop-up or a banner is never the only trace of something.
+///
+/// The raw values are the ones the old Big Panel / Desktop Notification / Inbox Only choices were stored under, so a saved
+/// choice reads as before.
 public enum InboxDelivery: String, Codable, Hashable, Sendable, CaseIterable {
-    /// nothing beyond the Inbox, its badge and the menu bar's dot: what every kind does until the user picks
-    case inboxOnly
+    /// the app's own window in the middle of the screen, with the butler: it stays until it is closed
+    case popUp = "bigPanel"
     /// a macOS banner through the notification center, with Show, Mark Done and Snooze 1 Hour
-    case desktopNotification
-    /// the app's own floating panel, in the look of the failed-build alert, with Show, Done, Snooze 1 Hour and Dismiss
-    case bigPanel
+    case banner = "desktopNotification"
+    /// an entry in the Inbox, nothing more: no window, no banner, no sound
+    case inbox = "inboxOnly"
+    /// nothing at all: no pop-up, no banner, no sound and no entry
+    case off
 
-    /// the choice in the picker, in Title Style
+    /// the choice in the control, in Title Style
     public var title: String {
         switch self {
-        case .inboxOnly: "Inbox Only"
-        case .desktopNotification: "Desktop Notification"
-        case .bigPanel: "Big Panel"
+        case .popUp: "Pop-up"
+        case .banner: "Banner"
+        case .inbox: "Inbox"
+        case .off: "Off"
         }
     }
 
-    /// the picker's order: the quiet choice first, then the louder ones
-    public static let pickerOrder: [InboxDelivery] = [.inboxOnly, .desktopNotification, .bigPanel]
-
-    /// the delivery a build alert style stands for: the alert window is the Big Panel, a banner the Desktop Notification
-    public init(_ style: Preferences.AlertStyle) {
-        switch style {
-        case .window: self = .bigPanel
-        case .banner: self = .desktopNotification
-        case .inboxOnly: self = .inboxOnly
+    /// the choice's small symbol (SF Symbols)
+    public var systemImage: String {
+        switch self {
+        case .popUp: "macwindow"
+        case .banner: "bell.badge"
+        case .inbox: "tray"
+        case .off: "nosign"
         }
     }
-}
 
-extension Preferences.AlertStyle {
-    /// the build alert style a delivery choice stands for (the inverse of ``InboxDelivery/init(_:)``)
-    public init(_ delivery: InboxDelivery) {
-        switch delivery {
-        case .bigPanel: self = .window
-        case .desktopNotification: self = .banner
-        case .inboxOnly: self = .inboxOnly
+    /// What the choice does, for its tooltip.
+    ///
+    /// - Parameter isBuild: whether the row is a finished build, which also plays its sound
+    public func explanation(isBuild: Bool) -> String {
+        switch self {
+        case .popUp:
+            isBuild
+                ? "A window in the middle of the screen with the butler and a sound; it stays until you close it. It also waits in the Inbox."
+                : "A window in the middle of the screen with the butler; it stays until you close it. It also waits in the Inbox."
+        case .banner:
+            isBuild
+                ? "macOS's notification banner, with a sound. It also waits in the Inbox."
+                : "macOS's notification banner. It also waits in the Inbox."
+        case .inbox: "Only an entry in the Inbox: no window, no banner, no sound."
+        case .off: "Nothing: no window, no banner, no sound and no Inbox entry."
         }
     }
+
+    /// the control's order: the loud choices first, then the quiet ones
+    public static let pickerOrder: [InboxDelivery] = [.popUp, .banner, .inbox, .off]
 }
 
 extension InboxEventKind {
-    /// whether the Inbox's delivery rules leave this kind out: my own to-dos never announce themselves, and a failed
-    /// build is announced by the build alerts (``Preferences/alertStyle``), not a second time from the Inbox
+    /// whether the Inbox's delivery rules leave this kind out: my own to-dos never announce themselves
     var deliveryIsNotInTheRules: Bool {
-        self == .myTodo || self == .buildFailed
+        self == .myTodo
+    }
+
+    /// whether the kind is a finished build, whose choice also decides the sound and the pop-up of the build alerts
+    public var isFinishedBuild: Bool {
+        switch self {
+        case .buildFailed, .buildSucceeded, .watchedBuildFailed, .watchedBuildSucceeded: true
+        default: false
+        }
+    }
+
+    /// What the kind does until the user picks: my Jenkins builds pop up, the Jenkins builds I watch show as a banner, GitLab's
+    /// "pipeline failed" is Off (the failed Jenkins build is the news, and GitLab's to-do for it is hidden from the Inbox,
+    /// the user, 2026-11-04), the rest is an Inbox entry.
+    public var defaultDelivery: InboxDelivery {
+        switch self {
+        case .buildFailed, .buildSucceeded: .popUp
+        case .watchedBuildFailed, .watchedBuildSucceeded: .banner
+        case .pipelineFailed: .off
+        default: .inbox
+        }
+    }
+
+    /// whether the kind counts in the Red Dot until the user changes it: everything but the successful builds
+    public var countsInRedDotByDefault: Bool {
+        self != .buildSucceeded && self != .watchedBuildSucceeded
+    }
+
+    /// the choices that make sense for the kind: all of them, the same columns in every row
+    public var availableDeliveries: [InboxDelivery] {
+        self == .myTodo ? [.inbox] : InboxDelivery.pickerOrder
     }
 }
 
 extension InboxNotificationRules {
-    /// The kinds whose delivery these rules keep: everything but the user's own to-dos, which never announce
-    /// themselves, and the failed builds, whose pop-up is the build alert style (``Preferences/alertStyle``).
+    /// The kinds whose delivery these rules keep: everything but the user's own to-dos, which never announce themselves.
     public static var deliveryKinds: [InboxEventKind] {
         settingsKinds.filter { !$0.deliveryIsNotInTheRules }
     }
 
-    /// Returns how a kind announces itself through the Inbox's delivery.
-    ///
-    /// A failed build is never delivered from here: the build alerts announce it once, as ``Preferences/alertStyle``
-    /// says, so this is always ``InboxDelivery/inboxOnly`` for it. Before the single setting (Task 7.13) the rules also
-    /// held a choice for it, and one failed build showed twice, a panel and a banner; a saved choice is dropped on
-    /// load and the alert style wins.
+    /// Returns what a kind does when it happens.
     ///
     /// - Parameter kind: the kind
-    /// - Returns: the user's choice, or ``InboxDelivery/inboxOnly``
+    /// - Returns: the user's choice, or the kind's default; ``InboxDelivery/inbox`` for my own to-dos
     public func delivery(for kind: InboxEventKind) -> InboxDelivery {
-        kind.deliveryIsNotInTheRules ? .inboxOnly : deliveries[kind.rawValue] ?? .inboxOnly
+        kind.deliveryIsNotInTheRules ? .inbox : deliveries[kind.rawValue] ?? kind.defaultDelivery
     }
 
-    /// Sets how a kind announces itself; the default removes the override. It does nothing for the kinds the rules
-    /// don't deliver (the user's own to-dos, the failed builds).
+    /// Sets what a kind does; the kind's default removes the override. It does nothing for the kinds the rules don't
+    /// deliver (the user's own to-dos).
     ///
     /// - Parameters:
     ///   - delivery: the choice
@@ -82,12 +119,12 @@ extension InboxNotificationRules {
         guard !kind.deliveryIsNotInTheRules else {
             return
         }
-        deliveries[kind.rawValue] = delivery == .inboxOnly ? nil : delivery
+        deliveries[kind.rawValue] = delivery == kind.defaultDelivery ? nil : delivery
     }
 
-    /// whether any kind announces itself as a macOS banner, which needs the notification permission
-    public var usesDesktopNotifications: Bool {
-        deliveries.values.contains(.desktopNotification)
+    /// whether any kind shows as a macOS banner, which needs the notification permission
+    public var usesBanners: Bool {
+        Self.deliveryKinds.contains { delivery(for: $0) == .banner }
     }
 
     /// the groups in the user's order, every group once (``InboxGroupOrder``)
@@ -160,7 +197,7 @@ public enum InboxGroupOrder {
     }
 }
 
-/// What a button of the big panel or a macOS banner does for an event (INBOX-14).
+/// What a button of the pop-up or a macOS banner does for an event (INBOX-14).
 public enum InboxDeliveryAction: String, Sendable, CaseIterable {
     /// opens the event's target in the app and notes it as seen
     case show
@@ -171,7 +208,7 @@ public enum InboxDeliveryAction: String, Sendable, CaseIterable {
     /// closes the panel's page and leaves the entry in the Inbox; a banner's own dismissal
     case dismiss
 
-    /// the button's name in the big panel, in Title Style
+    /// the button's name in the pop-up, in Title Style
     public var panelTitle: String {
         switch self {
         case .show: "Show"
@@ -181,7 +218,7 @@ public enum InboxDeliveryAction: String, Sendable, CaseIterable {
         }
     }
 
-    /// the button's name in the big panel for an event: the coffee break's Done says it is on its way
+    /// the button's name in the pop-up for an event: the coffee break's Done says it is on its way
     ///
     /// - Parameter kind: the event's kind
     public func panelTitle(for kind: InboxEventKind) -> String {
@@ -196,65 +233,6 @@ public enum InboxDeliveryAction: String, Sendable, CaseIterable {
         case .snooze: "Snooze 1 Hour"
         case .dismiss: "Dismiss"
         }
-    }
-}
-
-/// The events the big panel holds, to page through, like the alert window's pages (``AlertPages``): the newest first. An
-/// event that comes while the panel is open joins it and is shown at once; a dismissed page shows the next older one; the
-/// panel closes once no page is left.
-public struct InboxEventPages: Equatable, Sendable {
-    /// the events, the newest first
-    public private(set) var events: [InboxEvent] = []
-    /// the shown page's place in ``events``
-    public private(set) var index = 0
-
-    public init() {}
-
-    public var isEmpty: Bool { events.isEmpty }
-    public var count: Int { events.count }
-
-    /// the event shown; `nil` once none is left
-    public var current: InboxEvent? {
-        events.indices.contains(index) ? events[index] : nil
-    }
-
-    /// "1 of 3"; the newest event is the first
-    public var position: String { "\(index + 1) of \(events.count)" }
-    public var hasPrevious: Bool { index > 0 }
-    public var hasNext: Bool { index + 1 < events.count }
-
-    /// Adds an event as the newest page, and shows it. An event already in the panel is replaced and shown.
-    public mutating func add(_ event: InboxEvent) {
-        events.removeAll { $0.id == event.id }
-        events.insert(event, at: 0)
-        index = 0
-    }
-
-    public mutating func previous() {
-        if hasPrevious { index -= 1 }
-    }
-
-    public mutating func next() {
-        if hasNext { index += 1 }
-    }
-
-    /// Removes a page; the one shown is followed by the next older page, or by the one before it when it was the last.
-    ///
-    /// - Parameter id: the event's id
-    public mutating func dismiss(_ id: String) {
-        guard let removed = events.firstIndex(where: { $0.id == id }) else {
-            return
-        }
-        events.remove(at: removed)
-        if removed < index {
-            index -= 1
-        }
-        index = max(0, min(index, events.count - 1))
-    }
-
-    public mutating func dismissAll() {
-        events = []
-        index = 0
     }
 }
 

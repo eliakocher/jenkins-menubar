@@ -15,7 +15,7 @@ struct AITests {
         let defaults = TemporaryDefaults()
         #expect(AISettings.load(from: defaults.defaults) == AISettings())
         let fresh = AISettings()
-        #expect(fresh.isEnabled && fresh.morningDigest && fresh.digestMinutes == 9 * 60)
+        #expect(fresh.isEnabled && fresh.morningDigest && fresh.digestMinutes == 8 * 60)
         #expect(fresh.model == .sonnet && fresh.confirmedUseCases.isEmpty)
 
         // No claude anywhere: Settings shows nothing, and nothing is offered or run.

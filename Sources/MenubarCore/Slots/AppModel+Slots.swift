@@ -5,24 +5,30 @@ extension AppModel {
     /// related merge requests, the builds of Jenkins (mine and the watched ones) and the head pipelines of my merge
     /// requests, every slot label GitLab has, and the labels it remembers.
     ///
+    /// The plan is made once and kept until a store it reads changes or the day does (``slotCache``), so a view may ask
+    /// for it as often as it is drawn.
+    ///
     /// - Parameters:
     ///   - now: the current time; the model's clock by default
     ///   - calendar: the calendar whose days count
     /// - Returns: the plan; empty before the work items loaded, and without a slot prefix in Team
     public func slotPlan(now: Date? = nil, calendar: Calendar = .current) -> SlotPlan {
-        let team = pipelines.project.team
-        let related = workItems.relatedMergeRequests
-        let labels = workItems.labels
-        let myMergeRequests = mergeRequests.list?.mergeRequests ?? []
-        let stores = projects.stores
-        return SlotPlan.make(
-            workItems: workItems.lists?.all ?? [],
-            mergeRequests: { related.shownMergeRequests(of: $0) },
-            build: { mergeRequest in
-                Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
-            },
-            knownLabels: slotLabels.labels + labels.known.map { Label(title: $0, color: labels.colors[$0]) },
-            team: team, today: now ?? dependencies.now(), calendar: calendar)
+        let day = calendar.startOfDay(for: now ?? dependencies.now())
+        return slotCache.value(for: SlotCacheKey.plan(chips: nil, me: nil, day: day, calendar: calendar)) {
+            let team = pipelines.project.team
+            let related = workItems.relatedMergeRequests
+            let labels = workItems.labels
+            let myMergeRequests = mergeRequests.list?.mergeRequests ?? []
+            let stores = projects.stores
+            return SlotPlan.make(
+                workItems: workItems.lists?.all ?? [],
+                mergeRequests: { related.shownMergeRequests(of: $0) },
+                build: { mergeRequest in
+                    Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
+                },
+                knownLabels: slotLabels.labels + labels.known.map { Label(title: $0, color: labels.colors[$0]) },
+                team: team, today: day, calendar: calendar)
+        }
     }
 
     /// The slots of the Slots section under the chips (SLOT-06 to SLOT-08, SLOT-13): the slot group's issues of the shown
@@ -30,47 +36,62 @@ extension AppModel {
     /// members. Without a slot
     /// group in Team, only my work items, as ``slotPlan(now:calendar:)``.
     ///
+    /// Like it, the plan is made once per chips and day, and again only after a store it reads changes. Scrolling, hovering
+    /// and the minute's tick make no plan.
+    ///
     /// - Parameters:
     ///   - chips: the chips that are on; none is Everyone
     ///   - now: the current time; the model's clock by default
     ///   - calendar: the calendar whose days count
     /// - Returns: the plan
     public func slotPlan(chips: SlotChipSelection, now: Date? = nil, calendar: Calendar = .current) -> SlotPlan {
-        let team = pipelines.project.team
-        let related = workItems.relatedMergeRequests
-        let labels = workItems.labels
-        let myMergeRequests = mergeRequests.list?.mergeRequests ?? []
-        let stores = projects.stores
-        let source = slotSourceItems
+        let day = calendar.startOfDay(for: now ?? dependencies.now())
+        // My username isn't observable, so it is in the key.
         let me = slotUsername
-        let squads = SlotChip.squads(of: source, prefix: team.squadLabelPrefix)
-        return SlotPlan.make(
-            workItems: source.filter { chips.matches($0, team: team, me: me) },
-            mergeRequests: { related.shownMergeRequests(of: $0) },
-            build: { mergeRequest in
-                Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
-            },
-            knownLabels: slotLabels.labels + labels.known.map { Label(title: $0, color: labels.colors[$0]) },
-            team: team, capacity: chips.capacity(team: team, squads: squads, me: me), epicWeights: slotItems.epicWeights,
-            commitments: slotItems.commitments,
-            today: now ?? dependencies.now(), calendar: calendar)
+        return slotCache.value(for: SlotCacheKey.plan(chips: chips, me: me, day: day, calendar: calendar)) {
+            let team = pipelines.project.team
+            let related = workItems.relatedMergeRequests
+            let labels = workItems.labels
+            let myMergeRequests = mergeRequests.list?.mergeRequests ?? []
+            let stores = projects.stores
+            let source = slotSourceItems
+            let squads = SlotChip.squads(of: source, prefix: team.squadLabelPrefix)
+            return SlotPlan.make(
+                workItems: chips.filter(source, team: team, me: me),
+                mergeRequests: { related.shownMergeRequests(of: $0) },
+                build: { mergeRequest in
+                    Self.slotBuild(of: mergeRequest, stores: stores, myMergeRequests: myMergeRequests)
+                },
+                knownLabels: slotLabels.labels + labels.known.map { Label(title: $0, color: labels.colors[$0]) },
+                team: team, capacity: chips.capacity(team: team, squads: squads, me: me),
+                epicWeights: slotItems.epicWeights, commitments: slotItems.commitments, today: day, calendar: calendar)
+        }
     }
 
     /// The chips of the Slots section: Everyone, Triage, Remaining Work, Open Bugs, Me, then one per team of Team (else
     /// one per squad of the loaded items) (SLOT-07, SLOT-13). A team has its chip only while one of its members is an
-    /// assignee of a loaded item, as in the team's tool.
+    /// assignee of a loaded item, as in the team's tool. Made once, until a store it reads changes.
     public var slotChips: [SlotChip] {
-        let team = pipelines.project.team
-        let source = slotSourceItems
-        return SlotChip.chips(
-            squads: SlotChip.squads(of: source, prefix: team.squadLabelPrefix),
-            teams: SlotTeams(team.slotTeams).map { SlotChip.teamsWithWork($0, items: source) })
+        slotCache.value(for: SlotCacheKey.chips) {
+            let team = pipelines.project.team
+            let source = slotSourceItems
+            return SlotChip.chips(
+                squads: SlotChip.squads(of: source, prefix: team.squadLabelPrefix),
+                teams: SlotTeams(team.slotTeams).map { SlotChip.teamsWithWork($0, items: source) })
+        }
+    }
+
+    /// every issue of the slot group that loaded, each once; made once, until the slot items change
+    public var slotGroupItems: [WorkItem] {
+        slotCache.value(for: SlotCacheKey.groupItems) { slotItems.items }
     }
 
     /// The team value the squad labels of the loaded items suggest, for "Suggest Members" in the Slots section; read
     /// only, Team is never written from here.
     public var slotSuggestedTeams: String {
-        SlotChip.suggestedTeams(of: slotSourceItems, prefix: pipelines.project.team.squadLabelPrefix)
+        slotCache.value(for: SlotCacheKey.suggestedTeams) {
+            SlotChip.suggestedTeams(of: slotSourceItems, prefix: pipelines.project.team.squadLabelPrefix)
+        }
     }
 
     /// The slots whose group issues the section loads: the shown ones of my work items and every slot label, which are the
@@ -94,7 +115,7 @@ extension AppModel {
 
     /// the items the chips filter: the slot group's issues, then my work items that aren't among them
     private var slotSourceItems: [WorkItem] {
-        let group = slotItems.items
+        let group = slotGroupItems
         let known = Set(group.map(\.reference))
         return group + (workItems.lists?.all ?? []).filter { !known.contains($0.reference) }
     }
@@ -162,4 +183,13 @@ extension AppModel {
                 plan, team: team, preferences: preferences, defaults: defaults, effects: effects, log: log)
         }
     }
+}
+
+/// What tells the remembered values of the Slots section apart: the stores' state is tracked, what is here isn't observable
+/// (the clock, the calendar, my username) or is the question (the chips).
+private enum SlotCacheKey: Hashable {
+    case plan(chips: SlotChipSelection?, me: String?, day: Date, calendar: Calendar)
+    case chips
+    case suggestedTeams
+    case groupItems
 }

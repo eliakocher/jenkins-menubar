@@ -89,11 +89,11 @@ struct LocalEntriesTests {
         #expect(world.stub.requests.isEmpty)
     }
 
-    @Test("INBOX-10 the Inbox and Badge toggles of a kind decide what a local item does; off in the Inbox, it isn't added")
+    @Test("INBOX-10 Off and the Red Dot of a kind decide what a local item does; Off, it isn't added")
     func togglesApplyToLocalItems() throws {
         var rules = InboxNotificationRules()
         rules.set(.badge, false, for: .claudeAnswered)
-        rules.set(.inbox, false, for: .digestReady)
+        rules.set(.off, for: .digestReady)
         let store = try World().store(rules: rules)
         store.addLocal(Self.answer("a"))
         store.addLocal(.digestReady(summary: nil, url: AppRoute.open(.digest).url, at: Self.start, calendar: Self.utc))
@@ -167,6 +167,59 @@ struct LocalEntriesTests {
         #expect(digest.body == "Merge !42 first.")
     }
 
+    @Test("INBOX-10 seeing the digest in the Digest section clears its entry; an older digest's entry goes when that one shows, today's stays")
+    func seeingTheDigestClearsItsEntry() async throws {
+        let world = try World()
+        let store = world.store()
+        let yesterday = Self.start.addingTimeInterval(-86400)
+        let url = AppRoute.open(.digest).url
+        store.addLocal(.digestReady(summary: "Old news", url: url, at: yesterday, calendar: Self.utc))
+        store.addLocal(.digestReady(summary: "Merge !42 first", url: url, at: Self.start, calendar: Self.utc))
+        store.addLocal(Self.answer("a"))
+        #expect(store.pending.count { $0.kind == .digestReady } == 2)
+
+        // Yesterday's digest is the one on the page: only its entry is done.
+        store.digestSeen(writtenAt: yesterday.addingTimeInterval(120))
+        #expect(store.pending.map(\.body).contains("Merge !42 first"))
+        #expect(store.pending.count { $0.kind == .digestReady } == 1)
+        #expect(store.done.count { $0.kind == .digestReady } == 1)
+
+        // Today's: the entry leaves Pending like an opened one, the other entries stay, nothing goes to GitLab.
+        store.digestSeen(writtenAt: Self.start.addingTimeInterval(300))
+        #expect(store.pending.map(\.kind) == [.claudeAnswered])
+        #expect(store.done.count { $0.kind == .digestReady } == 2)
+        #expect(store.badgeCount == 1)
+        #expect(world.stub.requests.isEmpty)
+
+        // Seen again, or with no entry: nothing happens, and it stays done after a relaunch.
+        store.digestSeen(writtenAt: Self.start)
+        store.digestSeen(writtenAt: Self.start.addingTimeInterval(-5 * 86400))
+        #expect(world.store().pending.map(\.kind) == [.claudeAnswered])
+    }
+
+    @Test("INBOX-03 a group header's Mark All Done takes the group's own entries and never my to-dos")
+    func groupHeaderBatch() async throws {
+        let world = try World()
+        let store = world.store()
+        store.addLocal(Self.answer("a"))
+        store.addLocal(Self.answer("b"))
+        let mine = try #require(store.addMyTodo("Water the plants"))
+
+        let claude = InboxSection.markAllDoneBatch(store.pending, in: .claude)
+        #expect(claude.count == 2 && claude.allSatisfy { $0.group == .claude })
+        #expect(InboxSection.markAllDoneBatch(store.pending, in: .builds).isEmpty)
+        // My own to-dos have their own control, even when asked for by name.
+        #expect(InboxSection.markAllDoneBatch(store.pending, in: .myToDos).isEmpty)
+        #expect(!InboxSection.markAllDoneBatch(store.pending, in: .claude).contains { $0.myTodo?.id == mine.id })
+
+        for entry in claude {
+            await store.markDone(entry)
+        }
+        #expect(store.pending.map(\.kind) == [.myTodo])
+        #expect(store.done.count == 2)
+        #expect(world.stub.requests.isEmpty)
+    }
+
     // MARK: - INBOX-11
 
     private static func alert(
@@ -180,7 +233,7 @@ struct LocalEntriesTests {
         return BuildAlert(kind: .finished, build: build, content: content)
     }
 
-    @Test("INBOX-11 a failed or unstable build goes into the Inbox once, with a link to the build, and a green build of its job clears it")
+    @Test("INBOX-11 a failed or unstable build goes into the Inbox once, with a link to the build, and a green build of its job clears it and leaves its own entry")
     func failedBuilds() async throws {
         let setup = try ModelSetup()
         let model = setup.model
@@ -196,10 +249,36 @@ struct LocalEntriesTests {
         #expect(first.targetURL?.absoluteString == "https://jenkins.example.com/job/project/job/MR-12501/5/")
         #expect(first.title == "Fix the login")
 
-        // Green again: the entries of that job are done, the other job's stay.
+        // Green again: the entries of that job are done, the other job's stay, and the green build has its own entry.
         model.addToInbox(finished: [try Self.alert(.success, number: 8)])
-        #expect(model.inbox.pending.map(\.headline) == ["Build !12502 #1 failed"])
+        #expect(
+            model.inbox.pending.sorted { $0.headline < $1.headline }.map(\.headline)
+                == ["Build !12501 #8 succeeded", "Build !12502 #1 failed"])
         #expect(model.inbox.done.count == 2)
+    }
+
+    @Test("INBOX-11 a succeeded build is an Inbox entry too, uncounted by the Red Dot, unless its row is Off; a green build clears the job's failed entry either way")
+    func succeededBuilds() async throws {
+        let model = try ModelSetup().model
+
+        model.addToInbox(finished: [
+            try Self.alert(.success), try Self.alert(.success, job: "MR-12502", number: 1, kind: .watched, author: "Sam Lee"),
+        ])
+
+        let rows = model.inbox.pending.sorted { $0.headline < $1.headline }
+        #expect(rows.map(\.headline) == ["Build !12501 #5 succeeded", "Watching · Build !12502 #1 succeeded"])
+        #expect(rows.map(\.kind) == [.buildSucceeded, .watchedBuildSucceeded])
+        #expect(model.inbox.badgeCount == 0)
+
+        // Off: no new entry, but the green build still clears the failed entry of its job.
+        model.addToInbox(finished: [try Self.alert(.failure, job: "MR-12503", number: 1)])
+        #expect(model.inbox.badgeCount == 1)
+        var rules = model.inbox.rules
+        rules.set(.off, for: .buildSucceeded)
+        model.inbox.rules = rules
+        model.addToInbox(finished: [try Self.alert(.success, job: "MR-12503", number: 2)])
+        #expect(model.inbox.pending.map(\.headline).sorted() == ["Build !12501 #5 succeeded", "Watching · Build !12502 #1 succeeded"])
+        #expect(model.inbox.done.map(\.headline) == ["Build !12503 #1 failed"])
     }
 
     @Test("ALERT-11 the Inbox entry of a watched build's failure is marked")

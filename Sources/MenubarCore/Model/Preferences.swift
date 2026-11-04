@@ -12,10 +12,6 @@ public struct Preferences: Codable, Hashable, Sendable {
     public var hideFailedAfter: HideAfter
     /// whether the builds of merged MRs hide (HIDE-03)
     public var hidesMergedBuilds: Bool
-    /// how a finished build is announced (ALERT-03)
-    public var alertStyle: AlertStyle
-    /// whether a banner shows as soon as a stage fails (ALERT-05)
-    public var stageAlerts: Bool
     /// how the status icon draws the counts (PIPE-05)
     public var iconStyle: IconStyle
     /// how old GitLab data may be when it is shown, one of ``gitLabMaxAgeOptions`` (OD-02)
@@ -38,8 +34,8 @@ public struct Preferences: Codable, Hashable, Sendable {
     /// whether a banner warns before a slot's code freeze while committed work items have no merged MR; off by default
     /// and never with a sound (SLOT-04)
     public var slotAlerts: Bool
-    /// where the Inbox's events go: banner, Inbox, badge per kind, quiet hours, only my projects (INBOX-06); kept as
-    /// JSON text in one key
+    /// what each event does, the table of Settings → Notifications: pop-up, banner, Inbox or off per kind, the Red Dot,
+    /// only my projects (INBOX-06); kept as JSON text in one key
     public var inboxNotifications: InboxNotificationRules
     /// what the status item and the menu pane show, in which order (APP-11); kept as JSON text in one key
     public var menuBarLayout: MenuBarLayout
@@ -56,8 +52,6 @@ public struct Preferences: Codable, Hashable, Sendable {
         hideSuccessfulAfter: HideAfter = .hours(24),
         hideFailedAfter: HideAfter = .hours(168),
         hidesMergedBuilds: Bool = true,
-        alertStyle: AlertStyle = .window,
-        stageAlerts: Bool = true,
         iconStyle: IconStyle = .monochrome,
         gitLabMaxAgeSeconds: Int = 60,
         workItems: WorkItemFilters = WorkItemFilters(),
@@ -82,8 +76,6 @@ public struct Preferences: Codable, Hashable, Sendable {
         self.hideSuccessfulAfter = hideSuccessfulAfter
         self.hideFailedAfter = hideFailedAfter
         self.hidesMergedBuilds = hidesMergedBuilds
-        self.alertStyle = alertStyle
-        self.stageAlerts = stageAlerts
         self.iconStyle = iconStyle
         self.gitLabMaxAgeSeconds = gitLabMaxAgeSeconds
         self.workItems = workItems
@@ -98,14 +90,14 @@ public struct Preferences: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds, alertStyle
-        case stageAlerts, iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
+        case checkIntervalSeconds, hideSuccessfulAfter, hideFailedAfter, hidesMergedBuilds
+        case iconStyle, gitLabMaxAgeSeconds, workItems, workItemRows, showInMenuBar, fillInCopiedLink
         case globalShortcut, easterEggs, funLevel, slotAlerts, inboxNotifications, menuBarLayout, appearance, shortcuts
         case hotCorners
     }
 
     // A value encoded before a field existed decodes with that field's default. One encoded with the dropped
-    // `speaksResult` (ALERT-04) decodes too: its key is ignored.
+    // `speaksResult` (ALERT-04), `alertStyle` or `stageAlerts` (Task 7.14) decodes too: their keys are ignored.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let defaults = Preferences()
@@ -117,8 +109,6 @@ public struct Preferences: Codable, Hashable, Sendable {
             hideSuccessfulAfter: try value(.hideSuccessfulAfter, defaults.hideSuccessfulAfter),
             hideFailedAfter: try value(.hideFailedAfter, defaults.hideFailedAfter),
             hidesMergedBuilds: try value(.hidesMergedBuilds, defaults.hidesMergedBuilds),
-            alertStyle: try value(.alertStyle, defaults.alertStyle),
-            stageAlerts: try value(.stageAlerts, defaults.stageAlerts),
             iconStyle: try value(.iconStyle, defaults.iconStyle),
             gitLabMaxAgeSeconds: try value(.gitLabMaxAgeSeconds, defaults.gitLabMaxAgeSeconds),
             workItems: try value(.workItems, defaults.workItems),
@@ -187,17 +177,6 @@ public struct Preferences: Codable, Hashable, Sendable {
             case .never: false
             }
         }
-    }
-
-    /// How a finished build announces itself: the alert window (default), a banner, or nothing beyond the Inbox, never
-    /// two of them (ALERT-03, ALERT-10). It is the one "Failed Builds" setting of Settings → Notifications, shown there as
-    /// Big Panel, Desktop Notification or Inbox Only (``InboxDelivery``); the Inbox's own delivery never adds a second
-    /// pop-up for a failed build.
-    public enum AlertStyle: String, Codable, Hashable, Sendable, CaseIterable {
-        case window
-        case banner
-        /// no sound and no pop-up; the build is an entry of the Inbox, and in Activity
-        case inboxOnly
     }
 
     /// How the app looks: like macOS (default), always light, or always dark (Settings → Appearance).

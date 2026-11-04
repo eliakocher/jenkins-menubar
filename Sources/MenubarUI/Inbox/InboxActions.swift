@@ -81,7 +81,7 @@ enum InboxOpening {
     ///   - links: how links open: in the app, ⌥ in the browser
     ///   - router: the window's router, for a `megamonitor://` link of a thing of this app
     static func open(_ entry: InboxEntry, store: InboxStore, links: GitLabSectionActions, router: WindowRouter) {
-        // One of my own to-dos stays as it is: its checkbox is what finishes it.
+        // One of my own to-dos stays as it is: its own Done (hover button, menu, key) finishes it.
         if !entry.isMine {
             store.seen.markSeen(entry.id)
         }

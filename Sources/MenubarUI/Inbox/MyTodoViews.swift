@@ -10,10 +10,12 @@ struct MyTodoAddField: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        // The same columns as the rows below (``ListRow``): the "+" sits in the symbol column, at the rows' symbol size, and
+        // the field starts where their titles start.
+        HStack(alignment: .firstTextBaseline, spacing: ListRowMetrics.gap) {
             Image(systemName: "plus.circle.fill")
-                .imageScale(.large)
                 .foregroundStyle(text.isEmpty ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Color.accentColor))
+                .frame(width: ListRowMetrics.symbolColumn)
                 .accessibilityHidden(true)
             TextField("Add a To-Do…", text: $text)
                 .textFieldStyle(.plain)

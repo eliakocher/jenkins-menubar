@@ -191,6 +191,11 @@ public struct Fixtures: Sendable {
         return alert(build)
     }
 
+    /// the alert of build #1 of merge request job `MR-<iid>`, for the summaries
+    func summaryAlert(_ iid: Int, _ title: String, _ result: BuildResult, minutes: Double) -> BuildAlert {
+        alert(finished("MR-\(iid)", 1, title, result, durationMinutes: minutes, finishedMinutesAgo: 0))
+    }
+
     /// `MR-9 #4` of a colleague, which I only watch: the alert says so and has no Rebuild
     func watchedAlert(_ result: BuildResult, minutes: Double, author: String? = "Sam Lee", failedStages: [String] = [],
                       tests: TestCounts? = nil) -> BuildAlert {

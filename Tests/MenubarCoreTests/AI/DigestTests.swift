@@ -98,15 +98,47 @@ struct DigestTests {
     }
 
     @Test(
-        "AI-04 the summary line counts what needs me, the MRs ready to merge, the reviews, my red builds and the nearest date",
+        "AI-04 the summary counts what is in Needs You Now once: a chip per kind, the total only when the card holds more than one kind, none when it is empty",
         arguments: [
-            (2, "2 things need you, 1 MR ready to merge, 1 review waiting, code freeze in 3 days"),
-            (1, "1 thing needs you, 1 MR ready to merge, 1 review waiting, code freeze in 3 days"),
-            (0, "Nothing needs you now, 1 MR ready to merge, 1 review waiting, code freeze in 3 days"),
+            // One kind only: its chip, no total.
+            (["group/project!40"], "1 review waiting, code freeze in 3 days"),
+            (["group/project!42"], "1 MR ready to merge, code freeze in 3 days"),
+            // Only needs that aren't reviews: still one kind, no total.
+            (["build:develop"], "1 red build, code freeze in 3 days"),
+            (["group/project#1240"], "1 work item needs you, code freeze in 3 days"),
+            // Mixed kinds: the total, then a chip per kind in the page's order.
+            (["group/project!40", "group/project!42"], "2 things need you, 1 MR ready to merge, 1 review waiting, code freeze in 3 days"),
+            (["build:develop", "group/project!40", "group/project#1240"],
+             "3 things need you, 1 review waiting, 1 red build, 1 work item needs you, code freeze in 3 days"),
+            // Nothing in the card.
+            ([], "Nothing needs you now, code freeze in 3 days"),
+        ] as [([String], String)])
+    func summarizes(needsYou: [String], line: String) {
+        let items = needsYou.map { DigestReply.Item(ref: $0) }
+        let reply = DigestReply(sections: [DigestReply.Section(id: .needsYou, items: items)])
+        // #1240 is in trouble here, so the digest lists it.
+        var facts = Self.facts
+        facts.items[facts.items.firstIndex { $0.ref == "group/project#1240" }!].needsYou = true
+        #expect(DigestReport(facts: facts, reply: reply).summaryLine == line)
+    }
+
+    @Test("AI-04 a summary chip names its items and knows where its click goes: the total to the card, a kind to its items")
+    func summaryChipsKnowTheirItems() throws {
+        let reply = DigestReply(sections: [
+            DigestReply.Section(id: .needsYou, items: [
+                DigestReply.Item(ref: "group/project!40"), DigestReply.Item(ref: "group/project!42"),
+            ]),
         ])
-    func summarizes(needsYou: Int, line: String) {
-        let report = DigestReport(summary: DigestReport.summary(of: Self.facts, needsYou: needsYou), gatheredAt: Self.now)
-        #expect(report.summaryLine == line)
+        let report = DigestReport(facts: Self.facts, reply: reply)
+        let total = try #require(report.summary.first)
+        #expect(total.opensNeedsYou && total.refs == ["group/project!40", "group/project!42"])
+        #expect(report.help(of: total) == "!40, !42. Click to show Needs You Now.")
+        let review = try #require(report.summary.first { $0.text == "1 review waiting" })
+        #expect(!review.opensNeedsYou && review.refs == ["group/project!40"])
+        #expect(report.help(of: review) == "!40. Click to show it.")
+        // The nearest date leads to the slot's row.
+        let date = try #require(report.summary.last)
+        #expect(date.refs == ["slot:2026.49"])
     }
 
     @Test(
@@ -289,7 +321,7 @@ struct DigestTests {
             #expect((answer.digest != nil) == hasCards)
             if let digest = answer.digest {
                 #expect(digest.sections.first?.rows.first?.next == "Merge it")
-                #expect(answer.asText.hasPrefix("**Daily Digest**\n1 thing needs you"))
+                #expect(answer.asText.hasPrefix("**Daily Digest**\n1 MR ready to merge, code freeze in 3 days"))
                 #expect(digest.markdown.contains("- [!42](https://gitlab.example.com/group/project/-/merge_requests/42) Add cart discount: _Ready to merge_. Approved. **Next:** Merge it"))
                 #expect(digest.bannerText.contains("• !42 Add cart discount: Merge it"))
             } else {

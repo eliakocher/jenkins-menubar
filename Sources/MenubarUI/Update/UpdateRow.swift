@@ -113,6 +113,8 @@ struct UpdateFailureRow: View {
 /// The update's words, which the panel row, the toolbar item and the gallery share (`docs/design/update-row.md`, Copy).
 enum UpdateText {
     static let offer = "Update Ready — Rebuild"
+    /// the offer after a failed rebuild, or a relaunch that still runs the old build
+    static let retry = "Update Failed — Try Again"
     static let help = "Rebuild the app from the checkout, then relaunch it"
     static let rebuilding = "Rebuilding…"
     static let relaunching = "Relaunching…"

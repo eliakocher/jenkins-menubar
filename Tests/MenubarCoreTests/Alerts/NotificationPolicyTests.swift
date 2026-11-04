@@ -9,27 +9,16 @@ struct NotificationPolicyTests {
         Build(job: job, number: 3, kind: kind, phase: .running, startedAt: Date(timeIntervalSince1970: 0)).stamped(project)
     }
 
-    /// the job's setting, the group's switch and what the decision is
-    typealias Row = (setting: NotificationPolicy.JobSetting?, groupIsOn: Bool, notifies: Bool)
-
     @Test(
-        "ALERT-09 the job's setting beats the group's switch",
+        "ALERT-09 only a job set to Never stays quiet; the table decides the rest",
         arguments: [
-            (nil, true, true), (nil, false, false),
-            (NotificationPolicy.JobSetting.always, true, true), (.always, false, true),
-            (.never, true, false), (.never, false, false),
-        ] as [Row], NotificationPolicy.Group.allCases)
-    func decision(row: Row, group: NotificationPolicy.Group) {
+            (nil, true), (NotificationPolicy.JobSetting.always, true), (.never, false),
+        ] as [(NotificationPolicy.JobSetting?, Bool)], [JobKind.mine, .watched])
+    func decision(row: (setting: NotificationPolicy.JobSetting?, notifies: Bool), kind: JobKind) {
         var policy = NotificationPolicy()
-        policy.set(group, isOn: row.groupIsOn)
         policy.set(row.setting, forJob: "MR-1")
-        let build = Self.build(kind: group == .mine ? .mine : .watched)
 
-        #expect(policy.shouldNotify(build) == row.notifies)
-        // The other group's switch never matters.
-        let other: NotificationPolicy.Group = group == .mine ? .watching : .mine
-        policy.set(other, isOn: !policy.isOn(other))
-        #expect(policy.shouldNotify(build) == row.notifies)
+        #expect(policy.shouldNotify(Self.build(kind: kind)) == row.notifies)
     }
 
     @Test("ALERT-09 a job is keyed by its project and name, not by its build number")
@@ -46,13 +35,13 @@ struct NotificationPolicyTests {
         #expect(policy.shouldNotify(Self.build(kind: .mine, project: other)))
     }
 
-    @Test("ALERT-09 the policy survives a round trip through UserDefaults")
+    @Test("ALERT-09 the policy survives a round trip through UserDefaults, and reads the old switches as nothing")
     func persistence() {
         let suite = TemporaryDefaults()
         let store = PreferencesStore(defaults: suite.defaults)
         #expect(store.notificationPolicy == NotificationPolicy())
 
-        let policy = NotificationPolicy(mine: true, watching: false, jobs: ["MR-1": .never, "p-2/feature%252Ffoo": .always])
+        let policy = NotificationPolicy(jobs: ["MR-1": .never, "p-2/feature%252Ffoo": .always])
         store.notificationPolicy = policy
         #expect(PreferencesStore(defaults: suite.defaults).notificationPolicy == policy)
 
@@ -61,7 +50,8 @@ struct NotificationPolicyTests {
         #expect(suite.defaults.object(forKey: PreferencesStore.notificationPolicyKey) == nil)
         suite.defaults.set("not json", forKey: PreferencesStore.notificationPolicyKey)
         #expect(store.notificationPolicy == NotificationPolicy())
+        // The old My Builds and Watching switches are in files already written; the migration reads them, nothing else does.
         suite.defaults.set(#"{"watching":false,"jobs":{"MR-1":"sometimes","MR-2":"never"}}"#, forKey: PreferencesStore.notificationPolicyKey)
-        #expect(store.notificationPolicy == NotificationPolicy(watching: false, jobs: ["MR-2": .never]))
+        #expect(store.notificationPolicy == NotificationPolicy(jobs: ["MR-2": .never]))
     }
 }

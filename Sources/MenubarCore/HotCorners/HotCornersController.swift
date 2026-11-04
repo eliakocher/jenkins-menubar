@@ -22,8 +22,8 @@ public final class HotCornersController {
     public private(set) var isLegacyAppRunning = false
     /// the user's shortcuts for the Run Shortcut menu, once loaded
     public private(set) var shortcutNames: [String] = []
-    /// Called on the main actor for MegaMonitor's own actions (sections, the main window, Search…, Refresh Now, Mute
-    /// Alerts); the app shell sets it.
+    /// Called on the main actor for MegaMonitor's own actions (sections, the main window, Search…); the app shell
+    /// sets it.
     @ObservationIgnored public var onAppAction: (@MainActor (HotCornerAction) -> Void)?
     /// the settings followed now
     public private(set) var settings: HotCornerSettings
@@ -217,7 +217,7 @@ public final class HotCornersController {
             system.runShortcut(named: name)
         case .openApp(let path):
             system.openApp(at: path)
-        case .openSection, .showMainWindow, .search, .refreshNow, .muteAlerts:
+        case .openSection, .showMainWindow, .search:
             onAppAction?(action)
         }
     }

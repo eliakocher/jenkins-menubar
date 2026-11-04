@@ -8,6 +8,13 @@ import Testing
 @Suite("Inbox", .timeLimit(.minutes(1)))
 @MainActor
 struct InboxTests {
+    /// the table with GitLab's pipeline failed shown, which the other tests of the Inbox's lists don't want hidden
+    nonisolated static var showingPipelines: InboxNotificationRules {
+        var rules = InboxNotificationRules()
+        rules.set(.inbox, for: .pipelineFailed)
+        return rules
+    }
+
     private nonisolated static let gitLab = URL(string: "https://gitlab.example.com")!
     /// Monday 2026-11-02 10:00 UTC, when the test clock starts
     private nonisolated static let start = Date(timeIntervalSince1970: 1_793_613_600)
@@ -48,7 +55,7 @@ struct InboxTests {
         var now: Date { services.now() }
 
         /// A store on this world's support folder, like one launch of the app.
-        func store(rules: InboxNotificationRules = InboxNotificationRules(), myProjects: Set<String> = []) -> InboxStore {
+        func store(rules: InboxNotificationRules = InboxTests.showingPipelines, myProjects: Set<String> = []) -> InboxStore {
             InboxStore(
                 services: services, folder: folder.file("support"), rules: rules, myProjects: { myProjects },
                 calendar: InboxTests.utc)
@@ -220,6 +227,27 @@ struct InboxTests {
         #expect(store.entries(InboxFilter(state: .snoozed, group: .reviewRequests)).count == 1)
         // The next launch shows the same at once, from the cache.
         #expect(world.store().pending.map(\.id) == store.pending.map(\.id))
+    }
+
+    @Test("INBOX-17 GitLab's pipeline failed to-do stays out of the Inbox while its row is Off, and is there when it is on")
+    func pipelineTodoIsHiddenWhileOff() async throws {
+        let world = try World()
+        try world.answerFixture("InboxTodos", "todos.json")
+        let pipelineTodo = "gid://gitlab/Todo/902"
+
+        // Off by default: hidden here, whatever GitLab says, and not counted.
+        let hidden = world.store(rules: InboxNotificationRules())
+        await hidden.load()
+        #expect(!hidden.pending.map(\.id).contains(pipelineTodo))
+        #expect(!hidden.sections.map(\.group).contains(.builds))
+        #expect(hidden.badgeCount == 5)
+
+        // Turned on, it shows again without another load.
+        var rules = InboxNotificationRules()
+        rules.set(.inbox, for: .pipelineFailed)
+        hidden.rules = rules
+        #expect(hidden.pending.map(\.id).contains(pipelineTodo))
+        #expect(hidden.badgeCount == 6)
     }
 
     // MARK: - INBOX-03
@@ -579,7 +607,7 @@ struct InboxTests {
             expected = [.inbox, .badge]
         case .changedByTheUser:
             kind = .mentioned
-            rules.set([.inbox], for: .mentioned)
+            rules.set(.badge, false, for: .mentioned)
             expected = [.inbox]
         case .noBannerLeft:
             // The bit of the macOS banner the app once had, in a value saved then.
@@ -602,7 +630,7 @@ struct InboxTests {
         #expect(rules.route(event, myProjects: ["acme/web/app"]) == expected)
         // Setting the default back keeps nothing.
         var reset = rules
-        reset.set(kind.defaultRoutes, for: kind)
+        reset.setRoutes(kind.defaultRoutes, for: kind)
         #expect(reset.overrides.isEmpty)
     }
 
@@ -610,8 +638,8 @@ struct InboxTests {
     func deliveredEvents() async throws {
         let world = try World()
         try world.answerFixture("InboxTodos", "todos.json")
-        var rules = InboxNotificationRules()
-        rules.set([.inbox], for: .otherTodo)
+        var rules = InboxTests.showingPipelines
+        rules.set(.badge, false, for: .otherTodo)
         let store = world.store(rules: rules)
         var delivered: [RoutedInboxEvent] = []
         store.onEvents = { delivered += $0 }
@@ -653,7 +681,7 @@ struct InboxTests {
         let suite = TemporaryDefaults()
         let store = PreferencesStore(defaults: suite.defaults)
         var preferences = store.load()
-        preferences.inboxNotifications.set([.inbox], for: .mentioned)
+        preferences.inboxNotifications.set(.badge, false, for: .mentioned)
         preferences.inboxNotifications.onlyMyProjects = true
 
         store.save(preferences)

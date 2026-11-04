@@ -5,8 +5,9 @@ import UserNotifications
 
 /// The alerts' effects on the Mac (Task 4.4): the alert window, banners and sounds.
 ///
-/// - The alert window is one ``AlertPanel`` that holds every alert as a page: non-activating and floating, so it never
-///   takes the keyboard by itself (ALERT-03, `docs/design/alert.md`).
+/// - The alert window is one ``AlertPanel`` that holds every build alert and every Inbox pop-up: one shows as itself, two
+///   or more as a summary; non-activating and floating, so it never takes the keyboard by itself (ALERT-03,
+///   `docs/design/alert.md`).
 /// - Banners go through UNUserNotificationCenter, in the categories `build` and `build-and-mr`, and with Rebuild for a
 ///   failed, unstable or aborted build `build-rebuild` and `build-and-mr-rebuild` (PIPE-09), and for a real build, not a
 ///   preview, the same four with the suffix `-live`, which add Open Console and Hide Until the Next Build; the payload is
@@ -24,9 +25,8 @@ final class NativeEffects: Effects {
     /// the placeholder banners show when previews are hidden
     private static let hiddenPreviewsPlaceholder = "Jenkins build"
 
+    /// the alert window, also for the events delivered as ``InboxDelivery/popUp`` (INBOX-14)
     private let panels = AlertPanels()
-    /// the Inbox's big panel for the events delivered as ``InboxDelivery/bigPanel`` (INBOX-14)
-    private let inboxPanels = InboxEventPanels()
     /// the finished builds whose banner couldn't show, so their window says why (ALERT-03)
     private var bannerFallbacks: Set<UUID> = []
     /// starts a build's rebuild, for the alert window's Rebuild; the app delegate sets it to the shell's (PIPE-09)
@@ -42,11 +42,17 @@ final class NativeEffects: Effects {
     /// back to it.
     var onOpen: @MainActor (URL, Bool) -> Void = { _, _ in }
 
-    /// runs a button of the Inbox's big panel or of an Inbox event's banner; the app delegate sets it to the shell's
+    /// runs a button of the Inbox's pop-up or of an Inbox event's banner; the app delegate sets it to the shell's
     var onInboxAction: @MainActor (InboxDeliveryAction, InboxEvent) async -> Problem? = { _, _ in nil }
 
+    /// opens the Inbox in the app, for the alert window's Open Inbox; the app delegate sets it to the shell's
+    var onOpenInbox: @MainActor () -> Void {
+        get { panels.openInbox }
+        set { panels.openInbox = newValue }
+    }
+
     func showInboxPanel(_ event: InboxEvent) async {
-        inboxPanels.show(event) { [weak self] action, event in await self?.onInboxAction(action, event) }
+        panels.show(event) { [weak self] action, event in await self?.onInboxAction(action, event) }
     }
 
     /// Posts an Inbox event as a macOS banner with Show, Mark Done and Snooze 1 Hour (INBOX-14). It never plays a sound.
@@ -105,8 +111,8 @@ final class NativeEffects: Effects {
 
     func postBanner(_ alert: BuildAlert) async -> Bool {
         let posted = await post(alert)
-        // The announcer shows the window next, except for a stage banner, which shows nothing (ALERT-05).
-        if !posted, alert.kind != .stageFailed {
+        // The announcer shows the window next for a build of mine; a watched build's banner just stays quiet.
+        if !posted, !alert.content.isWatched {
             bannerFallbacks.insert(alert.id)
         }
         return posted

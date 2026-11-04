@@ -91,8 +91,8 @@ struct SettingsStoreTests {
         let harness = try Harness()
         let store = harness.store
 
-        store.preferences.alertStyle = .banner
-        store.preferences.alertStyle = .banner
+        store.preferences.iconStyle = .color
+        store.preferences.iconStyle = .color
         store.preferences.showInMenuBar = false
         store.setLabel("evil::$(touch pwned)", in: .with)
         _ = await store.saveGitLabToken(Self.gitLabToken)
@@ -100,7 +100,7 @@ struct SettingsStoreTests {
 
         let messages = await harness.messages()
         #expect(messages == [
-            "alertStyle: window → banner",
+            "iconStyle: monochrome → color",
             "showInMenuBar: on → off",
             "Work items must have the label evil::$(touch pwned)",
             "Saved the GitLab token in the keychain",

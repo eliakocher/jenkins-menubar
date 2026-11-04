@@ -50,6 +50,8 @@ struct InboxListContent: View {
     /// the rows the keys and the context menu act on
     @ViewState private var selection: Set<String> = []
     @ViewState private var isConfirmingMarkAll = false
+    /// the group whose header's Mark All Done waits for the answer
+    @ViewState private var groupToMarkDone: InboxGroup?
     @ViewState private var isPickingDate = false
     /// the rows the date picker snoozes
     @ViewState private var dateEntries: [InboxEntry] = []
@@ -100,7 +102,10 @@ struct InboxListContent: View {
                     // A drag reorders my own to-dos, and only them.
                     .onMove(perform: section.canReorder && section.rows.count > 1 ? { actions.moveTodos($0, $1) } : nil)
                 } header: {
-                    InboxSectionHeader(title: section.title, count: section.rows.count)
+                    InboxSectionHeader(
+                        title: section.title, count: section.rows.count,
+                        markAllCount: filter.state == .pending ? InboxSection.markAllDoneBatch(section.rows.map(\.entry), in: section.group).count : 0
+                    ) { groupToMarkDone = section.group }
                 }
             }
             if model.needsToken {
@@ -145,6 +150,14 @@ struct InboxListContent: View {
         } message: {
             Text("This marks all \(model.markAllCount) pending to-dos done in GitLab. Snoozed ones stay snoozed.")
         }
+        .alert(
+            "Mark All \(groupBatch.count) Done?", isPresented: Binding(get: { groupToMarkDone != nil }, set: { if !$0 { groupToMarkDone = nil } })
+        ) {
+            Button("Mark All Done") { actions.done(groupBatch) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(groupMessage)
+        }
         .sheet(item: $todoSheet) { target in
             MyTodoSheet(target: target, parseLink: actions.parseLink) { draft in
                 if case .edit(let todo) = target {
@@ -167,6 +180,20 @@ struct InboxListContent: View {
         }
     }
 
+    /// the entries the confirmed group header marks done
+    private var groupBatch: [InboxEntry] {
+        guard let group = groupToMarkDone, let section = model.sections.first(where: { $0.group == group }) else {
+            return []
+        }
+        return InboxSection.markAllDoneBatch(section.rows.map(\.entry), in: group)
+    }
+
+    private var groupMessage: String {
+        let title = groupToMarkDone?.title ?? ""
+        let inGitLab = groupBatch.contains { $0.todo != nil }
+        return "This marks the \(groupBatch.count) pending entries in \(title) done" + (inGitLab ? ", the GitLab to-dos in GitLab." : " on this Mac.")
+    }
+
     /// The rows with these ids, in the list's order.
     private func rows(of ids: Set<String>) -> [InboxRowModel] {
         model.rows.filter { ids.contains($0.id) }
@@ -177,7 +204,7 @@ struct InboxListContent: View {
         guard NSEvent.modifierFlags.isDisjoint(with: [.shift, .command]) else {
             return
         }
-        // A to-do of mine without a link has nothing to open: its checkbox and its form are what it has.
+        // A to-do of mine without a link has nothing to open: its Done and its form are what it has.
         guard !row.entry.isMine || row.entry.targetURL != nil else {
             return
         }
@@ -277,6 +304,10 @@ private struct InboxTokenNote: View {
 private struct InboxSectionHeader: View {
     let title: String
     let count: Int
+    /// how many pending entries its Mark All Done clears; 0 shows no button
+    var markAllCount = 0
+    var markAll: () -> Void = {}
+    @ViewState private var isHovered = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -284,7 +315,20 @@ private struct InboxSectionHeader: View {
             Text(verbatim: String(count))
                 .monospacedDigit()
                 .foregroundStyle(.tertiary)
+            Spacer(minLength: 8)
+            if markAllCount > 0 {
+                Button(action: markAll) {
+                    Image(systemName: "checkmark.circle")
+                        .imageScale(.large)
+                        .accessibilityLabel("Mark All Done")
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(isHovered ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary))
+                .help("Mark All \(markAllCount) Done")
+            }
         }
+        .contentShape(.rect)
+        .onHover { isHovered = $0 }
     }
 }
 

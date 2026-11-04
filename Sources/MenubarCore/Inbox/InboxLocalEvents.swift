@@ -39,9 +39,14 @@ extension InboxEvent {
     /// - Returns: the local event
     public static func digestReady(summary: String?, url: URL, at date: Date, calendar: Calendar = .current) -> InboxEvent {
         return InboxEvent(
-            id: "digest|" + dayText(of: date, calendar: calendar), kind: .digestReady,
+            id: digestID(on: date, calendar: calendar), kind: .digestReady,
             source: .local, title: "Your digest is ready", targetURL: url, occurredAt: date,
             headlineText: "Morning digest, written by Claude", excerpt: summary.flatMap(Self.firstLine))
+    }
+
+    /// the id of the digest entry of a day, for ``InboxStore/digestSeen(writtenAt:)``
+    public static func digestID(on date: Date, calendar: Calendar = .current) -> String {
+        "digest|" + dayText(of: date, calendar: calendar)
     }
 
     /// Returns the entry of the daily coffee break, one per day.
@@ -82,19 +87,58 @@ extension InboxEvent {
     ///   - date: when it finished
     ///   - isWatched: whether it is a build I only watch: the line starts with "Watching · "
     ///   - author: who a watched build belongs to; shown under the title as "by Sam Lee"
+    ///   - gitLabURL: the build's GitLab page, the merge request or the branch
     /// - Returns: the local event
     public static func buildFailed(
         jobKey: String, number: Int, label: String, isUnstable: Bool, title: String?, url: URL, at date: Date,
-        isWatched: Bool = false, author: String? = nil
+        isWatched: Bool = false, author: String? = nil, gitLabURL: URL? = nil
     ) -> InboxEvent {
-        InboxEvent(
-            id: "\(buildIDPrefix(jobKey: jobKey))\(number)", kind: .buildFailed, source: .local,
-            title: title ?? label, reference: label, targetURL: url, occurredAt: date,
-            headlineText: "\(isWatched ? "Watching · " : "")Build \(label) \(isUnstable ? "went unstable" : "failed")",
-            excerpt: isWatched ? author.map { "by \($0)" } : nil)
+        finishedBuild(
+            kind: isWatched ? .watchedBuildFailed : .buildFailed, jobKey: jobKey, number: number, label: label,
+            isUnstable: isUnstable, title: title, url: url, at: date, isWatched: isWatched, author: author,
+            gitLabURL: gitLabURL)
     }
 
-    /// the start of the ids of a job's failed builds, for ``InboxStore/resolveLocal(kind:idPrefix:)``
+    /// Returns the entry of a build that succeeded, one per build.
+    ///
+    /// - Parameters:
+    ///   - jobKey: the job's key among every project's (``BuildID/jobKey``)
+    ///   - number: the build's number
+    ///   - label: the build as the app names it, like `!12501 #5`
+    ///   - title: the build's title, like the merge request's
+    ///   - url: the build in Jenkins; the app opens it in its own views
+    ///   - date: when it finished
+    ///   - isWatched: whether it is a build I only watch: the line starts with "Watching · "
+    ///   - author: who a watched build belongs to; shown under the title as "by Sam Lee"
+    ///   - gitLabURL: the build's GitLab page, the merge request or the branch
+    /// - Returns: the local event
+    public static func buildSucceeded(
+        jobKey: String, number: Int, label: String, title: String?, url: URL, at date: Date, isWatched: Bool = false,
+        author: String? = nil, gitLabURL: URL? = nil
+    ) -> InboxEvent {
+        finishedBuild(
+            kind: isWatched ? .watchedBuildSucceeded : .buildSucceeded, jobKey: jobKey, number: number, label: label,
+            isUnstable: false, title: title, url: url, at: date, isWatched: isWatched, author: author,
+            gitLabURL: gitLabURL)
+    }
+
+    /// Returns the entry of a finished build of any of the four kinds (``InboxNotificationRules/buildKinds``). The kind is
+    /// the row of Settings → Notifications the build followed, which can be mine for a watched build whose job is set to
+    /// Always.
+    public static func finishedBuild(
+        kind: InboxEventKind, jobKey: String, number: Int, label: String, isUnstable: Bool, title: String?, url: URL,
+        at date: Date, isWatched: Bool, author: String?, gitLabURL: URL? = nil
+    ) -> InboxEvent {
+        let succeeded = kind == .buildSucceeded || kind == .watchedBuildSucceeded
+        let result = succeeded ? "succeeded" : isUnstable ? "went unstable" : "failed"
+        return InboxEvent(
+            id: "\(buildIDPrefix(jobKey: jobKey))\(number)", kind: kind, source: .local,
+            title: title ?? label, reference: label, targetURL: url, occurredAt: date,
+            headlineText: "\(isWatched ? "Watching · " : "")Build \(label) \(result)",
+            excerpt: isWatched ? author.map { "by \($0)" } : nil, relatedURL: gitLabURL)
+    }
+
+    /// the start of the ids of a job's finished builds, for ``InboxStore/resolveLocal(kind:idPrefix:)``
     public static func buildIDPrefix(jobKey: String) -> String {
         "build|\(jobKey)|"
     }

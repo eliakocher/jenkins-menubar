@@ -265,19 +265,40 @@ public struct DigestReport: Codable, Hashable, Sendable {
         public var id: SectionKind { kind }
     }
 
-    /// One part of the summary line, like "2 MRs ready to merge".
+    /// One part of the summary line, like "2 MRs ready to merge". A count part knows the items it counts, so the page
+    /// can name them in a tooltip and scroll to them.
     public struct SummaryPart: Codable, Hashable, Sendable, Identifiable {
         public var text: String
         public var symbol: String
         public var color: MergeRequestStatus.Color
+        /// the references of the items the part counts, in the order the page lists them; empty for a part about no item
+        public var refs: [String]
+        /// whether a click scrolls to the Needs You Now card, not to the first of the items
+        public var opensNeedsYou: Bool
 
-        public init(text: String, symbol: String, color: MergeRequestStatus.Color) {
+        public init(
+            text: String, symbol: String, color: MergeRequestStatus.Color, refs: [String] = [], opensNeedsYou: Bool = false
+        ) {
             self.text = text
             self.symbol = symbol
             self.color = color
+            self.refs = refs
+            self.opensNeedsYou = opensNeedsYou
+        }
+
+        public init(from decoder: any Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            text = try values.decode(String.self, forKey: .text)
+            symbol = try values.decode(String.self, forKey: .symbol)
+            color = try values.decode(MergeRequestStatus.Color.self, forKey: .color)
+            refs = try values.decodeIfPresent([String].self, forKey: .refs) ?? []
+            opensNeedsYou = try values.decodeIfPresent(Bool.self, forKey: .opensNeedsYou) ?? false
         }
 
         public var id: String { text }
+
+        /// whether a click has somewhere to go
+        public var isClickable: Bool { opensNeedsYou || !refs.isEmpty }
     }
 
     /// Claude's sentence about the day; `nil` when it gave none
@@ -361,8 +382,10 @@ public struct DigestReport: Codable, Hashable, Sendable {
             }
             return list.isEmpty ? nil : Section(kind: kind, rows: list)
         }
+        let needsYouRows = (rows[.needsYou] ?? []).sorted { $0.key < $1.key }.map(\.row)
+        let slotRows = (rows[.workItems] ?? []).map(\.row).filter { $0.item.kind == .slot }
         self.init(
-            headline: reply.headline, summary: Self.summary(of: facts, needsYou: rows[.needsYou]?.count ?? 0),
+            headline: reply.headline, summary: Self.summary(of: facts, rows: needsYouRows, slots: slotRows),
             sections: ordered, changes: changes, gatheredAt: facts.gatheredAt)
     }
 
@@ -391,41 +414,93 @@ public struct DigestReport: Codable, Hashable, Sendable {
         return nil
     }
 
-    /// The summary line's parts from the facts: what needs me, the merge requests ready to merge, the reviews waiting,
-    /// my red builds, the nearest slot date.
-    static func summary(of facts: DigestFacts, needsYou: Int) -> [SummaryPart] {
+    /// The summary line's parts: what needs me, counted once. The count chips come from the rows of Needs You Now, one per
+    /// kind of item in it ("3 reviews waiting", "1 red build"). The total ("5 things need you") shows only when that
+    /// card holds more than one kind, so a card of three reviews says "3 reviews waiting" and no more; with nothing
+    /// in it the line says so. The nearest slot date follows. Every count part names its items (``SummaryPart/refs``).
+    ///
+    /// - Parameters:
+    ///   - facts: the facts the digest is from, for the nearest slot date
+    ///   - rows: the rows of Needs You Now, in the page's order
+    ///   - slots: the rows of the slots the page lists, for the date's click; empty when not known
+    static func summary(of facts: DigestFacts, rows: [Row], slots: [Row] = []) -> [SummaryPart] {
         func plural(_ count: Int, _ one: String, _ many: String) -> String {
             "\(count) \(count == 1 ? one : many)"
         }
+        let deadline = facts.deadline
+        let deadlineRef = deadline.map { "slot:\($0.slot)" }
         var parts: [SummaryPart] = []
-        parts.append(
-            needsYou == 0
-                ? SummaryPart(text: "nothing needs you now", symbol: "checkmark.seal.fill", color: .green)
-                : SummaryPart(
-                    text: needsYou == 1 ? "1 thing needs you" : "\(needsYou) things need you", symbol: "bolt.fill",
-                    color: .red))
-        let ready = facts.items(.mergeRequest).filter { $0.state.text == MergeRequestStatus.readyToMergeText }.count
-        if ready > 0 {
+        let kinds = DigestItem.Kind.allCases.filter { kind in rows.contains { $0.item.kind == kind } }
+        if rows.isEmpty {
+            parts.append(SummaryPart(text: "nothing needs you now", symbol: "checkmark.seal.fill", color: .green))
+        } else if kinds.count > 1 {
             parts.append(
-                SummaryPart(text: plural(ready, "MR ready to merge", "MRs ready to merge"), symbol: "arrow.triangle.merge", color: .green))
+                SummaryPart(
+                    text: rows.count == 1 ? "1 thing needs you" : "\(rows.count) things need you", symbol: "bolt.fill",
+                    color: .red, refs: rows.map(\.item.ref), opensNeedsYou: true))
         }
-        let reviews = facts.items(.review).filter(\.needsYou).count
-        if reviews > 0 {
-            parts.append(SummaryPart(text: plural(reviews, "review waiting", "reviews waiting"), symbol: "eye.fill", color: .orange))
+        for kind in kinds {
+            let own = rows.filter { $0.item.kind == kind }
+            let refs = own.map(\.item.ref)
+            let count = own.count
+            switch kind {
+            case .mergeRequest:
+                let ready = own.filter { $0.item.state.text == MergeRequestStatus.readyToMergeText }.count
+                if ready == count {
+                    parts.append(
+                        SummaryPart(
+                            text: plural(count, "MR ready to merge", "MRs ready to merge"), symbol: "arrow.triangle.merge",
+                            color: .green, refs: refs))
+                } else {
+                    parts.append(
+                        SummaryPart(
+                            text: plural(count, "MR needs you", "MRs need you"), symbol: "arrow.triangle.pull",
+                            color: ready == 0 ? .red : .orange, refs: refs))
+                }
+            case .review:
+                parts.append(SummaryPart(text: plural(count, "review waiting", "reviews waiting"), symbol: "eye.fill", color: .orange, refs: refs))
+            case .build:
+                parts.append(SummaryPart(text: plural(count, "red build", "red builds"), symbol: "xmark.octagon.fill", color: .red, refs: refs))
+            case .workItem:
+                parts.append(SummaryPart(text: plural(count, "work item needs you", "work items need you"), symbol: "checklist", color: .orange, refs: refs))
+            case .slot:
+                // The nearest slot date says it, when there is one.
+                if deadline == nil {
+                    parts.append(SummaryPart(text: plural(count, "slot needs you", "slots need you"), symbol: "calendar", color: .orange, refs: refs))
+                }
+            case .note:
+                break
+            }
         }
-        let red = facts.items(.build).filter(\.needsYou).count
-        if red > 0 {
-            parts.append(SummaryPart(text: plural(red, "red build", "red builds"), symbol: "xmark.octagon.fill", color: .red))
-        }
-        if let deadline = facts.deadline {
+        if let deadline {
+            let listed = slots.filter { $0.item.ref == deadlineRef }.map(\.item.ref)
             parts.append(
                 SummaryPart(
                     text: deadline.text.prefix(1).lowercased() + deadline.text.dropFirst(),
                     symbol: deadline.text.hasPrefix("Code freeze") ? "snowflake" : "calendar",
-                    color: deadline.isClose ? .orange : .blue))
+                    color: deadline.isClose ? .orange : .blue, refs: listed))
         }
         return parts
     }
+
+    /// The tooltip of a summary part: the items it counts by their short references ("!12484, !12462, !12477"), and what
+    /// a click does; empty for a part that counts nothing.
+    ///
+    /// - Parameter part: a part of ``summary``
+    public func help(of part: SummaryPart) -> String {
+        guard part.isClickable else {
+            return ""
+        }
+        let shortRefs = Dictionary(rows.map { ($0.item.ref, $0.item.shortRef) }, uniquingKeysWith: { first, _ in first })
+        let names = part.refs.compactMap { shortRefs[$0] }.filter { !$0.isEmpty }
+        let shown = names.prefix(Self.namesShown).joined(separator: ", ")
+        let list = names.count > Self.namesShown ? "\(shown) and \(names.count - Self.namesShown) more" : shown
+        let action = part.opensNeedsYou ? "Click to show Needs You Now." : "Click to show \(names.count == 1 ? "it" : "them")."
+        return list.isEmpty ? action : "\(list). \(action)"
+    }
+
+    /// the most items a summary part's tooltip names
+    static let namesShown = 8
 
     /// "3 things need you, 2 MRs ready to merge, code freeze in 4 days"
     public var summaryLine: String {

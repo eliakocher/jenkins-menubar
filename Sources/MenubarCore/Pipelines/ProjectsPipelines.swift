@@ -23,7 +23,7 @@ public final class ProjectsPipelines {
         didSet { stores.forEach { $0.preferences = preferences } }
     }
 
-    /// which builds may alert, for every store (ALERT-09)
+    /// the jobs with a setting of their own, for every store (ALERT-09)
     public var notifications = NotificationPolicy() {
         didSet { stores.forEach { $0.notifications = notifications } }
     }
@@ -42,11 +42,6 @@ public final class ProjectsPipelines {
     /// the fun layer's store: the green streak and the lines of the alerts' moments. ``AppModel`` sets it.
     @ObservationIgnored public var funStore: FunStore? {
         didSet { stores.forEach { $0.funStore = funStore } }
-    }
-
-    /// whether every alert is muted now (HOT-09), for every store. ``AppModel`` sets it.
-    @ObservationIgnored public var alertsMuted: @MainActor () -> Bool = { false } {
-        didSet { stores.forEach { $0.alertsMuted = alertsMuted } }
     }
 
     @ObservationIgnored private let services: PipelinesServices
@@ -91,7 +86,6 @@ public final class ProjectsPipelines {
                 store.requestCheck = requestCheck
                 store.onFinishedBuilds = onFinishedBuilds
                 store.funStore = funStore
-                store.alertsMuted = alertsMuted
                 store.notifications = notifications
                 store.setOffline(isOffline)
                 next.append(store)

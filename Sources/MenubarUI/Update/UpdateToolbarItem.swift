@@ -4,7 +4,8 @@ import SwiftUI
 /// The update in the main window's toolbar, group 2 of `docs/design/main-window.md` (APP-05, `update-row.md`).
 ///
 /// It is hidden as a whole item while the app is up to date. Otherwise it offers "Update Ready — Rebuild" with
-/// `arrow.down.circle`, also after a failed rebuild (the window's problem rows show the failure); while the rebuild
+/// `arrow.down.circle`; after a failed rebuild "Update Failed — Try Again" with a warning sign and the reason as its
+/// help (the window's problem rows show the failure too); while the rebuild
 /// runs it reads "Rebuilding…" with a spinner in the symbol's place until the first count, then "Rebuilding 42%" with a
 /// small determinate ring; it is disabled meanwhile, and "Relaunching…" once the new app is
 /// installed.
@@ -106,13 +107,24 @@ public struct UpdateToolbarButton: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-            case .upToDate, .updateReady, .failed:
+            case .failed:
+                // Not the offer's look: a failed rebuild that looked like "Update Ready" again read as "still the old
+                // version" (2026-11-03).
+                Label(UpdateText.retry, systemImage: "exclamationmark.triangle")
+            case .upToDate, .updateReady:
                 Label(UpdateText.offer, systemImage: Marker.update)
             }
         }
         .labelStyle(.titleAndIcon)
         .disabled(!isOffered)
-        .help(UpdateText.help)
+        .help(helpText)
+    }
+
+    private var helpText: String {
+        if case .failed(let reason) = state {
+            return UpdateText.failed(reason)
+        }
+        return UpdateText.help
     }
 
     private var isOffered: Bool {

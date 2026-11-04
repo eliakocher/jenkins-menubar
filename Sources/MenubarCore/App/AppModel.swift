@@ -52,6 +52,9 @@ public final class AppModel {
     public let slotLabels: SlotLabelsStore
     /// every issue of the slot group in the shown slots, loaded while the Slots section shows (SLOT-06)
     public let slotItems: SlotItemsStore
+    /// what the Slots section derives from all of that, the plan, the chips and the issues, made once and kept until a
+    /// store it reads changes, never again while a view is drawn
+    @ObservationIgnored public let slotCache = ObservedCache()
     /// the descriptions of the selected merge requests and work items, loaded on selection (WIN-02)
     public let descriptions: DescriptionsStore
     /// the discussions of the selected work items, loaded on selection (WIN-02)
@@ -86,12 +89,12 @@ public final class AppModel {
     public let ai: AIStore
     /// GitLab's To-Do List with Snooze, and the events between two polls, loaded in the background (INBOX-01)
     public let inbox: InboxStore
+    /// the pop-ups of GitLab's failed pipelines that wait for the failed Jenkins build of the same merge request
+    let heldPipelineAlerts = HeldPipelineAlerts()
     /// the daily coffee break's entry in the Inbox, at 08:59 on weekdays by default (Settings → Notifications)
     public let coffeeBreak: CoffeeBreak
     /// the screen corners' actions, with ⌘, ⌥, ⌃ or ⇧ for others (Settings → Hot Corners, HOT-01)
     public let hotCorners: HotCornersController
-    /// Mute Alerts for 1 Hour: the build alerts and the Inbox's pop-ups stay quiet while it lasts (HOT-09)
-    public let alertMute: AlertMute
 
     /// the fun layer: the butler's tip, the surprises, the peeking butler and Haiku's daily lines (`docs/easter-eggs.md`)
     public let fun: FunModel
@@ -211,7 +214,9 @@ public final class AppModel {
         activity = ActivityStore(
             log: log, requests: requestCapture, checkTimes: checkTimes, defaults: dependencies.preferences,
             clock: dependencies.clock, now: dependencies.now)
-        updates = UpdateStore(stamp: dependencies.buildStamp, runner: dependencies.processRunner, log: log)
+        updates = UpdateStore(
+            stamp: dependencies.buildStamp, runner: dependencies.processRunner, log: log,
+            defaults: dependencies.preferences, now: dependencies.now)
         hotkey = GlobalHotkey(registrar: dependencies.hotkeys)
         eggs = EggStage(now: dependencies.now, clock: dependencies.clock)
         hotkey.onFailure = { message in
@@ -231,9 +236,6 @@ public final class AppModel {
         hotCorners = HotCornersController(
             system: dependencies.hotCornerSystem, pointer: dependencies.pointerSource, clock: dependencies.clock, log: log,
             settings: preferences.hotCorners)
-        let alertMute = AlertMute(now: dependencies.now, clock: dependencies.clock, log: log)
-        self.alertMute = alertMute
-        projects.alertsMuted = { [weak alertMute] in alertMute?.isMuted ?? false }
 
         let funStore = FunStore(file: dependencies.fileLocations.applicationSupport.appending(path: "fun.json"))
         self.funStore = funStore
@@ -375,25 +377,10 @@ public final class AppModel {
         onScheduler { await $0.setCheckInterval(.seconds(preferences.checkIntervalSeconds)) }
     }
 
-    /// Switches the alerts of My Builds or Watching on or off (ALERT-09). The builds stay in the list, the counts and
-    /// the pane; only the alert window and the banners stay quiet.
-    ///
-    /// - Parameters:
-    ///   - group: the group
-    ///   - isOn: whether its builds alert
-    public func setNotifications(for group: NotificationPolicy.Group, isOn: Bool) {
-        var policy = projects.notifications
-        guard policy.isOn(group) != isOn else {
-            return
-        }
-        policy.set(group, isOn: isOn)
-        saveNotifications(policy, "Notifications for \(group == .mine ? "My Builds" : "Watching"): \(isOn ? "on" : "off")")
-    }
-
     /// Sets the alerts of one job, for every build it gets from now on (ALERT-09).
     ///
     /// - Parameters:
-    ///   - setting: always, never, or `nil` to follow the group again
+    ///   - setting: always, never, or `nil` to follow the table of Settings → Notifications again
     ///   - job: the job key, `BuildID.jobKey`
     public func setNotifications(_ setting: NotificationPolicy.JobSetting?, forJob job: String) {
         var policy = projects.notifications

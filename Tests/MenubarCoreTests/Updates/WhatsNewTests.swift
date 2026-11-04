@@ -122,7 +122,7 @@ struct WhatsNewTests {
     @Test("WHATSNEW-04 its delivery is Inbox Only until the user picks another, and Settings lists it")
     func delivery() {
         let rules = InboxNotificationRules()
-        #expect(rules.delivery(for: .whatsNew) == .inboxOnly)
+        #expect(rules.delivery(for: .whatsNew) == .inbox)
         #expect(rules.routes(for: .whatsNew).contains(.inbox))
         #expect(InboxNotificationRules.deliveryKinds.contains(.whatsNew))
     }

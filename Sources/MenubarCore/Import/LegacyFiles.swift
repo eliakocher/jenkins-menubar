@@ -28,7 +28,7 @@ enum LegacyFormats {
     /// options into the default when it saves.
     ///
     /// `gitlab_refresh_seconds` is dropped: it was how often GitLab was asked, and the new maximum age means how old
-    /// GitLab data may be when it is shown (OD-02). `voice` is dropped too, with the spoken result (ALERT-04).
+    /// GitLab data may be when it is shown (OD-02). `voice` is dropped too, with the spoken result (ALERT-04), and so is `stage_alerts`.
     ///
     /// - Parameters:
     ///   - settings: the old `config/settings`
@@ -45,8 +45,12 @@ enum LegacyFormats {
         apply("hide_successful_after_hours", to: \.hideSuccessfulAfter, hideAfter)
         apply("hide_failed_after_hours", to: \.hideFailedAfter, hideAfter)
         apply("hide_merged", to: \.hidesMergedBuilds, onOff)
-        apply("alert", to: \.alertStyle) { ["dialog": .window, "banner": .banner][$0] }
-        apply("stage_alerts", to: \.stageAlerts, onOff)
+        // The old tool's alert style is how my finished builds announce themselves: a dialog is the Pop-up, a banner the
+        // Banner. Its stage banners are gone with the app's own (Task 7.14).
+        if let style = settings["alert"], let delivery = ["dialog": InboxDelivery.popUp, "banner": .banner][style] {
+            preferences.inboxNotifications.set(delivery, for: .buildFailed)
+            preferences.inboxNotifications.set(delivery, for: .buildSucceeded)
+        }
         apply("menubar_icons", to: \.iconStyle) { ["monochrome": .monochrome, "emoji": .color][$0] }
         apply("work_items_scope", to: \.workItems.scope, WorkItemFilters.Scope.init(rawValue:))
         apply("work_items_type", to: \.workItems.type, WorkItemFilters.TypeFilter.init(rawValue:))

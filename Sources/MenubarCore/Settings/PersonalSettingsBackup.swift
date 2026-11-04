@@ -37,10 +37,18 @@ public enum PersonalSettingsBackup {
             Entry(key.rawValue, valueType(of: key))
         }
         return preferences + [
-            // kept as JSON text by `PreferencesStore.notificationPolicy`
+            // the jobs with a notification setting of their own, as JSON text (`PreferencesStore.notificationPolicy`)
             Entry(PreferencesStore.notificationPolicyKey, .string),
-            // the Inbox's routing, quiet hours and sound, as JSON text (`PreferencesStore.inboxNotificationsKey`)
+            // the table of Settings → Notifications: pop-up, banner, Inbox or off per event, the Red Dot, the coffee
+            // break, the group order, as JSON text (`PreferencesStore.inboxNotificationsKey`)
             Entry(PreferencesStore.inboxNotificationsKey, .string),
+            // the version the notification settings were migrated to; a backup without it is from before the single
+            // table, and the import migrates it (Task 7.14)
+            Entry(NotificationMigration.versionKey, .int),
+            // the old build alert style and stage banners: only a backup from before the single table has them, and
+            // the migration reads the style from them
+            Entry(NotificationMigration.alertStyleKey, .string),
+            Entry(NotificationMigration.stageAlertsKey, .bool),
             // what the menu bar shows: the item's parts and the pane's rows, as JSON text (APP-11)
             Entry(PreferencesStore.menuBarLayoutKey, .string),
             // the keyboard shortcuts the user changed, as JSON text (`PreferencesStore.keyboardShortcutsKey`, KEYS-01)
@@ -69,11 +77,11 @@ public enum PersonalSettingsBackup {
     private static func valueType(of key: PreferencesStore.Key) -> ValueType {
         switch key {
         case .checkIntervalSeconds, .gitLabMaxAgeSeconds, .workItemsLimit: .int
-        case .hidesMergedBuilds, .stageAlerts, .showInMenuBar, .fillInCopiedLink, .easterEggs, .slotAlerts,
+        case .hidesMergedBuilds, .showInMenuBar, .fillInCopiedLink, .easterEggs, .slotAlerts,
             .workItemsScopedValueOnly:
             .bool
         case .workItemsWithLabels, .workItemsWithoutLabels, .workItemsHideOnRows: .strings
-        case .hideSuccessfulAfter, .hideFailedAfter, .alertStyle, .iconStyle, .workItemsScope, .workItemsType,
+        case .hideSuccessfulAfter, .hideFailedAfter, .iconStyle, .workItemsScope, .workItemsType,
             .workItemsState, .workItemsSort, .workItemsLabelsMatch, .globalShortcut, .appearance, .funLevel:
             .string
         }
@@ -166,6 +174,16 @@ public enum PersonalSettingsBackup {
             if let json = values[entry.key], let object = object(of: json, as: entry.type) {
                 defaults.set(object, forKey: entry.key)
                 written.append(entry.key)
+            }
+        }
+        if values[NotificationMigration.versionKey] == nil {
+            // A backup from before the single table: what it doesn't hold is at its default, and the app migrates what
+            // it holds the next time it reads the preferences, whatever this Mac had migrated already.
+            for key in [
+                NotificationMigration.versionKey, NotificationMigration.alertStyleKey, NotificationMigration.stageAlertsKey,
+                PreferencesStore.inboxNotificationsKey, PreferencesStore.notificationPolicyKey,
+            ] where values[key] == nil {
+                defaults.removeObject(forKey: key)
             }
         }
         return ImportResult(keys: written.sorted())

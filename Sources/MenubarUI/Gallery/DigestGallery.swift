@@ -120,6 +120,50 @@ struct DigestGalleryView: View {
         return answered(DigestReport(facts: facts, reply: reply), f)
     }
 
+    /// the user's case: three reviews wait and nothing else needs me, so the summary says "3 reviews waiting" once, with
+    /// no total, and the nearest date
+    static func oneKind(_ f: Fixtures) -> AIAnswerState {
+        var facts = DigestGalleryFacts.facts(f)
+        let waiting = DigestState(text: "Waiting on you", symbol: "eye.circle.fill", color: .orange)
+        let url = URL(string: "https://gitlab.example.com/group/project/-/merge_requests/97")
+        facts.items = facts.items.filter { $0.kind == .review && $0.ref != "group/project!91" || $0.kind == .slot }
+        facts.items.insert(
+            DigestItem(
+                kind: .review, ref: "group/project!97", shortRef: "!97", title: "Cache the slot labels per project",
+                state: waiting, details: ["by Kim Park", "+88 −21", "updated 5 h ago"], link: url, needsYou: true), at: 0)
+        facts.items.insert(
+            DigestItem(
+                kind: .review, ref: "group/project!99", shortRef: "!99", title: "Retry flaky uploads once",
+                state: waiting, details: ["by Alex Roy", "+30 −4", "updated 1 day ago"],
+                link: URL(string: "https://gitlab.example.com/group/project/-/merge_requests/99"), needsYou: true), at: 0)
+        facts.openWorkItems = 0
+        let reply = DigestReply(sections: [
+            DigestReply.Section(id: .needsYou, items: [
+                DigestReply.Item(ref: "group/project!95", next: "Review it before lunch"),
+                DigestReply.Item(ref: "group/project!97", next: "Review it"),
+                DigestReply.Item(ref: "group/project!99", next: "Review it"),
+            ]),
+        ])
+        return answered(DigestReport(facts: facts, reply: reply), f)
+    }
+
+    /// reviews, a red build and a merge request ready to merge all need me: the total, then a chip per kind
+    static func mixed(_ f: Fixtures) -> AIAnswerState {
+        var facts = DigestGalleryFacts.facts(f)
+        facts.items = facts.items.filter { [.mergeRequest, .review, .build, .slot].contains($0.kind) }
+        facts.openWorkItems = 0
+        let reply = DigestReply(
+            headline: "Merge !87, fix !92's tests, then review !95.",
+            sections: [
+                DigestReply.Section(id: .needsYou, items: [
+                    DigestReply.Item(ref: "group/project!87", why: "Approved by both reviewers and green.", next: "Merge it"),
+                    DigestReply.Item(ref: "build:main/MR-92", why: "Your change broke 2 cart tests.", next: "Fix them, then rebuild"),
+                    DigestReply.Item(ref: "group/project!95", why: "Sam asked yesterday.", next: "Review it before lunch"),
+                ]),
+            ])
+        return answered(DigestReport(facts: facts, reply: reply), f)
+    }
+
     private static func answered(_ report: DigestReport, _ f: Fixtures) -> AIAnswerState {
         .answered(
             AIAnswer(
@@ -227,6 +271,12 @@ extension GalleryCatalog {
             },
             GalleryEntry(screen: "digest", state: "partial", size: size) { f in
                 DigestGalleryView(fixtures: f, state: DigestGalleryView.partial(f))
+            },
+            GalleryEntry(screen: "digest", state: "one-kind", size: size) { f in
+                DigestGalleryView(fixtures: f, state: DigestGalleryView.oneKind(f), morningMinutes: 8 * 60)
+            },
+            GalleryEntry(screen: "digest", state: "mixed", size: size) { f in
+                DigestGalleryView(fixtures: f, state: DigestGalleryView.mixed(f), morningMinutes: 8 * 60)
             },
             GalleryEntry(screen: "digest", state: "search", size: size) { f in
                 DigestGalleryView(fixtures: f, state: DigestGalleryView.full(f), morningMinutes: 8 * 60 + 30, query: "review")

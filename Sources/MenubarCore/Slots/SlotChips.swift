@@ -199,6 +199,19 @@ public enum SlotChip: Hashable, Sendable, Identifiable {
     ///   - me: my GitLab username; `nil` when unknown, and then Me matches nothing
     /// - Returns: whether it matches
     public func matches(_ item: WorkItem, team: TeamValues, me: String?) -> Bool {
+        matches(item, team: team, teams: SlotTeams(team.slotTeams), me: me)
+    }
+
+    /// Returns whether a work item shows under the chip, with the teams read once for many items: parsing the team value
+    /// for every item made the plan slow.
+    ///
+    /// - Parameters:
+    ///   - item: the work item
+    ///   - team: the team values: the squad, status and type prefixes
+    ///   - teams: the teams of Team's value, `SlotTeams(team.slotTeams)`
+    ///   - me: my GitLab username; `nil` when unknown, and then Me matches nothing
+    /// - Returns: whether it matches
+    public func matches(_ item: WorkItem, team: TeamValues, teams: SlotTeams?, me: String?) -> Bool {
         let titles = Set(item.labels.map(\.title))
         let assignees = (item.assignees ?? []).map(\.username)
         let isOpen = item.state != .closed
@@ -212,7 +225,7 @@ public enum SlotChip: Hashable, Sendable, Identifiable {
         case .squad(let name):
             return !team.squadLabelPrefix.isEmpty && titles.contains(team.squadLabelPrefix + name)
         case .team(let name):
-            let members = SlotTeams(team.slotTeams)?.members(of: name) ?? []
+            let members = teams?.members(of: name) ?? []
             return assignees.contains { SlotTeams.contains(members, $0) }
         case .triage:
             return !status.isEmpty && (titles.contains(status + "Triage") || titles.contains(status + "MaintainerTriage"))

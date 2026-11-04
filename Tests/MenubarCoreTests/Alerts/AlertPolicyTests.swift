@@ -33,11 +33,10 @@ struct AlertPolicyTests {
     private func check(
         _ current: [Build],
         after previous: [String: AlertState],
-        lastCheck: Date? = Self.lastCheck,
-        preferences: Preferences = Preferences()
+        lastCheck: Date? = Self.lastCheck
     ) -> (alerts: [BuildAlert], states: [String: AlertState]) {
         (
-            policy.alerts(previous: previous, current: current, lastCheck: lastCheck, preferences: preferences),
+            policy.alerts(previous: previous, current: current, lastCheck: lastCheck),
             AlertPolicy.states(after: current, previous: previous)
         )
     }
@@ -98,59 +97,32 @@ struct AlertPolicyTests {
         #expect(alerted.count == 1)
     }
 
-    // MARK: ALERT-05
+    // MARK: Stages
 
-    @Test("ALERT-05 shows a banner once when a stage fails")
-    func stageBannerOnce() throws {
-        let first = check([Self.build(7, failedStages: ["build"])], after: ["MR-1": AlertState(number: 7, isRunning: true)])
-        let banner = try #require(first.alerts.first)
-        #expect(first.alerts.count == 1)
-        #expect(banner.kind == .stageFailed)
-        #expect(banner.content.links.build.absoluteString == "https://jenkins.example.com/job/team/job/project/job/MR-1/7/")
-        #expect(first.states["MR-1"]?.failedStages == ["build"])
+    @Test("ALERT-05 a running build alerts nothing, whatever its stages do")
+    func stagesAlertNothingWhileRunning() {
+        let running = ["MR-1": AlertState(number: 7, isRunning: true)]
+        let failing = check([Self.build(7, failedStages: ["build"])], after: running)
+        #expect(failing.alerts.isEmpty)
+        // The stages are still known, for the build's own alert at its end.
+        #expect(failing.states["MR-1"]?.failedStages == ["build"])
 
-        #expect(check([Self.build(7, failedStages: ["build"])], after: first.states).alerts.isEmpty)
+        let more = check([Self.build(7, failedStages: ["build", "tests"])], after: failing.states)
+        #expect(more.alerts.isEmpty)
+        #expect(check([Self.build(8, failedStages: ["build"])], after: more.states).alerts.isEmpty)
     }
 
-    @Test("ALERT-05 does not repeat after the stages request fails")
-    func stagesRequestFails() {
-        let first = check([Self.build(7, failedStages: ["build"])], after: ["MR-1": AlertState(number: 7, isRunning: true)])
-        #expect(first.alerts.count == 1)
+    @Test("ALERT-05 the alert at the end names the failed stages last known when the stages request fails")
+    func finishedAlertKeepsKnownStages() throws {
+        let running = check([Self.build(7, failedStages: ["tests"])], after: ["MR-1": AlertState(number: 7, isRunning: true)])
+        let unknown = Self.build(7, Self.finished(.failure), failedStages: nil)
 
-        let unknown = check([Self.build(7, failedStages: nil)], after: first.states)
-        #expect(unknown.alerts.isEmpty)
-        #expect(unknown.states["MR-1"]?.failedStages == ["build"])
+        let alert = try #require(check([unknown], after: running.states).alerts.first)
 
-        #expect(check([Self.build(7, failedStages: ["build"])], after: unknown.states).alerts.isEmpty)
-    }
-
-    @Test("ALERT-05 fires again for a new failed stage")
-    func newFailedStage() {
-        let known = ["MR-1": AlertState(number: 7, isRunning: true, failedStages: ["build"])]
-        let alerts = check([Self.build(7, failedStages: ["build", "tests"])], after: known).alerts
-        #expect(alerts.map(\.kind) == [.stageFailed])
-    }
-
-    @Test("ALERT-05 new build starts with no failed stages known")
-    func newBuildNumber() {
-        let known = ["MR-1": AlertState(number: 6, isRunning: false, failedStages: ["build"])]
-        let next = check([Self.build(7, failedStages: ["build"])], after: known)
-        #expect(next.alerts.map(\.kind) == [.stageFailed])
-
-        // Without an answer for the new build's stages, none are known, not the old build's.
-        #expect(AlertPolicy.states(after: [Self.build(7)], previous: known)["MR-1"]?.failedStages == [])
-    }
-
-    @Test("ALERT-05 no stage banner when the setting is off")
-    func stageAlertsOff() {
-        var preferences = Preferences()
-        preferences.stageAlerts = false
-        let next = check(
-            [Self.build(7, failedStages: ["build"])], after: ["MR-1": AlertState(number: 7, isRunning: true)],
-            preferences: preferences)
-        #expect(next.alerts.isEmpty)
-        // Turning it on later doesn't bring up the stage it already knew of.
-        #expect(next.states["MR-1"]?.failedStages == ["build"])
+        #expect(alert.kind == .finished)
+        #expect(alert.content.facts.contains("Failed stages: tests"))
+        // A new build number starts with none known, not the old build's.
+        #expect(AlertPolicy.states(after: [Self.build(8)], previous: running.states)["MR-1"]?.failedStages == [])
     }
 
     // MARK: ALERT-06

@@ -52,11 +52,15 @@ public struct InboxSnapshot: Codable, Hashable, Sendable {
         public var roles: Set<MergeRequest.Role>
         public var pipelineStatus: MergeRequest.PipelineStatus?
         public var reviewers: [MergeRequest.Reviewer]
+        /// the branch the merge request comes from, for telling a failed pipeline from a failed build of the same branch
+        public var sourceBranch: String?
 
         public init(
             url: URL, reference: String, title: String, author: MergeRequest.Person, roles: Set<MergeRequest.Role>,
-            pipelineStatus: MergeRequest.PipelineStatus? = nil, reviewers: [MergeRequest.Reviewer] = []
+            pipelineStatus: MergeRequest.PipelineStatus? = nil, reviewers: [MergeRequest.Reviewer] = [],
+            sourceBranch: String? = nil
         ) {
+            self.sourceBranch = sourceBranch
             self.url = url
             self.reference = reference
             self.title = title
@@ -70,7 +74,7 @@ public struct InboxSnapshot: Codable, Hashable, Sendable {
             self.init(
                 url: mergeRequest.webURL, reference: mergeRequest.reference, title: mergeRequest.title,
                 author: mergeRequest.author, roles: mergeRequest.roles, pipelineStatus: mergeRequest.pipelineStatus,
-                reviewers: mergeRequest.reviewers)
+                reviewers: mergeRequest.reviewers, sourceBranch: mergeRequest.sourceBranch)
         }
 
         /// the project's full path, from the reference `group/project!12`
@@ -199,7 +203,8 @@ public enum InboxEventDetector {
             events.append(InboxEvent(
                 id: "\(kind.rawValue)|\(item.url.absoluteString)|\(actor?.username ?? "")|\(Int(now.timeIntervalSince1970))",
                 kind: kind, source: .mergeRequests, title: item.title, reference: item.reference, targetURL: item.url,
-                projectPath: item.projectPath, actor: actor, occurredAt: now))
+                projectPath: item.projectPath, actor: actor, occurredAt: now,
+                sourceBranch: kind == .pipelineFailed ? item.sourceBranch : nil))
         }
         for item in current.items {
             let old = before[item.url]

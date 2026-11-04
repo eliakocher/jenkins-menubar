@@ -142,7 +142,7 @@ public struct PipelinesCheck: Sendable {
         public var merged: [Int]
         public var gitLabUser: GitLabUser?
         public var preferences: Preferences
-        /// which builds may alert (ALERT-09)
+        /// the jobs with a setting of their own (ALERT-09)
         public var notifications: NotificationPolicy
         /// whether to look my jobs up even when the last lookup is recent (PIPE-07)
         public var lookUpJobs: Bool
@@ -241,9 +241,9 @@ public struct PipelinesCheck: Sendable {
         if let jobURL = project.team.jenkinsJob {
             alerts = AlertPolicy(jobURL: jobURL).alerts(
                 previous: input.alertStates, current: result.builds,
-                lastCheck: input.alertsArmed ? result.previousCheck : nil, preferences: input.preferences)
-            // A muted job stays followed, so its alert state moves on; only the glass alert and the banners go (ALERT-09).
-            // Its finished build still gets its Activity line, so the alerts that go are kept for the log.
+                lastCheck: input.alertsArmed ? result.previousCheck : nil)
+            // A job set to Never stays followed, so its alert state moves on; its alert, its sound and its Inbox entry
+            // go (ALERT-09). Its finished build still gets its Activity line, so the alerts that go are kept for the log.
             let shown = input.notifications.filter(alerts)
             muted = alerts.filter { alert in !shown.contains { $0.id == alert.id } }
             alerts = shown
@@ -295,18 +295,22 @@ public struct PipelinesCheck: Sendable {
         project == primary ? "jenkins" : "jenkins:\(project)"
     }
 
-    /// Announces a round's alerts as the preferences say.
+    /// Announces a round's alerts as the table of Settings → Notifications says.
     ///
     /// - Parameters:
     ///   - alerts: the alerts, from ``Output/alerts``
-    ///   - muted: the alerts of muted jobs, from ``Output/mutedAlerts``: logged, never shown (ALERT-09)
-    ///   - preferences: the alert style and stage alerts
-    public func announce(_ alerts: [BuildAlert], muted: [BuildAlert] = [], preferences: Preferences) async {
+    ///   - muted: the alerts of jobs set to Never, from ``Output/mutedAlerts``: logged, never shown (ALERT-09)
+    ///   - preferences: the preferences, whose ``Preferences/inboxNotifications`` hold the table
+    ///   - policy: the jobs with a setting of their own
+    public func announce(
+        _ alerts: [BuildAlert], muted: [BuildAlert] = [], preferences: Preferences,
+        policy: NotificationPolicy = NotificationPolicy()
+    ) async {
         guard !alerts.isEmpty || !muted.isEmpty else {
             return
         }
         let announcer = AlertAnnouncer(effects: services.effects, log: services.log)
-        await announcer.announce(alerts, preferences: preferences)
+        await announcer.announce(alerts, rules: preferences.inboxNotifications, policy: policy)
         await announcer.logMuted(muted)
     }
 

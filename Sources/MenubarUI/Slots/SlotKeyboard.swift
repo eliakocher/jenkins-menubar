@@ -63,4 +63,7 @@ struct SlotKeys {
     var fold: () -> Void = {}
     /// returns the first row of the card, `nil` for a closed or empty one; set by the card
     var first: () -> WorkItem.ID? = { nil }
+    /// a row appeared: it takes the focus when the keys asked for it before the row existed (the rows are made as they
+    /// scroll into view, so the row a key goes to may not be there yet)
+    var focusOnAppear: (WorkItem.ID) -> Void = { _ in }
 }

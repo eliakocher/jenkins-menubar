@@ -1,104 +1,40 @@
 import MenubarCore
-import Observation
 import SwiftUI
 
-/// What the Inbox's big panel holds: the events to page through (INBOX-14). The panel's view reads it; the app adds an event
-/// when one comes and removes a page when it is dismissed.
-@MainActor
-@Observable
-public final class InboxEventPanelModel {
-    public var pages = InboxEventPages()
-    /// why GitLab refused a Done, by event id: the page stays and says it
-    public var refusals: [String: Problem] = [:]
-    /// the events whose Done is waiting for GitLab's answer, so a second click doesn't send it twice
-    public var busy: Set<String> = []
-
-    public init() {}
-}
-
-/// The big panel's content (Task 7.03, INBOX-14): the shown event as an ``InboxEventView``, with the pager above its symbol and
-/// Dismiss All next to Dismiss while the panel holds more than one event. The page is as tall as its content; `onSizeChange`
-/// tells the window, which keeps its top left corner where it is.
-public struct InboxEventPanelView: View {
-    let model: InboxEventPanelModel
-    let perform: @MainActor (InboxDeliveryAction, InboxEvent) -> Void
-    let dismissAll: @MainActor () -> Void
-    let onSizeChange: @MainActor (CGSize) -> Void
-
-    /// - Parameters:
-    ///   - model: the events
-    ///   - perform: runs a button's action for an event; the window then dismisses the page
-    ///   - dismissAll: closes the panel
-    ///   - onSizeChange: the content's size, when it changed
-    public init(
-        model: InboxEventPanelModel, perform: @escaping @MainActor (InboxDeliveryAction, InboxEvent) -> Void,
-        dismissAll: @escaping @MainActor () -> Void, onSizeChange: @escaping @MainActor (CGSize) -> Void
-    ) {
-        self.model = model
-        self.perform = perform
-        self.dismissAll = dismissAll
-        self.onSizeChange = onSizeChange
-    }
-
-    public var body: some View {
-        if let event = model.pages.current {
-            InboxEventView(event: event, pager: pager, refusal: model.refusals[event.id], isBusy: model.busy.contains(event.id)) { action in
-                perform(action, event)
-            }
-            .id(event.id)
-            .onGeometryChange(for: CGSize.self, of: \.size) { onSizeChange($0) }
-            // Pinned to the top: while the window changes its height, the page doesn't slide.
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-    }
-
-    private var pager: AlertPager? {
-        guard model.pages.count > 1 else {
-            return nil
-        }
-        let model = model
-        return AlertPager(
-            position: model.pages.position, hasPrevious: model.pages.hasPrevious, hasNext: model.pages.hasNext,
-            previous: { model.pages.previous() }, next: { model.pages.next() }, dismissAll: dismissAll)
-    }
-}
-
-/// One event in the big panel, in the look of the failed-build alert: a symbol where the butler is, the reference chip, the
-/// headline, the target's title, a line, and the buttons: Show, Done, Snooze 1 Hour and Dismiss. The coffee break
-/// wears the butler sipping a coffee (a ☕ on a warm disc without the art) and has no Show and no Snooze (its Done says "On My Way ☕"). 320 pt wide; the height fits the content.
+/// One event in the pop-up, in the look of the failed-build alert: the butler (sad for a failure, happy for the rest, with
+/// the season's hat) with the kind's symbol in a badge at his corner, the reference chip, the headline, the target's
+/// title, a line, and the buttons: Show, Done, Snooze 1 Hour and Dismiss. The coffee break wears the butler sipping a
+/// coffee (a ☕ on a warm disc without the art), bigger so his face matches the others', and has one button, "On My Way ☕"
+/// (the Done): no Show, no Snooze, no Dismiss, and Esc does nothing. 320 pt wide;
+/// the height fits the content. With two or more events (or builds) the window shows an ``AlertSummaryView`` instead.
 public struct InboxEventView: View {
     let event: InboxEvent
-    let pager: AlertPager?
     /// why GitLab refused the Done, shown above the buttons
     let refusal: Problem?
     /// whether a Done is waiting for GitLab's answer
     let isBusy: Bool
+    let hatSource: ButlerHatSource
     let perform: (InboxDeliveryAction) -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     public init(
-        event: InboxEvent, pager: AlertPager? = nil, refusal: Problem? = nil, isBusy: Bool = false,
+        event: InboxEvent, refusal: Problem? = nil, isBusy: Bool = false, hatSource: ButlerHatSource = .today,
         perform: @escaping (InboxDeliveryAction) -> Void
     ) {
         self.event = event
-        self.pager = pager
         self.refusal = refusal
         self.isBusy = isBusy
+        self.hatSource = hatSource
         self.perform = perform
     }
 
-    private var isCoffee: Bool { event.kind == .coffeeBreak }
     /// whether there is somewhere to go: the coffee break and a local item without a link have none
     private var canShow: Bool { event.targetURL != nil }
     private var entry: InboxEntry { InboxEntry(event: event) }
 
     public var body: some View {
-        let look = Look(event)
+        let look = Look(event, hatSource: hatSource)
         VStack(spacing: 0) {
-            if let pager {
-                AlertPagerBar(pager: pager)
-                    .padding(.bottom, 4)
-            }
             InboxEventSymbol(look: look)
             if let reference = InboxRowModel.reference(of: entry) {
                 ReferenceChip(kind: reference.kind, text: reference.text)
@@ -127,28 +63,20 @@ public struct InboxEventView: View {
                     .padding(.top, 12)
             }
             VStack(spacing: 8) {
-                if canShow {
+                let buttons = Self.buttons(for: event)
+                if buttons.contains(.show) {
                     button(.show, isDefault: true)
                 }
-                if event.kind.canSnooze {
+                if buttons.contains(.snooze) {
                     HStack(spacing: 8) {
                         button(.done, isDefault: !canShow)
                         button(.snooze)
                     }
                 } else {
-                    // The coffee break can't be snoozed: Done is the one way to take it, full width.
+                    // The coffee break can't be snoozed or dismissed: Done is the one way to take it, full width.
                     button(.done, isDefault: !canShow)
                 }
-                if let pager {
-                    HStack(spacing: 8) {
-                        button(.dismiss)
-                        Button("Dismiss All", action: pager.dismissAll)
-                            .controlSize(.large)
-                            .buttonSizing(.flexible)
-                            .frame(maxWidth: .infinity)
-                            .background { plainFill }
-                    }
-                } else {
+                if buttons.contains(.dismiss) {
                     button(.dismiss)
                 }
             }
@@ -164,6 +92,27 @@ public struct InboxEventView: View {
             RoundedRectangle(cornerRadius: BuildAlertView.cornerRadius, style: .continuous)
                 .fill(Color.black.opacity(colorScheme == .dark ? BuildAlertView.darkTint : BuildAlertView.lightTint))
         }
+    }
+
+    /// Returns the buttons of an event's pop-up: Show where there is somewhere to go, Done, Snooze 1 Hour where the kind can
+    /// be snoozed, and Dismiss. The coffee break has Done alone ("On My Way ☕"): it is never snoozed or dismissed.
+    ///
+    /// - Parameter event: the event
+    /// - Returns: the actions, in the order the buttons show
+    static func buttons(for event: InboxEvent) -> [InboxDeliveryAction] {
+        if event.kind == .coffeeBreak {
+            return [.done]
+        }
+        var actions: [InboxDeliveryAction] = []
+        if event.targetURL != nil {
+            actions.append(.show)
+        }
+        actions.append(.done)
+        if event.kind.canSnooze {
+            actions.append(.snooze)
+        }
+        actions.append(.dismiss)
+        return actions
     }
 
     private func button(_ action: InboxDeliveryAction, isDefault: Bool = false) -> some View {
@@ -192,16 +141,22 @@ public struct InboxEventView: View {
         var tint: InboxRowModel.Tint
         /// the coffee break's emoji, in the symbol's place
         var emoji: String?
+        /// whether the butler is the sad one: a failure
+        var isSad: Bool
+        /// the hat the butler wears, the season's; `nil` for none
+        var hat: ButlerHat?
         var headline: String
         /// the target's title; `nil` for none
         var subtitle: String?
         /// a line under it: Claude's first line, or the coffee break's line
         var line: String?
 
-        init(_ event: InboxEvent) {
+        @MainActor init(_ event: InboxEvent, hatSource: ButlerHatSource = .today) {
             let entry = InboxEntry(event: event)
             (symbol, tint) = InboxRowModel.symbol(of: entry)
             emoji = event.kind == .coffeeBreak ? "☕" : nil
+            isSad = Self.sad(for: event)
+            hat = hatSource.hat
             switch event.kind {
             case .coffeeBreak:
                 headline = "Coffee Break"
@@ -214,6 +169,17 @@ public struct InboxEventView: View {
                 line = event.excerpt
             }
         }
+    }
+}
+
+extension InboxEventView.Look {
+    /// Returns whether an event gets the sad butler: a failed pipeline or build, changes requested on my merge request, and
+    /// a Claude answer that is a failure. Every other kind gets the happy one.
+    ///
+    /// - Parameter event: the event
+    /// - Returns: `true` for the sad butler
+    static func sad(for event: InboxEvent) -> Bool {
+        event.isFailure
     }
 }
 
@@ -239,32 +205,68 @@ private struct RefusalNote: View {
     }
 }
 
-/// The picture at the top of an event's page: the kind's symbol on a disc in its color, or the coffee break's butler
-/// (``AppImages/coffee``; a ☕ on a warm glowing disc without the file), where the build alert has its butler.
+/// The picture at the top of an event's page, where the build alert has its butler: the same butler in the same stage, sad for a failure and happy for the rest, in the season's hat, with the kind's
+/// symbol on a small disc in its color at his bottom right corner. The coffee break has its own butler
+/// (``AppImages/coffee``; a ☕ on a warm glowing disc without the file), at the same size.
 struct InboxEventSymbol: View {
     let look: InboxEventView.Look
-    static let size: CGFloat = 96
+    static var size: CGFloat { ButlerStage<EmptyView, EmptyView>.artBox }
+    /// the coffee butler's box, bigger than the others' because his art has a wide margin around its circle
+    static var coffeeSize: CGFloat { AppImages.coffeeBox }
+    /// the badge's disc
+    static let badgeSize: CGFloat = 30
 
     var body: some View {
-        if look.emoji != nil, let butler = AppImages.coffee {
-            // The coffee break's own butler, at the size of the build alert's, with no disc.
-            Image(nsImage: butler)
-                .resizable()
-                .frame(width: Self.size, height: Self.size)
-                .overlay {
-                    // Steam rises from the cup at Normal and Party (the fun layer).
-                    if let level = FunModel.currentLevel, level.animates {
-                        CoffeeSteam(level: level)
+        if look.emoji != nil {
+            if let butler = AppImages.coffee {
+                // The coffee break's own butler, with no disc, in a box that makes his circle as big as the build alert's butler.
+                Image(nsImage: butler)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: Self.coffeeSize, height: Self.coffeeSize)
+                    .overlay {
+                        // Steam rises from the cup at Normal and Party (the fun layer).
+                        if let level = FunModel.currentLevel, level.animates {
+                            CoffeeSteam(level: level)
+                        }
                     }
-                }
-                .accessibilityHidden(true)
+                    .accessibilityHidden(true)
+            } else {
+                disc
+            }
         } else {
-            disc
+            butler
         }
     }
 
+    /// The build alert's butler, with the kind's badge.
+    private var butler: some View {
+        let icon: AlertContent.Icon = look.isSad ? .sad : .happy
+        let level = FunModel.currentLevel.flatMap { $0.showsMoments ? $0 : nil }
+        return ButlerStage(
+            art: AppImages.alert(icon, hat: look.hat), icon: icon, hat: look.hat, level: level,
+            behind: { EmptyView() },
+            front: {
+                badge
+                    .offset(x: 6, y: 2)
+            }
+        )
+        .accessibilityHidden(true)
+    }
+
+    /// the kind's symbol, white on a disc in its color
+    private var badge: some View {
+        Image(systemName: look.symbol)
+            .font(.system(size: 15, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: Self.badgeSize, height: Self.badgeSize)
+            .background(look.tint.color, in: Circle())
+            .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 2))
+            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+    }
+
     @ViewBuilder private var disc: some View {
-        let color = look.emoji == nil ? look.tint.color : Color(red: 0.93, green: 0.55, blue: 0.22)
+        let color = Color(red: 0.93, green: 0.55, blue: 0.22)
         ZStack {
             Circle()
                 .fill(
@@ -273,16 +275,9 @@ struct InboxEventSymbol: View {
                         endRadius: Self.size))
             Circle()
                 .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
-            if let emoji = look.emoji {
-                Text(verbatim: emoji)
-                    .font(.system(size: 54))
-                    .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
-            } else {
-                Image(systemName: look.symbol)
-                    .font(.system(size: 44, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
-            }
+            Text(verbatim: look.emoji ?? "☕")
+                .font(.system(size: Self.size * 0.56))
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 2)
         }
         .frame(width: Self.size, height: Self.size)
         .shadow(color: color.opacity(0.45), radius: 14, y: 4)

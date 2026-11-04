@@ -93,6 +93,36 @@ enum AppImages {
     /// The sad butler of every other alert, `icons/sad.png`.
     static let sad: NSImage = load("sad") ?? symbol("cloud.rain")
 
+    /// Returns the file names (without `.png`) of the butler of an alert summary whose items are good and bad news, the first
+    /// that exists wins: the season's `mixed-halloween` (the witch), `mixed-santa`, `mixed-carnival` or `mixed-easter`, then
+    /// the plain `mixed` (also for the party hat, New Year's and outside a season), then the peeking butler's `caught`.
+    /// The mixed art has no hat drawn over it: the season's is in its file.
+    ///
+    /// - Parameter hat: the season's hat, or `nil`
+    nonisolated static func mixedArtNames(hat: ButlerHat?) -> [String] {
+        let seasonal: String? = switch hat {
+        case .witch?: "mixed-halloween"
+        case .santa?: "mixed-santa"
+        case .carnival?: "mixed-carnival"
+        case .easter?: "mixed-easter"
+        case .party?, .newYear?, nil: nil
+        }
+        return (seasonal.map { [$0] } ?? []) + ["mixed", "caught"]
+    }
+
+    /// Returns the butler of an alert summary whose items are good and bad news, in the season's art when there is some
+    /// (see ``mixedArtNames(hat:)``); the happy butler when no file is there.
+    ///
+    /// - Parameter hat: the season's hat, or `nil`
+    static func mixed(hat: ButlerHat?) -> NSImage {
+        for name in mixedArtNames(hat: hat) {
+            if let image = hatted(name) {
+                return image
+            }
+        }
+        return happy
+    }
+
     /// The butler sipping a coffee, `icons/coffee.png` (512 px, transparent), for the coffee break's panel and Inbox rows.
     /// Optional art like the hats: without the file it is `nil` and the ☕ and the cup symbol stay.
     static let coffee: NSImage? = load("coffee")
@@ -165,19 +195,51 @@ enum AppImages {
     /// hat stays.
     static var inboxZero: NSImage? { hatted("inbox-zero") }
 
-    /// The size to show an alert's butler at, in a box of `box` points. The plain art is square and fills the box. The
-    /// seasonal art is taller than square, because the hat sits on top: it keeps the plain butler's scale (times
-    /// ``seasonalScale``), so his face and body read as big as the plain butler's, and the hat rises above the box.
+    /// The size to show an alert's butler at, in a box of `box` points. The art is never distorted: every size keeps the
+    /// file's proportions. Three kinds of art, told apart by their pixels:
+    /// - the plain art (238 px, near square) fills the box;
+    /// - the seasonal art is taller, because the hat sits on top: it keeps the plain butler's scale (times
+    ///   ``seasonalScale``), so his face and body read as big as the plain butler's, and the hat rises above the box;
+    /// - the mixed art (about 1000 px, no circle, a larger figure with the question marks above) is scaled to
+    ///   ``mixedHeightFactor`` times the box in height, so his head reads about as big as the plain butler's.
     static func alertSize(of image: NSImage, box: CGFloat) -> CGSize {
-        guard let rep = image.representations.first, rep.pixelsHigh > 0 else {
+        guard let rep = image.representations.first, rep.pixelsHigh > 0, rep.pixelsWide > 0 else {
             return CGSize(width: box, height: box)
         }
         let (width, height) = (CGFloat(rep.pixelsWide), CGFloat(rep.pixelsHigh))
-        if abs(width / height - 1) < 0.15 {
-            return CGSize(width: box, height: box)
+        let scale: CGFloat
+        if height >= mixedArtMinimumPixels {
+            scale = box * mixedHeightFactor / height
+        } else if abs(width / height - 1) < 0.15 {
+            scale = min(box / width, box / height)
+        } else {
+            scale = box / plainButlerPixels * seasonalScale
         }
-        let scale = box / plainButlerPixels * seasonalScale
         return CGSize(width: width * scale, height: height * scale)
+    }
+
+    /// art at least this many pixels tall is the mixed butler's (the other art is at most 512 px)
+    static let mixedArtMinimumPixels: CGFloat = 700
+
+    /// the mixed art's height against the box: 1.1 × 128 pt ≈ 141 pt, which puts his head at about 57 pt, as big as the
+    /// plain and the seasonal butlers' (1.25 was seen in the render and made his head a little bigger than theirs)
+    static let mixedHeightFactor: CGFloat = 1.1
+
+    /// the box the coffee butler (`icons/coffee.png`, 512 px) is shown in, in points: the art has a wide transparent margin
+    /// around its circle (the circle is 415 of 512 px), so the box is 128 pt × 512 / 415 ≈ 158, rounded to 160, and his
+    /// circle is as big as the plain butler's
+    static let coffeeBox: CGFloat = 160
+
+    /// the tallest bundled seasonal art, in pixels: the seasonal butlers (Halloween, Carnival, Easter) are 480 px tall
+    static let tallestArtPixels: CGFloat = 480
+
+    /// Returns the height of the tallest art at an alert's scale, rounded up to a whole point: the seasonal art's or the
+    /// mixed art's.
+    ///
+    /// - Parameter box: the box the plain butler fills, in points
+    /// - Returns: the height the stage holds for him
+    static func tallestAlertArtHeight(box: CGFloat) -> CGFloat {
+        ceil(max(box / plainButlerPixels * seasonalScale * tallestArtPixels, box * mixedHeightFactor))
     }
 
     /// the plain butler's art is 238 px square

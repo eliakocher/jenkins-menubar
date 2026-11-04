@@ -121,7 +121,7 @@ public struct InboxEntry: Hashable, Sendable, Identifiable {
     }
 
     /// whether the row is a local item of this app (a Claude answer, the digest, a failed build): Done only removes it
-    /// here, and nothing goes to GitLab. One of my own to-dos isn't: opening it never clears it, its checkbox does.
+    /// here, and nothing goes to GitLab. One of my own to-dos isn't: opening it never clears it, its Done does.
     public var isLocalItem: Bool {
         if case .event(let event) = source { event.source == .local } else { false }
     }
@@ -168,6 +168,20 @@ public struct InboxSection: Hashable, Sendable, Identifiable {
             guard let rows = byGroup[group], !rows.isEmpty else { return nil }
             return InboxSection(group: group, entries: rows.sorted(by: Self.isBefore))
         }
+    }
+
+    /// Returns the entries a group header's Mark All Done clears: the group's own pending entries, shown or not narrowed away.
+    /// My own to-dos are left out, since their own Done finishes them.
+    ///
+    /// - Parameters:
+    ///   - entries: the entries the header's group shows
+    ///   - group: the group
+    /// - Returns: the entries to mark done; none for My To-Dos
+    public static func markAllDoneBatch(_ entries: [InboxEntry], in group: InboxGroup) -> [InboxEntry] {
+        guard group != .myToDos else {
+            return []
+        }
+        return entries.filter { $0.group == group && !$0.isMine }
     }
 
     /// my own order first, where a to-do has a place, then newest first

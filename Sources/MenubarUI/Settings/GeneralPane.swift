@@ -12,12 +12,12 @@ public enum NotificationPermission: Hashable, Sendable {
     case notAsked
 }
 
-/// The notification row of Settings → General (APP-04): only while banners are in use, the Banner style or stage
-/// banners on, and macOS doesn't show them.
+/// The notification row of Settings → Notifications (APP-04): only while a row is set to Banner, and macOS doesn't show
+/// banners.
 public struct NotificationNotice: Hashable, Sendable {
     /// ``NotificationPermission/off`` or ``NotificationPermission/notAsked``
     public var permission: NotificationPermission
-    /// what doesn't show, like "Notifications are off for MegaMonitor: stage banners don't show"
+    /// what doesn't show, like "Notifications are off for MegaMonitor: banners don't show"
     public var text: String
 
     /// a problem while notifications are off, a note while macOS never asked
@@ -31,26 +31,19 @@ public struct NotificationNotice: Hashable, Sendable {
         permission == .off ? "Open System Settings…" : "Turn On Notifications…"
     }
 
-    /// Returns the row for the permission and the alert settings, or nil when none shows.
+    /// Returns the row for the permission and the table, or nil when none shows.
     ///
     /// - Parameters:
     ///   - permission: what macOS allows; nil while it isn't known yet, which shows nothing rather than a spinner
-    ///   - preferences: the alert style and the stage banners
+    ///   - preferences: the preferences, whose table says whether any row is a Banner
     /// - Returns: the row
     public static func of(_ permission: NotificationPermission?, preferences: Preferences) -> NotificationNotice? {
-        let banners = preferences.alertStyle == .banner
-        let stageBanners = preferences.stageAlerts
-        guard banners || stageBanners, let permission, permission != .allowed else { return nil }
-        let off = permission == .off
-        var parts: [String] = []
-        if stageBanners {
-            parts.append(off ? "stage banners don't show" : "stage banners can't show")
-        }
-        if banners {
-            parts.append("banners show as the alert window")
-        }
-        let start = off ? "Notifications are off for MegaMonitor" : "Notifications aren't set up yet"
-        return NotificationNotice(permission: permission, text: "\(start): \(parts.joined(separator: ", and "))")
+        guard preferences.inboxNotifications.usesBanners, let permission, permission != .allowed else { return nil }
+        let text =
+            permission == .off
+            ? "Notifications are off for MegaMonitor: banners don't show. The banners of your own builds show as pop-ups instead, and the others wait in the Inbox"
+            : "Notifications aren't set up yet: banners can't show until you allow them"
+        return NotificationNotice(permission: permission, text: text)
     }
 }
 
@@ -260,15 +253,14 @@ public struct GeneralSettingsForm: View {
     }
 }
 
-/// Settings → Notifications' form: how a finished build alerts, stage banners, the permission row and the previews,
-/// and the slot warning. It draws only what it is given.
+/// Settings → Notifications' form: the live summary, the permission row and the previews, the table with one row per event,
+/// the jobs with a setting of their own, and the slot warning. It draws only what it is given.
 public struct NotificationsSettingsForm: View {
     @Binding private var preferences: Preferences
     private let notification: NotificationNotice?
     private let canPreview: Bool
     private let actions: GeneralSettingsActions
     private let policy: NotificationPolicy
-    private let setGroup: (NotificationPolicy.Group, Bool) -> Void
     private let resetJob: (String) -> Void
     private let inboxPermission: NotificationPermission?
 
@@ -277,19 +269,16 @@ public struct NotificationsSettingsForm: View {
     ///   - notification: the notification row, if one shows
     ///   - canPreview: whether the team values are there, which the previews' links need (ALERT-07)
     ///   - actions: what the buttons do
-    ///   - policy: which builds may alert: My Builds, Watching, and the jobs with a setting of their own (ALERT-09)
-    ///   - setGroup: switches a group's alerts on or off
-    ///   - resetJob: makes a job follow its group again, by job key
-    ///   - inboxPermission: what macOS allows, for the Inbox's Desktop Notification choice; `nil` while it isn't known
+    ///   - policy: the jobs with a setting of their own (ALERT-09)
+    ///   - resetJob: makes a job follow the table again, by job key
+    ///   - inboxPermission: what macOS allows, for the Banner choice; `nil` while it isn't known
     public init(
         preferences: Binding<Preferences>, notification: NotificationNotice?, canPreview: Bool,
         actions: GeneralSettingsActions, policy: NotificationPolicy = NotificationPolicy(),
-        setGroup: @escaping (NotificationPolicy.Group, Bool) -> Void = { _, _ in },
         resetJob: @escaping (String) -> Void = { _ in }, inboxPermission: NotificationPermission? = nil
     ) {
         self.inboxPermission = inboxPermission
         self.policy = policy
-        self.setGroup = setGroup
         self.resetJob = resetJob
         _preferences = preferences
         self.notification = notification
@@ -298,14 +287,15 @@ public struct NotificationsSettingsForm: View {
     }
 
     public var body: some View {
+        let rules = preferences.inboxNotifications
+        let failedShows = [.popUp, .banner].contains(rules.delivery(for: .buildFailed))
+        let succeededShows = [.popUp, .banner].contains(rules.delivery(for: .buildSucceeded))
         Form {
             SettingsPaneHeader(pane: .notifications)
             Section {
-                Toggle(isOn: $preferences.stageAlerts) {
-                    SettingsRowLabel("Banner when a stage fails", "Before the build has finished")
-                }
-                .settingsSwitch()
-                .settingsAnchor(.buildAlerts)
+                Text(verbatim: NotificationSummary.text(for: rules))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .settingsAnchor(.buildAlerts)
                 if let notification {
                     StatusLine(notification.kind, notification.text) {
                         Button(notification.buttonTitle) {
@@ -320,7 +310,9 @@ public struct NotificationsSettingsForm: View {
                 LabeledContent {
                     HStack {
                         Button("Success") { actions.preview(.success) }
+                            .disabled(!succeededShows)
                         Button("Failure") { actions.preview(.failure) }
+                            .disabled(!failedShows)
                     }
                     .disabled(!canPreview)
                 } label: {
@@ -328,44 +320,35 @@ public struct NotificationsSettingsForm: View {
                         "Preview",
                         !canPreview
                             ? "Needs a project first"
-                            : preferences.alertStyle == .inboxOnly ? "Failed Builds is Inbox Only, so nothing shows" : nil)
+                            : !failedShows && !succeededShows
+                                ? "Your builds are set to Inbox or Off, so nothing shows"
+                                : "Shows what your own build does, as the table below says")
                 }
             } header: {
-                SettingsSectionHeader("Builds")
-            } footer: {
-                SettingsFooter(
-                    "How a finished build announces itself, the alert window or a banner, is the Failed Builds row of Inbox and Delivery below.")
+                SettingsSectionHeader("In Short")
             }
+            InboxNotificationsSection(rules: $preferences.inboxNotifications, permission: inboxPermission, actions: actions)
             Section {
-                Toggle(isOn: Binding(get: { policy.mine }, set: { setGroup(.mine, $0) })) {
-                    SettingsRowLabel("My builds")
-                }
-                .settingsSwitch()
-                .settingsAnchor(.mutedJobs)
-                Toggle(isOn: Binding(get: { policy.watching }, set: { setGroup(.watching, $0) })) {
-                    SettingsRowLabel("Watched builds")
-                }
-                .settingsSwitch()
                 if policy.jobs.isEmpty {
-                    Text("No job has a setting of its own. A build's Notifications menu mutes its job or always notifies.")
+                    Text("No job has a setting of its own. A build's Notifications menu sets Always or Never for its job.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .settingsAnchor(.mutedJobs)
                 } else {
                     ForEach(policy.jobs.keys.sorted(), id: \.self) { job in
                         JobNotificationRow(job: job, setting: policy.jobs[job] ?? .never) {
                             resetJob(job)
                         }
                     }
+                    .settingsAnchor(.mutedJobs)
                 }
             } header: {
-                SettingsSectionHeader("Which Builds Alert")
+                SettingsSectionHeader("Jobs With Their Own Setting")
             } footer: {
-                SettingsFooter("Quiet builds stay in the lists and the menu bar; only their alerts and banners stop.")
+                SettingsFooter(
+                    "Always treats a job like one of your own builds. Never is nothing at all, not even an Inbox entry. The builds stay in the lists and the menu bar either way.")
             }
-            InboxNotificationsSection(
-                rules: $preferences.inboxNotifications, buildAlertStyle: $preferences.alertStyle, permission: inboxPermission,
-                actions: actions)
             Section {
                 Toggle(isOn: $preferences.slotAlerts) {
                     SettingsRowLabel(
@@ -383,7 +366,7 @@ public struct NotificationsSettingsForm: View {
     }
 }
 
-/// A job with an alert setting of its own: its name, "Muted" or "Always", and Reset, which makes it follow its group.
+/// A job with a setting of its own: its name, "Never" or "Always", and Reset, which makes it follow the table again.
 private struct JobNotificationRow: View {
     let job: String
     let setting: NotificationPolicy.JobSetting
@@ -394,12 +377,12 @@ private struct JobNotificationRow: View {
         LabeledContent {
             HStack(spacing: 8) {
                 Label(
-                    setting == .never ? "Muted" : "Always",
+                    setting == .never ? "Never" : "Always",
                     systemImage: setting == .never ? "bell.slash.fill" : "bell.badge.fill")
                     .font(.callout)
                     .foregroundStyle(setting == .never ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
                 Button("Reset", action: reset)
-                    .help("Follow My builds or Watched builds again")
+                    .help("Follow the table above again")
             }
         } label: {
             SettingsRowLabel(Build.label(forJob: parts.job))
@@ -576,7 +559,6 @@ struct NotificationsPane: View {
                 settings: settings, model: model, system: system,
                 permission: { permission = $0 }),
             policy: model.projects.notifications,
-            setGroup: { model.setNotifications(for: $0, isOn: $1) },
             resetJob: { model.setNotifications(nil, forJob: $0) },
             inboxPermission: permission)
             .task {
@@ -642,9 +624,9 @@ extension GeneralSettingsActions {
             preview: { sample in
                 let announcer = AlertAnnouncer(effects: model.dependencies.effects, log: model.log)
                 let team = settings.primaryTeam
-                let preferences = settings.preferences
+                let rules = settings.preferences.inboxNotifications
                 Task {
-                    await announcer.preview(sample, team: team, preferences: preferences)
+                    await announcer.preview(sample, team: team, rules: rules)
                 }
             },
             surprise: { model.fun.surpriseMe() })

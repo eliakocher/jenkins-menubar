@@ -6,11 +6,13 @@ import MenubarCore
 /// LaunchServices already hands a second start of the same bundle to the running app. This catches the rest: another
 /// copy of the bundle, such as `build/` next to `~/Applications/`, or the executable started from a terminal.
 enum SingleInstance {
-    /// Returns the instance that runs already, if any.
+    /// Returns the instance that runs already, if any. An instance whose process is gone doesn't count: right after a
+    /// relaunch (``Relaunch``), Launch Services can still list the app that just quit, and handing over to it would
+    /// leave no app running.
     static func runningInstance() -> NSRunningApplication? {
         let current = NSRunningApplication.current.processIdentifier
         return NSRunningApplication.runningApplications(withBundleIdentifier: AppIdentity.bundleID)
-            .first { $0.processIdentifier != current && !$0.isTerminated }
+            .first { $0.processIdentifier != current && !$0.isTerminated && kill($0.processIdentifier, 0) == 0 }
     }
 
     /// Opens the running instance's bundle, which sends it a reopen event: it comes forward, and opens its main window

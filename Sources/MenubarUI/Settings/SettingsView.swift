@@ -85,7 +85,10 @@ struct SettingsShell<Detail: View>: View {
     @ViewBuilder let detail: (SettingsPane) -> Detail
 
     var body: some View {
-        NavigationSplitView {
+        // The sidebar always shows: its toggle is removed, so a sidebar collapsed by ⌃⌘S or by dragging the divider had
+        // no way back (the user, 2026-11-04: "what happened to the settings???"). A binding that ignores every change keeps
+        // both columns.
+        NavigationSplitView(columnVisibility: Binding(get: { .all }, set: { _ in })) {
             List(selection: listSelection) {
                 ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
                     Section {
@@ -351,7 +354,7 @@ extension SettingsPane {
         switch self {
         case .general: "How MegaMonitor starts and opens links."
         case .menuBar: "What the menu bar shows, and what its menu lists."
-        case .notifications: "Which builds alert you, and what lands in your Inbox."
+        case .notifications: "What each event does: a pop-up, a banner, an Inbox entry or nothing."
         case .appearance: "How details, text, code changes and discussions look."
         case .shortcuts: "The keys for the window's commands, and one for opening MegaMonitor from anywhere."
         case .hotCorners: "Run an action when the pointer rests in a screen corner, a different one with a modifier held."

@@ -9,12 +9,18 @@ import Testing
 @Suite("LegacyImport")
 struct LegacyImportTests {
     /// `config/settings` of the fixture, mapped
-    static let fixturePreferences = Preferences(
-        checkIntervalSeconds: 120, hideSuccessfulAfter: .hours(8), hideFailedAfter: .never, hidesMergedBuilds: false,
-        alertStyle: .banner, stageAlerts: false, iconStyle: .color, gitLabMaxAgeSeconds: Preferences().gitLabMaxAgeSeconds,
-        workItems: WorkItemFilters(
-            scope: .authored, type: .task, state: .all, sort: .title, limit: 50,
-            withLabels: ["workflow::in dev", "team::platform"], withoutLabels: ["type::bug"], labelsMatch: .any))
+    static let fixturePreferences: Preferences = {
+        var preferences = Preferences(
+            checkIntervalSeconds: 120, hideSuccessfulAfter: .hours(8), hideFailedAfter: .never, hidesMergedBuilds: false,
+            iconStyle: .color, gitLabMaxAgeSeconds: Preferences().gitLabMaxAgeSeconds,
+            workItems: WorkItemFilters(
+                scope: .authored, type: .task, state: .all, sort: .title, limit: 50,
+                withLabels: ["workflow::in dev", "team::platform"], withoutLabels: ["type::bug"], labelsMatch: .any))
+        // The old tool's `alert=banner` is how my finished builds announce themselves; its stage banners are gone.
+        preferences.inboxNotifications.set(.banner, for: .buildFailed)
+        preferences.inboxNotifications.set(.banner, for: .buildSucceeded)
+        return preferences
+    }()
 
     /// `config/team.conf` of the fixture, without the URLs' trailing `/`
     static let fixtureTeam = TeamValues(
@@ -66,8 +72,8 @@ struct LegacyImportTests {
             text: "menubar_icons=monochrome\nmenubar_icons=emoji\n  alert=banner\nstage_alerts=\n# hide_merged=off\r\nhide_merged=off\r\n")
         let mapped = LegacyFormats.preferences(from: lines, onto: Preferences())
         #expect(mapped.iconStyle == .color)
-        #expect(mapped.alertStyle == .window)
-        #expect(mapped.stageAlerts)
+        // `  alert=banner` doesn't start the line with the key: my builds keep their Pop-up.
+        #expect(mapped.inboxNotifications.delivery(for: .buildFailed) == .popUp)
         #expect(!mapped.hidesMergedBuilds)
         #expect(LegacyFormats.preferences(from: LegacyKeyValues(text: "hide_successful_after_hours=immediately"), onto: Preferences())
             .hideSuccessfulAfter == .immediately)

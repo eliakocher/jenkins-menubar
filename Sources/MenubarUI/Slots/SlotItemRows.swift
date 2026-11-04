@@ -1,5 +1,6 @@
 import AppKit
 import MenubarCore
+import Observation
 import SwiftUI
 
 // MARK: - What a row says
@@ -96,31 +97,22 @@ enum SlotColumns {
     static let spacing: CGFloat = 12
     /// the least width the title gets before the columns give way to the compact row
     static let title: CGFloat = 280
+    /// the least width of a card for the columns: a row's inset, its padding, the columns and the gaps between them, and
+    /// the indent of a commitment's rows, less what the card's own padding gives back (14 + 14 on its sides, 6 + 6 of it
+    /// taken back by the table)
+    static let regularCardWidth: CGFloat = titleInset + 16 + title + 3 * spacing + status + assignees + weight + SlotTableLine.indent + 16
 }
 
 // MARK: - An epic and its items
 
-/// An epic with its items in the slot, or the items without one (SLOT-08).
-struct SlotEpicSection: View {
+/// The header of an epic's items in the slot, or of the items without one (SLOT-08). The items are the card's lines of their
+/// own, see ``SlotTableLine``.
+struct SlotEpicHeader: View {
     let group: SlotEpicGroup
-    let project: String
-    var statusPrefix = ""
-    var typePrefix = ""
-    let layout: SlotRowLayout
-    let selection: WorkItem.ID?
-    let select: (WorkItem.ID) -> Void
     let actions: GitLabSectionActions
-    let keys: SlotKeys
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            header
-            ForEach(group.items) { item in
-                SlotItemRow(
-                    item: item, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
-                    isSelected: selection == item.id, select: { select(item.id) }, actions: actions, keys: keys)
-            }
-        }
+        header
     }
 
     /// The header with its "1 of 3 done", or without it when the list is narrow (the detail beside it
@@ -160,7 +152,7 @@ struct SlotEpicSection: View {
                 }
                 .buttonStyle(.plain)
                 .layoutPriority(1)
-                .help("Open \(epic.reference)")
+                .tip("Open \(epic.reference)")
                 .contextMenu {
                     Button("Open in GitLab") { actions.open(epic.webURL) }
                     Button("Copy Link") { actions.copy(epic.webURL) }
@@ -179,7 +171,7 @@ struct SlotEpicSection: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .help(
+                    .tip(
                         "This slot's share: \(Int((group.progress * 100).rounded())) % of the \(group.points) points of its items here, Verified 100 %, in verification 75 %. Its items in other slots don't count.")
             }
         }
@@ -223,7 +215,7 @@ struct SlotCommitmentSection: View {
             }
             .buttonStyle(.plain)
             .layoutPriority(1)
-            .help("Commitment \(value.reference)")
+            .tip("Commitment \(value.reference)")
             .contextMenu {
                 Button("Open in GitLab") { actions.open(value.webURL) }
                 Button("Copy Link") { actions.copy(value.webURL) }
@@ -248,7 +240,7 @@ struct SlotCommitmentSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .help("This slot's share: \(Int((commitment.progress * 100).rounded())) % by weight of its items here")
+                .tip("This slot's share: \(Int((commitment.progress * 100).rounded())) % by weight of its items here")
         }
     }
 
@@ -269,6 +261,24 @@ enum SlotRowFocus {
     static let lineWidth: CGFloat = 1.5
 }
 
+/// Whether the pointer is on a row, apart from the row's view so that a change draws only the background.
+@MainActor
+@Observable
+final class SlotRowHover {
+    var isHovered = false
+}
+
+/// The row's background: the selection's tint, or a quiet one under the pointer.
+private struct SlotRowBackground: View {
+    let hover: SlotRowHover
+    let isSelected: Bool
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(isSelected ? Color.accentColor.opacity(0.18) : hover.isHovered ? Color.primary.opacity(0.06) : .clear)
+    }
+}
+
 /// One work item of a slot: its title with the blue number, type and merge requests under it, flags, and its facts in
 /// columns, or folded under the title when narrow. A click selects it, so its detail shows beside the list; a double
 /// click opens it in a tab; ⌥-click opens it in GitLab (SLOT-09).
@@ -284,7 +294,9 @@ struct SlotItemRow: View {
     let keys: SlotKeys
     /// shows the keyboard focus whatever the focus is, for the gallery's picture of it
     var showsFocusAlways = false
-    @ViewState private var isHovered = false
+    /// whether the pointer is on the row. Only the row's background reads it, so a row sliding under a resting pointer while
+    /// the page scrolls draws its background again, not its whole content.
+    @ViewState private var hover = SlotRowHover()
     @Environment(\.slotOpenInTab) private var openInTab
 
     var body: some View {
@@ -293,7 +305,7 @@ struct SlotItemRow: View {
             .padding(.leading, SlotColumns.titleInset)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(background, in: RoundedRectangle(cornerRadius: 8))
+            .background(SlotRowBackground(hover: hover, isSelected: isSelected))
             .overlay {
                 // The keyboard focus: an accent outline on the selection's tint, as the current slot's card has its
                 // outline. The system's square ring is off, as in the header.
@@ -303,7 +315,8 @@ struct SlotItemRow: View {
                 }
             }
             .contentShape(RoundedRectangle(cornerRadius: 8))
-            .onHover { isHovered = $0 }
+            .onHover { hover.isHovered = $0 }
+            .onAppear { keys.focusOnAppear(item.id) }
             .focusable()
             .focusEffectDisabled()
             .focused(keys.focus, equals: .item(item.id))
@@ -364,10 +377,6 @@ struct SlotItemRow: View {
         }
     }
 
-    private var background: Color {
-        isSelected ? Color.accentColor.opacity(0.18) : isHovered ? Color.primary.opacity(0.06) : .clear
-    }
-
     private var kind: (kind: SlotItemText.Kind, name: String) {
         SlotItemText.kind(of: item.workItem, prefix: typePrefix)
     }
@@ -425,13 +434,13 @@ struct SlotItemRow: View {
                     Image(systemName: "hand.raised.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
-                        .help("Blocked: an item it waits for isn't done yet")
+                        .tip("Blocked: an item it waits for isn't done yet")
                 }
                 Text(verbatim: item.workItem.displayTitle)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .foregroundStyle(item.isDone ? .secondary : .primary)
-                    .help(item.workItem.title)
+                    .tip(item.workItem.title)
             }
             if showsFacts {
                 factsLine
@@ -467,12 +476,13 @@ struct SlotItemRow: View {
     /// its merge requests (the user, 2026-11-03: the number's column is gone, its chip leads this line).
     private var chipsLine: some View {
         HStack(spacing: 6) {
-            WorkItemNumberChip(text: reference, help: item.workItem.reference)
+            WorkItemNumberChip(text: reference)
                 .fixedSize()
+                .tip(item.workItem.reference)
             Text(verbatim: kind.name)
                 .inlineChip(tint: kind.kind.tint)
                 .fixedSize()
-                .help("Type: \(kind.name)")
+                .tip("Type: \(kind.name)")
             if !item.isCommitted {
                 plannedChip
             }
@@ -494,7 +504,7 @@ struct SlotItemRow: View {
                 .lineLimit(1)
             SlotProgressBar(progress: item.progress, width: SlotColumns.status - 12)
                 .opacity(item.weight > 0 ? 1 : 0.35)
-                .help(
+                .tip(
                     item.weight > 0
                         ? "\(Int((item.progress * 100).rounded())) %: Verified 100 %, in verification 75 %, any other status 0"
                         : "No weight, so it adds nothing to the progress")
@@ -511,7 +521,7 @@ struct SlotItemRow: View {
             .padding(.vertical, 1)
             .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.45)))
             .fixedSize()
-            .help("Scheduled for this slot, not committed: no commitment depends on it yet")
+            .tip("Scheduled for this slot, not committed: no commitment depends on it yet")
     }
 
     /// The first assignee's avatar and name, "Alex Kim +1" for more, every name in the tooltip.
@@ -527,7 +537,7 @@ struct SlotItemRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .help(people.map(\.displayName).formatted(.list(type: .and)))
+            .tip(people.map(\.displayName).formatted(.list(type: .and)))
         } else {
             Text(verbatim: "–")
                 .font(font)
@@ -542,7 +552,7 @@ struct SlotItemRow: View {
             .padding(.horizontal, 3)
             .padding(.vertical, 1)
             .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
-            .help(item.workItem.weight.map { "Weight \($0)" } ?? "No weight")
+            .tip(item.workItem.weight.map { "Weight \($0)" } ?? "No weight")
     }
 
     /// The chips of the open merge requests (a draft is open); when none is open and one is merged, the quiet word "Merged"
@@ -597,7 +607,7 @@ struct SlotProblemPill: View {
             .padding(.vertical, 1)
             .foregroundStyle(.orange)
             .background(Color.orange.opacity(0.12), in: Capsule())
-            .help(problem.detail ?? problem.kind.text)
+            .tip(problem.detail ?? problem.kind.text)
             .fixedSize()
     }
 }
@@ -618,7 +628,7 @@ struct SlotMergeRequestChip: View {
                 build: mergeRequest.build.map { BuildState($0.signal) })
         }
         .buttonStyle(.plain)
-        .help(help)
+        .tip(help)
         .accessibilityLabel(help)
     }
 
@@ -653,7 +663,7 @@ struct SlotMergedNote: View {
         .font(.caption)
         .foregroundStyle(.secondary)
         .fixedSize()
-        .help(Self.help(mergeRequests, project: project))
+        .tip(Self.help(mergeRequests, project: project))
     }
 
     /// One line per merge request: "!12404 · Title".

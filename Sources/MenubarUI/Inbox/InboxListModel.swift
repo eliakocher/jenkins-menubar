@@ -207,7 +207,7 @@ struct InboxListModel: Sendable {
         pendingCount = data.pending.count
         snoozedCount = data.snoozed.count
         doneCount = data.hasLoadedDone ? data.done.count : nil
-        // My own to-dos are my list, not notifications: Mark All Done leaves them.
+        // My own to-dos are my list, not notifications: Mark All Done leaves them, and so does their header.
         markAllCount = data.pending.count { !$0.isMine }
         projects = Set((data.pending + data.snoozed + data.done).compactMap(\.projectPath)).sorted()
         problems = data.appWideProblems

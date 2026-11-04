@@ -8,7 +8,7 @@ public struct AlertState: Codable, Hashable, Sendable {
     /// the number of the job's last build
     public var number: Int
     public var isRunning: Bool
-    /// the build's failed stages last known; empty when none are known (ALERT-05)
+    /// the build's failed stages last known; empty when none are known, for the finished build's alert (PIPE-04)
     public var failedStages: [String]
 
     public init(number: Int, isRunning: Bool, failedStages: [String] = []) {
@@ -30,7 +30,8 @@ extension CacheFile where Value == [String: AlertState] {
 /// - A job the previous check didn't know never alerts, so a build already finished when first seen stays quiet, and so
 ///   does the first check after the start.
 /// - A running build that a newer one replaced gets no alert; the newer one is followed (ALERT-06).
-/// - A running build whose failed stages differ from those last known for its number gets a stage banner (ALERT-05).
+/// - A running build alerts nothing, whatever its stages do: a build announces itself when it has finished, not stage by
+///   stage (the user, 2026-11-03: "only at the end of the pipeline").
 public struct AlertPolicy: Sendable {
     /// the team's Jenkins multibranch job, which the alerts link into
     public var jobURL: URL
@@ -46,13 +47,11 @@ public struct AlertPolicy: Sendable {
     ///   - current: the last build of each followed job, as this check found it; a job Jenkins didn't answer for keeps
     ///     its earlier build
     ///   - lastCheck: when the previous check started; `nil` before the first check since the start, which never alerts
-    ///   - preferences: whether stage banners are on
     /// - Returns: the alerts, in the order of `current`
     public func alerts(
         previous: [String: AlertState],
         current: [Build],
-        lastCheck: Date?,
-        preferences: Preferences
+        lastCheck: Date?
     ) -> [BuildAlert] {
         guard let lastCheck else {
             return []
@@ -74,13 +73,6 @@ public struct AlertPolicy: Sendable {
                 {
                     alerts.append(BuildAlert(kind: .finished, build: build, content: content))
                 }
-            } else if preferences.stageAlerts, !failedStages.isEmpty,
-                failedStages != (isSame ? known.failedStages : [])
-            {
-                let content = AlertContent.stageFailed(
-                    build, failedStages: failedStages,
-                    buildURL: AlertContent.buildURL(job: build.job, number: build.number, jobURL: jobURL))
-                alerts.append(BuildAlert(kind: .stageFailed, build: build, content: content))
             }
         }
         return alerts
@@ -103,8 +95,7 @@ public struct AlertPolicy: Sendable {
     }
 
     /// The build's failed stages: as found now, or, when the stages request failed, as last known for the same build
-    /// number, so a stage banner isn't repeated once the request works again (PIPE-04). A new build number starts with
-    /// none known.
+    /// number, so the finished build's alert still names them (PIPE-04). A new build number starts with none known.
     private static func failedStages(of build: Build, known: AlertState?) -> [String] {
         if let failed = build.failedStages {
             return failed

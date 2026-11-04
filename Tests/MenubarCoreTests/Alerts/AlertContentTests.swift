@@ -163,16 +163,4 @@ struct AlertContentTests {
         #expect(content.offersRebuild && content.buttons.contains(.rebuild) && content.bannerActions.contains(.rebuild))
         #expect(!content.bannerBody.contains("by "))
     }
-
-    @Test("ALERT-11 a watched build's stage banner is marked")
-    func watchedStageBanner() {
-        let url = Self.jobURL
-        let watched = AlertContent.stageFailed(Self.watched(.failure), failedStages: ["tests"], buildURL: url)
-        #expect(watched.headline == "Watching · 💥 !12 #5: stage failed")
-        #expect(watched.isWatched && watched.watchedAuthor == "Sam Lee" && !watched.bannerActions.contains(.rebuild))
-        #expect(watched.bannerBody == "tests\nFix the login\nby Sam Lee")
-        var mine = Self.watched(.failure)
-        mine.kind = .mine
-        #expect(AlertContent.stageFailed(mine, failedStages: ["tests"], buildURL: url).headline == "💥 !12 #5: stage failed")
-    }
 }

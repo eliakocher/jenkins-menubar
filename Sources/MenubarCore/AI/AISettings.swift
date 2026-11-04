@@ -158,7 +158,7 @@ public struct AISettings: Codable, Hashable, Sendable {
 
     public init(
         isEnabled: Bool = true, model: ClaudeModel = .sonnet, effort: ClaudeEffort = .standard, morningDigest: Bool = true,
-        digestMinutes: Int = 9 * 60, confirmedUseCases: Set<AIUseCase> = [], useMySetup: Bool = false, useMyClaudeMd: Bool = true,
+        digestMinutes: Int = 8 * 60, confirmedUseCases: Set<AIUseCase> = [], useMySetup: Bool = false, useMyClaudeMd: Bool = true,
         mcpServerChoices: [String: Bool] = [:]
     ) {
         self.isEnabled = isEnabled

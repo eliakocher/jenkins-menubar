@@ -40,9 +40,9 @@ public struct PreferencesStore: @unchecked Sendable {
     /// the UserDefaults key of ``notificationPolicy``
     static let notificationPolicyKey = "notificationPolicy"
 
-    /// Which builds may alert (ALERT-09), kept as JSON in one key. It isn't one of the ``Preferences``: the pipeline's
-    /// views change it from the lists, and Settings neither shows nor logs it. Text that doesn't decode reads as the
-    /// default, which notifies for everything.
+    /// The jobs with a notification setting of their own (ALERT-09), kept as JSON in one key. It isn't one of the
+    /// ``Preferences``: the pipeline's views change it from the lists, and Settings neither shows nor logs it. Text that
+    /// doesn't decode reads as the default, no job with a setting.
     public var notificationPolicy: NotificationPolicy {
         get {
             guard let text = defaults.string(forKey: Self.notificationPolicyKey),
@@ -87,8 +87,6 @@ public struct PreferencesStore: @unchecked Sendable {
         case hideSuccessfulAfter
         case hideFailedAfter
         case hidesMergedBuilds
-        case alertStyle
-        case stageAlerts
         case iconStyle
         case gitLabMaxAgeSeconds
         case workItemsScope
@@ -146,8 +144,6 @@ public struct PreferencesStore: @unchecked Sendable {
         readRaw(.hideSuccessfulAfter, into: \.hideSuccessfulAfter)
         readRaw(.hideFailedAfter, into: \.hideFailedAfter)
         read(.hidesMergedBuilds, into: \.hidesMergedBuilds)
-        readRaw(.alertStyle, into: \.alertStyle)
-        read(.stageAlerts, into: \.stageAlerts)
         readRaw(.iconStyle, into: \.iconStyle)
         read(.gitLabMaxAgeSeconds, into: \.gitLabMaxAgeSeconds)
         readRaw(.workItemsScope, into: \.workItems.scope)
@@ -170,6 +166,7 @@ public struct PreferencesStore: @unchecked Sendable {
         if let raw = defaults.object(forKey: Key.globalShortcut.rawValue) as? String {
             preferences.globalShortcut = HotkeyShortcut(rawValue: raw)
         }
+        migrateNotificationsIfNeeded()
         // Text that doesn't decode reads as the default routing.
         if let text = defaults.string(forKey: Self.inboxNotificationsKey),
             let rules = try? JSONDecoder().decode(InboxNotificationRules.self, from: Data(text.utf8))
@@ -231,6 +228,28 @@ public struct PreferencesStore: @unchecked Sendable {
             }
         }
         return changes
+    }
+
+    /// Moves the notification settings of before the single table (Task 7.14) to the table, once: the old build alert style
+    /// and the two switches of the old notification policy become the build rows, an Inbox toggle that was off with nothing
+    /// announcing becomes Off (``NotificationMigration``). The old keys stay as they are, readable; the stored version says
+    /// it ran.
+    private func migrateNotificationsIfNeeded() {
+        guard defaults.integer(forKey: NotificationMigration.versionKey) < NotificationMigration.version else {
+            return
+        }
+        let legacy = defaults.string(forKey: Self.inboxNotificationsKey)
+            .flatMap { try? JSONDecoder().decode(InboxNotificationRules.self, from: Data($0.utf8)) }
+            ?? InboxNotificationRules()
+        let policyText = defaults.string(forKey: Self.notificationPolicyKey)
+        let switches = NotificationMigration.groupSwitches(inPolicyText: policyText)
+        let rules = NotificationMigration.migrated(
+            rules: legacy, alertStyle: defaults.string(forKey: NotificationMigration.alertStyleKey),
+            mine: switches.mine, watching: switches.watching)
+        saveInboxNotifications(rules)
+        // The policy keeps only its jobs now.
+        notificationPolicy = notificationPolicy
+        defaults.set(NotificationMigration.version, forKey: NotificationMigration.versionKey)
     }
 
     private func saveInboxNotifications(_ rules: InboxNotificationRules) {
@@ -311,8 +330,6 @@ public struct PreferencesStore: @unchecked Sendable {
         case .hideSuccessfulAfter: .string(preferences.hideSuccessfulAfter.rawValue)
         case .hideFailedAfter: .string(preferences.hideFailedAfter.rawValue)
         case .hidesMergedBuilds: .bool(preferences.hidesMergedBuilds)
-        case .alertStyle: .string(preferences.alertStyle.rawValue)
-        case .stageAlerts: .bool(preferences.stageAlerts)
         case .iconStyle: .string(preferences.iconStyle.rawValue)
         case .gitLabMaxAgeSeconds: .int(preferences.gitLabMaxAgeSeconds)
         case .workItemsScope: .string(workItems.scope.rawValue)

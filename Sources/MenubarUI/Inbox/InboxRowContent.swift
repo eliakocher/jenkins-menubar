@@ -72,25 +72,7 @@ struct InboxRowContent: View {
 
     var body: some View {
         ListRow(title: row.title) {
-            if row.entry.isMine {
-                // A checkbox finishes my own to-do, and takes the tick back in the Done list.
-                Button {
-                    if state == .done {
-                        actions.restore([row.entry])
-                    } else {
-                        actions.done([row.entry])
-                    }
-                } label: {
-                    Image(systemName: state == .done ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(
-                            prominence == .increased
-                                ? AnyShapeStyle(.secondary) : AnyShapeStyle(state == .done ? Color.green : Color.accentColor))
-                        .imageScale(.large)
-                        .accessibilityLabel(state == .done ? "Not Done" : "Done")
-                }
-                .buttonStyle(.borderless)
-                .help(state == .done ? "Not done after all" : "Done")
-            } else if row.entry.kind == .coffeeBreak, AppImages.coffee != nil {
+            if row.entry.kind == .coffeeBreak, AppImages.coffee != nil {
                 CoffeeButlerIcon(size: 18)
             } else {
                 Image(systemName: row.symbol)

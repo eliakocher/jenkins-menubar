@@ -2,7 +2,7 @@ import MenubarCore
 import SwiftUI
 
 /// The Inbox's own toolbar item, in the section group next to Reload, as Slots has it: one gear, "Inbox Settings". It opens
-/// Settings → Notifications at the Inbox's part: what each kind of event does (Big Panel, Desktop Notification, Inbox Only),
+/// Settings → Notifications at the Inbox's part: what each kind of event does (Pop-up, Desktop Notification, Inbox Only),
 /// the badge, the coffee break and the order of the groups (the user, 2026-11-03: "in the inbox somewhere we need a
 /// settings icon that jumps to its settings").
 struct InboxToolbarItems: ToolbarContent {

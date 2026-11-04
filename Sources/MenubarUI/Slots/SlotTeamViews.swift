@@ -30,7 +30,7 @@ struct SlotChipBar: View {
             if isLoading {
                 ProgressView()
                     .controlSize(.small)
-                    .help("Loading the slot group's issues")
+                    .tip("Loading the slot group's issues")
             }
         }
     }
@@ -57,7 +57,7 @@ struct SlotChipBar: View {
                 .background(Capsule().fill(isOn ? Color.accentColor : Color.primary.opacity(0.08)))
         }
         .buttonStyle(.plain)
-        .help(candidate == .all ? "Show everything: turns the other chips off" : "Turn on or off; chips of one kind show either, kinds narrow down")
+        .tip(candidate == .all ? "Show everything: turns the other chips off" : "Turn on or off; chips of one kind show either, kinds narrow down")
         .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }

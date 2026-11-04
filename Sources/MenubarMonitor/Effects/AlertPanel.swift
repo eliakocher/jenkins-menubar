@@ -3,20 +3,27 @@ import MenubarCore
 import MenubarUI
 import SwiftUI
 
-/// The alert window (ALERT-03): one at a time, which holds every alert that came while it was open.
+/// The alert window (ALERT-03, INBOX-14): one at a time, which holds every finished build's alert and every Inbox event
+/// delivered as a pop-up that came while it was open.
 ///
-/// It shows centered on the main screen, with the newest alert as its first page; an alert that comes while it is open
-/// joins it and is shown at once. "1 of 3" and the arrows page through the alerts, Dismiss takes the shown page and
-/// shows the next, Dismiss All closes the window, and so do the last page's buttons. The window stays until a button,
-/// Esc, ⌘. or ⌘W closes it. Its height follows the page, with the top left corner fixed.
+/// It shows centered on the main screen. One item is its own pop-up, with Dismiss. A second item that comes while it is open
+/// turns the window into one summary (the user, 2026-11-04: "we close the previous and we show a small summary with a 'go
+/// to inbox'"): a list with a row per item, Open Inbox and Dismiss All. A row opens its build or item in the app and goes;
+/// the summary is a pop-up again when one row is left. Every pop-up already leaves its entry in the Inbox, so no row needs
+/// more buttons. The window stays until a button, Esc, ⌘. or ⌘W closes it, and its height follows the content, with the top
+/// left corner fixed.
 @MainActor
 final class AlertPanels: NSObject, NSWindowDelegate {
     private var panel: AlertPanel?
-    private let model = AlertPanelModel()
-    /// the buttons' effects, those of the newest `show`
+    private let model = AlertWindowModel()
+    /// the buttons' effects, those of the newest `show` of a build's alert
     private var effects: Effects?
+    /// runs an Inbox event's Show, Done and Snooze 1 Hour; the shell's, from the newest `show` of an event
+    private var perform: @MainActor (InboxDeliveryAction, InboxEvent) async -> Problem? = { _, _ in nil }
+    /// opens the Inbox in the app, for the summary's Open Inbox
+    var openInbox: @MainActor () -> Void = {}
 
-    /// the effects of the alert window's buttons
+    /// the effects of a build alert's buttons
     private struct Effects {
         var rebuild: @MainActor (BuildID) -> Void
         var hide: @MainActor (BuildID) -> Void
@@ -24,8 +31,8 @@ final class AlertPanels: NSObject, NSWindowDelegate {
         var rebuildWithChanges: @MainActor (BuildID) -> Void
     }
 
-    /// Shows an alert in the window, in front of every window, without taking the keyboard; the window opens for the first
-    /// alert and takes the later ones as pages.
+    /// Shows a build's alert in the window, in front of every window, without taking the keyboard; the window opens for the
+    /// first item and turns into a summary with the later ones.
     ///
     /// - Parameters:
     ///   - alert: the alert
@@ -40,16 +47,31 @@ final class AlertPanels: NSObject, NSWindowDelegate {
         open: @escaping @MainActor (URL, Bool) -> Void
     ) {
         effects = Effects(rebuild: rebuild, hide: hide, open: open, rebuildWithChanges: rebuildWithChanges)
-        model.pages.add(alert, notificationsOff: notificationsOff)
+        add(AlertWindowItem(alert: alert, notificationsOff: notificationsOff))
+    }
+
+    /// Shows an Inbox event in the window, like a build's alert.
+    ///
+    /// - Parameters:
+    ///   - event: the event
+    ///   - perform: runs Show, Done and Snooze 1 Hour for the event; answers why GitLab refused a Done, which the page then
+    ///     shows inline and stays
+    func show(_ event: InboxEvent, perform: @escaping @MainActor (InboxDeliveryAction, InboxEvent) async -> Problem?) {
+        self.perform = perform
+        add(AlertWindowItem(event: event))
+    }
+
+    private func add(_ item: AlertWindowItem) {
+        model.items.add(item)
         if let panel {
-            panel.title = Self.title(of: alert)
+            panel.title = Self.title(of: model)
             // Never makeKeyAndOrderFront or activate: typing in another app goes on (ALERT-03).
             panel.orderFrontRegardless()
             return
         }
         // The system's window lists show the title as it is, so it gets the headline without the emoji (ALERT-03).
-        let panel = AlertPanel(title: Self.title(of: alert))
-        let view = BuildAlertPanelView(
+        let panel = AlertPanel(title: Self.title(of: model))
+        let view = AlertWindowView(
             model: model,
             rebuildWithChanges: { [weak self] alert in
                 if alert.content.offersRebuild, let build = alert.content.rebuild {
@@ -58,6 +80,9 @@ final class AlertPanels: NSObject, NSWindowDelegate {
                 self?.dismiss(alert)
             },
             perform: { [weak self] alert, action in self?.perform(action, for: alert) },
+            performEvent: { [weak self] action, event in self?.run(action, for: event) },
+            openItem: { [weak self] item in self?.open(item) },
+            openInbox: { [weak self] in self?.showInbox() },
             dismissAll: { [weak self] in self?.dismissAll() },
             onSizeChange: { [weak panel] size in panel?.fit(to: size) })
         let hosting = NSHostingView(rootView: view)
@@ -66,10 +91,18 @@ final class AlertPanels: NSObject, NSWindowDelegate {
         hosting.safeAreaRegions = []
         panel.setContent(hosting)
         panel.delegate = self
-        // Esc takes the shown page, like the Dismiss button it presses; ⌘W takes the whole window.
+        // Esc takes the pop-up it is on, or every row of a summary; ⌘W takes the whole window. The coffee break is the
+        // exception: only its button takes it.
         panel.onCancel = { [weak self] in
-            if let id = self?.model.pages.current?.id {
-                self?.dismiss(id)
+            guard let self else {
+                return
+            }
+            if let item = model.items.single {
+                if !item.isMandatory {
+                    dismiss(item.id)
+                }
+            } else {
+                dismissAll()
             }
         }
         panel.center()
@@ -77,11 +110,11 @@ final class AlertPanels: NSObject, NSWindowDelegate {
         panel.orderFrontRegardless()
     }
 
-    private static func title(of alert: BuildAlert) -> String {
-        alert.content.headlineParts?.text ?? alert.content.headline
+    private static func title(of model: AlertWindowModel) -> String {
+        model.items.windowTitle ?? ""
     }
 
-    /// Runs a button of a page, then dismisses the page.
+    /// Runs a button of a build's alert, then dismisses it.
     private func perform(_ action: AlertContent.Action, for alert: BuildAlert) {
         if action == .rebuild, alert.content.offersRebuild, let build = alert.content.rebuild {
             effects?.rebuild(build)
@@ -94,22 +127,63 @@ final class AlertPanels: NSObject, NSWindowDelegate {
         dismiss(alert)
     }
 
-    private func dismiss(_ alert: BuildAlert) {
-        dismiss(alert.id)
+    /// Runs a button of an Inbox event, then dismisses it. A Done that GitLab refused keeps the page, with the reason on it.
+    private func run(_ action: InboxDeliveryAction, for event: InboxEvent) {
+        let id = AlertWindowItem(event: event).id
+        let perform = perform
+        guard action == .done else {
+            if action != .dismiss {
+                Task { _ = await perform(action, event) }
+            }
+            dismiss(id)
+            return
+        }
+        guard model.busy.insert(event.id).inserted else {
+            return
+        }
+        Task {
+            let refused = await perform(action, event)
+            model.busy.remove(event.id)
+            if let refused {
+                model.refusals[event.id] = refused
+            } else {
+                dismiss(id)
+            }
+        }
     }
 
-    /// Takes a page out; the window closes with the last one.
-    private func dismiss(_ id: UUID) {
-        model.pages.dismiss(id)
-        if model.pages.isEmpty {
+    /// A click on a summary row: the item opens in the app, as the pop-up's Show or Show Build does, and the row goes.
+    private func open(_ item: AlertWindowItem) {
+        switch item.payload {
+        case .build(let alert, _):
+            perform(alert.content.defaultAction, for: alert)
+        case .event(let event):
+            run(.show, for: event)
+        }
+    }
+
+    /// Open Inbox: the Inbox opens in the app, and the window with its rows closes.
+    private func showInbox() {
+        openInbox()
+        dismissAll()
+    }
+
+    private func dismiss(_ alert: BuildAlert) {
+        dismiss(AlertWindowItem(alert: alert, notificationsOff: false).id)
+    }
+
+    /// Takes an item out; the window closes with the last one.
+    private func dismiss(_ id: String) {
+        model.items.dismiss(id)
+        if model.items.isEmpty {
             panel?.close()
-        } else if let current = model.pages.current {
-            panel?.title = Self.title(of: current.alert)
+        } else {
+            panel?.title = Self.title(of: model)
         }
     }
 
     private func dismissAll() {
-        model.pages.dismissAll()
+        model.items.dismissAll()
         panel?.close()
     }
 
@@ -118,101 +192,8 @@ final class AlertPanels: NSObject, NSWindowDelegate {
             return
         }
         closing.delegate = nil
-        // A close by ⌘W or the system leaves no page behind, so the next alert opens a fresh window.
-        model.pages.dismissAll()
+        // A close by ⌘W or the system leaves no item behind, so the next one opens a fresh window.
+        model.items.dismissAll()
         panel = nil
-    }
-}
-
-/// The window of one alert: a non-activating glass panel without window buttons that floats over other apps, every
-/// Space and full-screen apps, and becomes key only when it's clicked (`docs/design/alert.md`, panel configuration,
-/// and the user's decision Q7).
-final class AlertPanel: NSPanel {
-    /// the glass's corners, which are the window's corners too: the clear window draws none of its own
-    private static let cornerRadius: CGFloat = 16
-
-    init(title: String) {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 300),
-            // `.titled` stays without a title bar to show: a window can become key only with it, so a click makes the
-            // alert usable. Not closable, since there is no close button.
-            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true)
-        self.title = title
-        titlebarAppearsTransparent = true
-        titleVisibility = .hidden
-        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            standardWindowButton(button)?.isHidden = true
-        }
-        // The glass is the whole background: the window itself draws nothing, but keeps its shadow.
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        hidesOnDeactivate = false
-        becomesKeyOnlyIfNeeded = false
-        isMovableByWindowBackground = true
-        isExcludedFromWindowsMenu = true
-        isReleasedWhenClosed = false
-    }
-
-    /// what Esc does; the window's own close is for ⌘W
-    var onCancel: (() -> Void)?
-
-    /// Shows the alert's view on the panel's glass and sizes the panel to fit it.
-    ///
-    /// - Parameter view: the hosted `BuildAlertView`
-    func setContent(_ view: NSView) {
-        let size = view.fittingSize
-        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
-        glass.style = .regular
-        glass.cornerRadius = Self.cornerRadius
-        view.frame = glass.bounds
-        view.autoresizingMask = [.width, .height]
-        glass.contentView = view
-        contentView = glass
-        setContentSize(size)
-    }
-
-    /// Gives the panel a new content size, keeping its top left corner where it is: the pages of an alert window differ
-    /// in height, and a window that grew from its bottom would jump.
-    ///
-    /// - Parameter size: the content's size
-    func fit(to size: CGSize) {
-        guard size.width > 0, size.height > 0, abs(contentRect(forFrameRect: frame).height - size.height) > 0.5 else {
-            return
-        }
-        let topLeft = NSPoint(x: frame.minX, y: frame.maxY)
-        let target = frameRect(forContentRect: NSRect(origin: .zero, size: size))
-        setFrame(
-            NSRect(x: topLeft.x, y: topLeft.y - target.height, width: target.width, height: target.height), display: true,
-            animate: false)
-    }
-
-    /// Esc and ⌘. dismiss the shown alert once the panel is key.
-    override func cancelOperation(_ sender: Any?) {
-        if let onCancel {
-            onCancel()
-        } else {
-            close()
-        }
-    }
-
-    /// ⌘W, through the menu's Close or ``performKeyEquivalent(with:)``, dismisses every alert of the window: without a close button,
-    /// `NSWindow` would only beep.
-    override func performClose(_ sender: Any?) {
-        close()
-    }
-
-    /// ⌘W dismisses the alert once it is key, also while another app is active and the app's menu doesn't get the key.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers == "w" {
-            performClose(nil)
-            return true
-        }
-        return super.performKeyEquivalent(with: event)
     }
 }

@@ -1,54 +1,51 @@
 import MenubarCore
 import SwiftUI
 
-/// Settings → Notifications' Inbox sections (INBOX-08, INBOX-14, INBOX-15): for each kind of event how it announces itself
-/// (Big Panel, Desktop Notification or Inbox Only) and whether it lands in the Inbox and counts in the badge and the menu
-/// bar's dot, whether only my projects' items count, the coffee break, and the order of the Inbox's groups.
+/// Settings → Notifications' table and the Inbox's own sections (INBOX-08, INBOX-14, INBOX-15): one row per event with a
+/// single choice, Pop-up, Banner, Inbox or Off (``DeliverySegments``), and whether it counts in the Red Dot (the Inbox's
+/// badge and the menu bar's dot); whether only my projects' items count, the coffee break, and the order of the Inbox's
+/// groups.
 ///
-/// The Failed Builds row is the build alerts' own setting (``Preferences/alertStyle``), the only one for a failed build.
-///
-/// Every other kind is Inbox Only until the user picks: the Inbox, its badge and the dot are the notification (the user,
-/// 2026-11-03). A macOS banner needs the permission, which is asked once when a kind first gets a Desktop Notification.
+/// The four build rows are the only place that says what a finished build does: a build that fails, succeeds, mine or
+/// watched. Every choice but Off also puts an entry in the Inbox. A macOS banner needs the permission, which is asked
+/// once when a row first gets a Banner.
 struct InboxNotificationsSection: View {
     @Binding var rules: InboxNotificationRules
-    /// how a finished build announces itself: the one setting of the Failed Builds row, kept in the preferences and not in
-    /// the rules, so the build alerts and the Inbox never both show a failed build (ALERT-10)
-    @Binding var buildAlertStyle: Preferences.AlertStyle
     /// what macOS allows; `nil` while it isn't known yet
     var permission: NotificationPermission?
     var actions: GeneralSettingsActions
 
+    /// whether the pane is wide enough for the words beside the symbols
+    @ViewState private var isWide = true
+
+    /// the pane width from which the choices show their words
+    private static let wideFrom: CGFloat = 560
+    /// the width of the event names column; longer names wrap
+    private static let eventWidth: CGFloat = 170
+
+    init(rules: Binding<InboxNotificationRules>, permission: NotificationPermission?, actions: GeneralSettingsActions) {
+        _rules = rules
+        self.permission = permission
+        self.actions = actions
+    }
+
     var body: some View {
         Section {
             routingTable
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .settingsAnchor(.inboxNotifications)
-            if rules.usesDesktopNotifications || buildAlertStyle == .banner, let permission, permission != .allowed {
-                StatusLine(
-                    permission == .off ? .problem : .note,
-                    permission == .off
-                        ? "Notifications are off for MegaMonitor: desktop notifications don't show, and those events stay in the Inbox"
-                        : "macOS hasn't asked yet: desktop notifications can't show until you allow them"
-                ) {
-                    Button(permission == .off ? "Open System Settings…" : "Turn On Notifications…") {
-                        if permission == .off {
-                            actions.openNotificationSettings()
-                        } else {
-                            actions.turnOnNotifications()
-                        }
-                    }
-                }
-            }
+                .onGeometryChange(for: Bool.self) { $0.size.width >= Self.wideFrom } action: { isWide = $0 }
             Toggle(isOn: $rules.onlyMyProjects) {
                 SettingsRowLabel(
                     "Only my projects' items count",
-                    "Other projects' items stay in the Inbox, but leave the badge and the menu bar dot alone")
+                    "Other projects' items stay in the Inbox, but leave the Red Dot alone")
             }
             .settingsSwitch()
         } header: {
-            SettingsSectionHeader("Inbox and Delivery")
+            SettingsSectionHeader("What Each Event Does")
         } footer: {
             SettingsFooter(
-                "Delivery is how an event announces itself: a Big Panel floats over your windows, a Desktop Notification is a macOS banner, Inbox Only stays quiet. Failed Builds is the one setting for every finished build, with its sound: it is not announced a second time. GitLab's to-dos are always in the Inbox; Inbox decides what else lands there, and Badge what counts.")
+                "Pop-up, Banner and Inbox each add an entry to the Inbox, which waits there until you mark it done; Off does nothing at all. Pop-ups and banners of builds play the result's sound. Aborted builds and other results alert nothing. Red Dot decides what counts on the Inbox and the menu bar's dot. GitLab's own to-dos are always in the Inbox: Off only stops their pop-up, except GitLab's pipeline failed, which Off hides here (it is never marked done in GitLab); it is Off by default, since the failed Jenkins build says the same.")
         }
         InboxGroupOrderSection(rules: $rules)
         Section {
@@ -88,118 +85,66 @@ struct InboxNotificationsSection: View {
 
     // MARK: - The table
 
-    private static let columns: [(route: InboxRoutes, title: String)] = [
-        (.inbox, "Inbox"), (.badge, "Badge"),
-    ]
-    private static let columnWidth: CGFloat = 56
-    private static let deliveryWidth: CGFloat = 164
+    private static let redDotWidth: CGFloat = 56
 
     private var routingTable: some View {
-        Grid(alignment: .center, horizontalSpacing: 10, verticalSpacing: 9) {
+        Grid(alignment: .center, horizontalSpacing: 12, verticalSpacing: 10) {
             GridRow {
-                Color.clear.frame(height: 1)
-                    .gridColumnAlignment(.leading)
-                Text(verbatim: "Delivery")
+                Text(verbatim: "Event")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                    .frame(width: Self.deliveryWidth, alignment: .leading)
-                ForEach(Self.columns, id: \.title) { column in
-                    Text(verbatim: column.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: Self.columnWidth)
-                }
+                    .gridColumnAlignment(.leading)
+                    .frame(width: Self.eventWidth, alignment: .leading)
+                Text(verbatim: "What it does")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .gridColumnAlignment(.leading)
+                Text(verbatim: "Red Dot")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: Self.redDotWidth)
+                    .help("Counts on the Inbox and the menu bar's dot")
             }
             ForEach(InboxNotificationRules.settingsKinds, id: \.self) { kind in
+                if kind == InboxNotificationRules.settingsKinds.first(where: { !$0.isFinishedBuild }) {
+                    Divider()
+                        .gridCellUnsizedAxes(.horizontal)
+                        .gridCellColumns(3)
+                }
                 GridRow {
                     Text(verbatim: kind.title)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: Self.eventWidth, alignment: .leading)
                     deliveryCell(kind)
-                    ForEach(Self.columns, id: \.title) { column in
-                        if kind == .myTodo, column.route == .inbox {
-                            // My own to-dos are always in the Inbox.
-                            Toggle(isOn: .constant(true)) { Text(verbatim: "Inbox: \(kind.title)") }
-                                .toggleStyle(.checkbox)
-                                .labelsHidden()
-                                .disabled(true)
-                                .frame(width: Self.columnWidth)
-                        } else {
-                            Toggle(
-                                isOn: Binding(
-                                    get: { rules.sends(kind, to: column.route) },
-                                    set: { rules.set(column.route, $0, for: kind) })
-                            ) {
-                                Text(verbatim: "\(column.title): \(kind.title)")
-                            }
-                            .toggleStyle(.checkbox)
-                            .labelsHidden()
-                            .frame(width: Self.columnWidth)
-                        }
+                    Toggle(
+                        isOn: Binding(
+                            get: { rules.sends(kind, to: .badge) },
+                            set: { rules.set(.badge, $0, for: kind) })
+                    ) {
+                        Text(verbatim: "Red Dot: \(kind.title)")
                     }
+                    .toggleStyle(.checkbox)
+                    .labelsHidden()
+                    .frame(width: Self.redDotWidth)
                 }
             }
         }
         .padding(.vertical, 2)
     }
 
-    /// the kind's delivery picker; none for my own to-dos, which never announce themselves
-    @ViewBuilder
+    /// the kind's single choice; for my own to-dos only Inbox, since they never announce themselves
     private func deliveryCell(_ kind: InboxEventKind) -> some View {
-        if kind == .myTodo {
-            Text(verbatim: "Never announced")
-                .foregroundStyle(.tertiary)
-                .frame(width: Self.deliveryWidth, alignment: .leading)
-        } else {
-            let current = kind == .buildFailed ? InboxDelivery(buildAlertStyle) : rules.delivery(for: kind)
-            // A menu with its own label, not a pop-up Picker: a pop-up is as wide as the choice it shows, so the chevrons
-            // stood at a different place in every row. Here the text starts at the column's left edge and the chevrons sit at
-            // its right edge.
-            Menu {
-                Picker(selection: deliveryBinding(kind, current: current)) {
-                    ForEach(InboxDelivery.pickerOrder, id: \.self) { delivery in
-                        Text(verbatim: delivery.title).tag(delivery)
-                    }
-                } label: {
-                    Text(verbatim: "Delivery: \(kind.title)")
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-            } label: {
-                HStack(spacing: 6) {
-                    Text(verbatim: current.title)
-                        .foregroundStyle(.primary)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: Self.deliveryWidth, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
-            .buttonStyle(.plain)
-            .accessibilityLabel("Delivery: \(kind.title)")
-            .accessibilityValue(current.title)
-            .frame(width: Self.deliveryWidth, alignment: .leading)
-        }
-    }
-
-    private func deliveryBinding(_ kind: InboxEventKind, current: InboxDelivery) -> Binding<InboxDelivery> {
-        Binding(
-            get: { current },
-            set: { choice in
-                if kind == .buildFailed {
-                    buildAlertStyle = Preferences.AlertStyle(choice)
-                } else {
+        DeliverySegments(
+            selection: Binding(
+                get: { rules.delivery(for: kind) },
+                set: { choice in
                     rules.set(choice, for: kind)
-                }
-                // macOS asks once; the first Desktop Notification is the moment.
-                if choice == .desktopNotification, permission == .notAsked {
-                    actions.turnOnNotifications()
-                }
-            })
+                    // macOS asks once; the first Banner is the moment.
+                    if choice == .banner, permission == .notAsked {
+                        actions.turnOnNotifications()
+                    }
+                }),
+            available: kind.availableDeliveries, isBuild: kind.isFinishedBuild, symbolsOnly: !isWide, subject: kind.title)
     }
 }
 

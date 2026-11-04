@@ -265,8 +265,7 @@ struct HotCornersControllerTests {
         "HOT-07 each action goes where it belongs: macOS's to the system, shortcuts and apps by name, MegaMonitor's to the app",
         arguments: [
             HotCornerAction.system(.lockScreen), .system(.apps), .runShortcut(name: "Caffeinate Claude"),
-            .openApp(path: "/Applications/Notes.app"), .openSection(.mergeRequests), .showMainWindow, .search, .refreshNow,
-            .muteAlerts,
+            .openApp(path: "/Applications/Notes.app"), .openSection(.mergeRequests), .showMainWindow, .search,
         ])
     func dispatch(_ action: HotCornerAction) async throws {
         let rig = try Rig(Self.settings(.topRight, plain: action))
@@ -326,7 +325,7 @@ struct HotCornersControllerTests {
 
     @Test("HOT-12 a fired action plays the settings' glow at its corner of the display the pointer is on")
     func glowOnFire() async throws {
-        var settings = Self.settings(.bottomRight, delay: 0.3, plain: .refreshNow)
+        var settings = Self.settings(.bottomRight, delay: 0.3, plain: .search)
         settings.glow = Self.ripple
         let rig = try Rig(settings)
         let second = CGRect(x: 1440, y: 0, width: 1920, height: 1080)

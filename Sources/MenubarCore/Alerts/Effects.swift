@@ -8,7 +8,7 @@ public protocol Effects: Sendable {
     /// Shows the alert in a floating window of its own (ALERT-03).
     func showAlertWindow(_ alert: BuildAlert) async
 
-    /// Posts the alert as a banner, with the actions of its category (ALERT-03, ALERT-05).
+    /// Posts the alert as a banner, with the actions of its category (ALERT-03).
     ///
     /// - Parameter alert: the alert
     /// - Returns: `false` when notifications aren't allowed, so no banner showed
@@ -23,13 +23,13 @@ public protocol Effects: Sendable {
     /// - Returns: `false` when notifications aren't allowed, so no banner showed
     func postNotice(_ notice: SlotNotice) async -> Bool
 
-    /// Shows an Inbox event in the app's big panel, in front of every window, without taking the keyboard (Task 7.03,
-    /// ``InboxDelivery/bigPanel``). Events that come while it is open join it as pages.
+    /// Shows an Inbox event in the app's pop-up, in front of every window, without taking the keyboard (Task 7.03,
+    /// ``InboxDelivery/popUp``). Events that come while it is open join it as pages.
     ///
     /// - Parameter event: the event
     func showInboxPanel(_ event: InboxEvent) async
 
-    /// Posts an Inbox event as a macOS banner, with Show, Mark Done and Snooze 1 Hour (``InboxDelivery/desktopNotification``).
+    /// Posts an Inbox event as a macOS banner, with Show, Mark Done and Snooze 1 Hour (``InboxDelivery/banner``).
     ///
     /// - Parameter event: the event
     /// - Returns: `false` when notifications aren't allowed, so no banner showed
@@ -109,7 +109,7 @@ public actor FakeEffects: Effects {
         return true
     }
 
-    /// the Inbox events shown in the big panel, in order
+    /// the Inbox events shown in the pop-up, in order
     public var inboxPanels: [InboxEvent] {
         calls.compactMap { if case .inboxPanel(let event) = $0 { event } else { nil } }
     }

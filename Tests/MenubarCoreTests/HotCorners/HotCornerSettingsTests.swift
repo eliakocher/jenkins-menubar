@@ -11,8 +11,8 @@ struct HotCornerSettingsTests {
         topLeft: HotCornerSetup(
             delay: 0, plain: .system(.missionControl), command: .system(.lockScreen), option: .openSection(.slots),
             control: .runShortcut(name: "Focus  "), shift: .openApp(path: "/Applications/Notes.app")),
-        topRight: HotCornerSetup(delay: 0.3, plain: .showMainWindow, shift: .muteAlerts),
-        bottomLeft: HotCornerSetup(delay: 1, plain: .search, command: .refreshNow),
+        topRight: HotCornerSetup(delay: 0.3, plain: .showMainWindow, shift: .search),
+        bottomLeft: HotCornerSetup(delay: 1, plain: .search, command: .openSection(.inbox)),
         bottomRight: HotCornerSetup(delay: 2, plain: .system(.disableScreenSaver)))
 
     @Test("HOT-10 the settings are kept in the preferences as one JSON text, absent while they are the defaults, and read back")
@@ -59,6 +59,10 @@ struct HotCornerSettingsTests {
                 text: #"{"enabled":true,"topRight":{"delay":0.5,"plain":"system.teleport","command":"section.pipelines"}}"#,
                 expected: HotCornerSettings(
                     enabled: true, topRight: HotCornerSetup(delay: 0.5, plain: .none, command: .openSection(.pipelines)))),
+            DecodingCase(
+                label: "the removed Refresh Now and Mute Alerts actions read as no action, the rest of the corner stays",
+                text: #"{"enabled":true,"topLeft":{"delay":0.3,"plain":"refreshNow","shift":"muteAlerts","command":"search"}}"#,
+                expected: HotCornerSettings(enabled: true, topLeft: HotCornerSetup(delay: 0.3, command: .search))),
             DecodingCase(
                 label: "a corner of the wrong type", text: #"{"enabled":true,"topLeft":7}"#,
                 expected: HotCornerSettings(enabled: true)),

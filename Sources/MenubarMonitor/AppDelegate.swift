@@ -46,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         effects.onOpen = { [weak self] url, inApp in
             self?.shell.open(url, inApp: inApp)
         }
+        effects.onOpenInbox = { [weak self] in
+            self?.shell.open(.open(.inbox))
+        }
         effects.onInboxAction = { [weak self] action, event in
             await self?.shell.performInboxAction(action, for: event)
         }

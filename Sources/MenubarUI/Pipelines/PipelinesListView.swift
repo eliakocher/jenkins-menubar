@@ -113,7 +113,7 @@ struct PipelinesListContent: View {
                                 .selectionDisabled()
                         }
                     } header: {
-                        header("My Builds", group: .mine, subject: "My Builds")
+                        Text("My Builds")
                     }
                 }
                 if !model.watching.isEmpty {
@@ -123,7 +123,7 @@ struct PipelinesListContent: View {
                                 .tag(item.id)
                         }
                     } header: {
-                        header("Watching", group: .watching, subject: "Watched Builds")
+                        Text("Watching")
                     }
                 }
                 if model.allBuilds != nil || model.showHiddenTitle != nil {
@@ -171,16 +171,6 @@ struct PipelinesListContent: View {
                     proxy.scrollTo(selection)
                 }
             }
-        }
-    }
-
-    /// A section header with the bell that turns the group's notifications on or off (ALERT-09).
-    private func header(_ title: String, group: NotificationPolicy.Group, subject: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer(minLength: 0)
-            let isOn = model.notifications.isOn(group)
-            NotificationsBell(isOn: isOn, subject: subject) { actions.setGroupNotifications(group, !isOn) }
         }
     }
 
@@ -259,7 +249,7 @@ struct PipelinesListContent: View {
 
     /// Returns a waiting job's notifications; it is always one of Watching.
     private func waitingNotifications(_ watched: WatchedJob) -> JobNotifications {
-        JobNotifications(model.notifications, job: watched.job, group: .watching)
+        JobNotifications(model.notifications, job: watched.job)
     }
 
     /// Returns the row of a job, among the rows the list shows.

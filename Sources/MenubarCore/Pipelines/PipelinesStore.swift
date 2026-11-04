@@ -87,7 +87,7 @@ public final class PipelinesStore {
         var hiddenCount: Int
     }
 
-    /// which builds may alert; a change applies at the next check (ALERT-09)
+    /// the jobs with a setting of their own; a change applies at the next check (ALERT-09)
     public var notifications = NotificationPolicy()
 
     /// the rebuilds started from the app, per job, until the new build shows or the rebuild failed (PIPE-09)
@@ -98,13 +98,10 @@ public final class PipelinesStore {
 
     /// Asks for a check at once, as watching does (WATCH-01). ``AppModel`` sets it to the scheduler's Check now.
     @ObservationIgnored public var requestCheck: @MainActor () -> Void = {}
-    /// called after a check with the alerts of the builds that finished, those of muted jobs left out
+    /// called after a check with the alerts of the builds that finished, those of jobs set to Never left out
     @ObservationIgnored public var onFinishedBuilds: @MainActor ([BuildAlert]) -> Void = { _ in }
     /// the fun layer's store, which the check reads for the streak and draws the moments' lines from
     @ObservationIgnored public var funStore: FunStore?
-    /// whether every alert is muted now (Mute Alerts for 1 Hour, HOT-09): then nothing shows, as for a muted job, but
-    /// the log and the Inbox still get the builds
-    @ObservationIgnored public var alertsMuted: @MainActor () -> Bool = { false }
 
     @ObservationIgnored private let services: PipelinesServices
     @ObservationIgnored private let round: PipelinesCheck
@@ -686,11 +683,8 @@ public final class PipelinesStore {
         let output = try await round.run(input)
         jobLookupRequested = false
         apply(output)
-        // Muted for the hour, every alert goes the way of a muted job's (HOT-09).
-        let quiet = alertsMuted()
         await round.announce(
-            quiet ? [] : output.alerts, muted: quiet ? output.alerts + output.mutedAlerts : output.mutedAlerts,
-            preferences: preferences)
+            output.alerts, muted: output.mutedAlerts, preferences: preferences, policy: notifications)
         onFinishedBuilds(output.alerts)
         #if DEBUG
         checksEnded += 1

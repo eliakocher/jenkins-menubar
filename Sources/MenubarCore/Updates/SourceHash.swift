@@ -4,11 +4,26 @@ import Foundation
 /// The hash of everything the app is built from, which tells when the checkout has changed since the build (APP-05).
 ///
 /// It equals the `MMSourceHash` that `build.sh` stamps into Info.plist: the SHA-256 of the `shasum -a 256` listing of
-/// Package.swift, build.sh, Sources/ and icons/, without hidden files, sorted by path in byte order. `build.sh` is the
-/// reference; a test runs its pipeline and compares.
+/// what goes into the app (``paths``), without hidden files, sorted by path in byte order. `build.sh` is the
+/// reference; a test runs its pipeline and compares. Tests, README.md and docs/ aren't part of it, so a pull that
+/// changes only those offers no update.
 public enum SourceHash {
-    /// the files and folders hashed, relative to the checkout, as `build.sh` passes them to `find`
-    public static let paths = ["Package.swift", "build.sh", "Sources", "icons"]
+    /// the files and folders hashed, relative to the checkout, as `build.sh` passes them to `find`: the code, the
+    /// pinned dependencies, the script that stamps Info.plist, the changelog that What's New shows, and the art
+    public static let paths = ["Package.swift", "Package.resolved", "build.sh", "CHANGELOG.md", "Sources", "icons"]
+
+    /// Returns whether a file's change can change the hash: it is one of ``paths`` or inside one of its folders, and
+    /// no part of its path is hidden. The checkout watcher asks this for each changed file, so the build folders,
+    /// `.git` and the tests never start a check.
+    ///
+    /// - Parameter relativePath: the file's path relative to the checkout, like `Sources/MenubarCore/A.swift`
+    public static func isHashed(relativePath: String) -> Bool {
+        let parts = relativePath.split(separator: "/", omittingEmptySubsequences: true)
+        guard let first = parts.first, !parts.contains(where: { $0.hasPrefix(".") }) else {
+            return false
+        }
+        return paths.contains(String(first))
+    }
 
     /// Computes the hash of a checkout's sources.
     ///

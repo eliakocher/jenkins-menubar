@@ -53,56 +53,74 @@ struct InboxDeliveryTests {
 
     // MARK: - INBOX-14
 
-    @Test("INBOX-14 every kind is Inbox Only until the user picks; a pick is kept per kind and the default removes it")
-    func inboxOnlyByDefault() {
+    @Test("INBOX-14 every kind has its default until the user picks; a pick is kept per kind and the default removes it")
+    func defaults() {
         var rules = InboxNotificationRules()
+        let builds: [InboxEventKind: InboxDelivery] = [
+            .buildFailed: .popUp, .buildSucceeded: .popUp, .watchedBuildFailed: .banner, .watchedBuildSucceeded: .banner,
+            .pipelineFailed: .off,
+        ]
         for kind in InboxEventKind.allCases {
-            #expect(rules.delivery(for: kind) == .inboxOnly)
+            #expect(rules.delivery(for: kind) == (builds[kind] ?? .inbox))
         }
-        #expect(InboxNotificationRules.deliveryKinds.count == 13)
+        #expect(InboxNotificationRules.deliveryKinds.count == 17)
         #expect(!InboxNotificationRules.deliveryKinds.contains(.myTodo))
-        // A failed build is announced by the build alerts, once (ALERT-10).
-        #expect(!InboxNotificationRules.deliveryKinds.contains(.buildFailed))
+        #expect(InboxNotificationRules.buildKinds == [.buildFailed, .buildSucceeded, .watchedBuildFailed, .watchedBuildSucceeded])
 
-        rules.set(.bigPanel, for: .coffeeBreak)
-        rules.set(.desktopNotification, for: .reviewRequested)
-        #expect(rules.delivery(for: .coffeeBreak) == .bigPanel)
-        #expect(rules.delivery(for: .reviewRequested) == .desktopNotification)
-        #expect(rules.delivery(for: .mentioned) == .inboxOnly)
-        #expect(rules.usesDesktopNotifications)
-        // The Inbox and Badge toggles are a separate thing.
+        rules.set(.popUp, for: .coffeeBreak)
+        rules.set(.banner, for: .reviewRequested)
+        #expect(rules.delivery(for: .coffeeBreak) == .popUp)
+        #expect(rules.delivery(for: .reviewRequested) == .banner)
+        #expect(rules.delivery(for: .mentioned) == .inbox)
+        #expect(rules.usesBanners)
+        // The Red Dot is a separate thing: every choice but Off is an Inbox entry.
         #expect(rules.routes(for: .coffeeBreak) == [.inbox, .badge])
+        rules.set(.off, for: .coffeeBreak)
+        #expect(rules.routes(for: .coffeeBreak) == [.badge])
 
-        rules.set(.inboxOnly, for: .reviewRequested)
-        #expect(rules.deliveries == ["coffeeBreak": .bigPanel])
-        #expect(!rules.usesDesktopNotifications)
+        rules.set(.inbox, for: .reviewRequested)
+        rules.set(.inbox, for: .coffeeBreak)
+        #expect(rules.deliveries.isEmpty)
+        // The watched builds are banners by default, so a banner is in use until they change.
+        #expect(rules.usesBanners)
+        rules.set(.inbox, for: .watchedBuildFailed)
+        rules.set(.off, for: .watchedBuildSucceeded)
+        #expect(!rules.usesBanners)
+        rules.set(.banner, for: .watchedBuildFailed)
+        #expect(rules.usesBanners)
+        // The default of a build row is a pick like any other, and the default removes it.
+        #expect(rules.deliveries == ["watchedBuildSucceeded": .off])
         // My own to-dos never announce themselves.
-        rules.set(.bigPanel, for: .myTodo)
-        #expect(rules.delivery(for: .myTodo) == .inboxOnly)
+        rules.set(.popUp, for: .myTodo)
+        #expect(rules.delivery(for: .myTodo) == .inbox)
     }
 
-    @Test("INBOX-14 rules saved before delivery decode as Inbox Only, an unknown choice is ignored, and the choices round trip")
+    @Test("INBOX-14 rules saved before delivery decode as the defaults, an unknown choice is ignored, and the choices round trip")
     func deliveryIsCodable() throws {
         let old = #"{"overrides":{"mentioned":3},"onlyMyProjects":true,"coffeeBreak":false,"coffeeMinutes":600}"#
         let decoded = try JSONDecoder().decode(InboxNotificationRules.self, from: Data(old.utf8))
-        for kind in InboxEventKind.allCases {
-            #expect(decoded.delivery(for: kind) == .inboxOnly)
+        for kind in InboxNotificationRules.deliveryKinds {
+            #expect(decoded.delivery(for: kind) == kind.defaultDelivery)
         }
         #expect(decoded.groupOrder == InboxGroup.allCases)
         #expect(decoded.onlyMyProjects && !decoded.coffeeBreak && decoded.coffeeMinutes == 600)
 
-        let odd = #"{"deliveries":{"coffeeBreak":"bigPanel","assigned":"carrierPigeon","unknownKind":"bigPanel","merged":"inboxOnly"}}"#
+        // The raw values are those of the old Big Panel, Desktop Notification and Inbox Only.
+        let odd = #"{"deliveries":{"coffeeBreak":"bigPanel","assigned":"carrierPigeon","unknownKind":"bigPanel","merged":"inboxOnly","mentioned":"off"}}"#
         let tolerant = try JSONDecoder().decode(InboxNotificationRules.self, from: Data(odd.utf8))
-        #expect(tolerant.delivery(for: .coffeeBreak) == .bigPanel)
-        #expect(tolerant.delivery(for: .assigned) == .inboxOnly)
+        #expect(tolerant.delivery(for: .coffeeBreak) == .popUp)
+        #expect(tolerant.delivery(for: .mentioned) == .off)
+        #expect(tolerant.delivery(for: .assigned) == .inbox)
         #expect(tolerant.deliveries["assigned"] == nil && tolerant.deliveries["merged"] == nil)
 
         var rules = InboxNotificationRules()
-        rules.set(.desktopNotification, for: .mentioned)
+        rules.set(.banner, for: .mentioned)
+        rules.set(.off, for: .buildSucceeded)
         rules.setGroupOrder([.other, .builds, .claude, .coffee, .myToDos, .mentions, .reviewRequests, .assigned])
         let copy = try JSONDecoder().decode(InboxNotificationRules.self, from: JSONEncoder().encode(rules))
         #expect(copy == rules)
-        #expect(copy.delivery(for: .mentioned) == .desktopNotification)
+        #expect(copy.delivery(for: .mentioned) == .banner)
+        #expect(copy.delivery(for: .buildSucceeded) == .off)
 
         // Kept in the preferences, which the backup carries as one JSON text.
         let suite = TemporaryDefaults()
@@ -113,13 +131,12 @@ struct InboxDeliveryTests {
         #expect(PreferencesStore(defaults: suite.defaults).load().inboxNotifications == rules)
     }
 
-    @Test("INBOX-14 each event comes routed with its kind's delivery, and a panel with the Inbox off still announces")
+    @Test("INBOX-14 each event comes routed with its kind's delivery, Off is no entry and no announcement, a build is never announced twice")
     func eventsCarryTheirDelivery() throws {
         var rules = InboxNotificationRules()
-        rules.set(.bigPanel, for: .coffeeBreak)
-        rules.set(.desktopNotification, for: .reviewRequested)
-        rules.set([], for: .claudeAnswered)
-        rules.set(.bigPanel, for: .claudeAnswered)
+        rules.set(.popUp, for: .coffeeBreak)
+        rules.set(.banner, for: .reviewRequested)
+        rules.set(.off, for: .claudeAnswered)
         let setup = try Setup(rules: rules)
         let store = setup.model.inbox
         var seen: [RoutedInboxEvent] = []
@@ -132,31 +149,27 @@ struct InboxDeliveryTests {
                 subjectKey: "a", useCase: "Why Did It Fail?", failed: false, title: "Fix", reference: nil, excerpt: nil, url: nil,
                 at: Self.start))
         store.addLocal(.digestReady(summary: nil, url: AppRoute.open(.digest).url, at: Self.start, calendar: Self.utc))
-        // Inbox Only and no route: nothing to announce, nothing kept.
-        var quiet = rules
-        quiet.set([], for: .digestReady)
-        store.rules = quiet
-        store.addLocal(Self.review("review|quiet-digest"))
+        // The build alerts announce a finished build; the Inbox only keeps its entry, whatever its row says.
         store.addLocal(.buildFailed(
             jobKey: "main|MR-1", number: 1, label: "!1 #1", isUnstable: false, title: nil, url: Self.gitLab, at: Self.start))
 
         let byKind = Dictionary(uniqueKeysWithValues: seen.map { ($0.event.kind, $0.delivery) })
-        #expect(byKind[.coffeeBreak] == .bigPanel)
-        #expect(byKind[.reviewRequested] == .desktopNotification)
-        #expect(byKind[.claudeAnswered] == .bigPanel)
-        #expect(byKind[.digestReady] == .inboxOnly)
-        #expect(byKind[.buildFailed] == .inboxOnly)
-        // The Claude answer has no route, but its panel shows; it is not an Inbox entry.
-        #expect(seen.first { $0.event.kind == .claudeAnswered }?.routes.isEmpty == true)
+        #expect(byKind[.coffeeBreak] == .popUp)
+        #expect(byKind[.reviewRequested] == .banner)
+        #expect(byKind[.digestReady] == .inbox)
+        #expect(byKind[.buildFailed] == .inbox)
+        // Off: not announced, not an entry.
+        #expect(byKind[.claudeAnswered] == nil)
         #expect(store.pending.contains { $0.kind == .claudeAnswered } == false)
         #expect(store.pending.contains { $0.kind == .coffeeBreak })
+        #expect(store.pending.contains { $0.kind == .buildFailed })
     }
 
     @Test("INBOX-14 the app shows a panel or a banner as chosen, once per event, and a banner macOS refuses stays in the Inbox")
     func appDelivers() async throws {
         var rules = InboxNotificationRules()
-        rules.set(.bigPanel, for: .coffeeBreak)
-        rules.set(.desktopNotification, for: .reviewRequested)
+        rules.set(.popUp, for: .coffeeBreak)
+        rules.set(.banner, for: .reviewRequested)
         let setup = try Setup(rules: rules)
         let store = setup.model.inbox
 
@@ -233,13 +246,10 @@ struct InboxDeliveryTests {
     }
 
     /// A failed build as the app handles it: the build alerts announce it, the Inbox keeps it.
-    private func failedBuildEverywhere(
-        style: Preferences.AlertStyle, rules: InboxNotificationRules, setup: Setup
-    ) async throws {
+    private func failedBuildEverywhere(rules: InboxNotificationRules, setup: Setup) async throws {
         let alert = try Self.failedBuild()
         setup.model.inbox.rules = rules
-        await AlertAnnouncer(effects: setup.effects, log: setup.model.log)
-            .announce([alert], preferences: Preferences(alertStyle: style))
+        await AlertAnnouncer(effects: setup.effects, log: setup.model.log).announce([alert], rules: rules)
         setup.model.addToInbox(finished: [alert])
         for _ in 0..<200 {
             await Task.yield()
@@ -247,62 +257,33 @@ struct InboxDeliveryTests {
     }
 
     @Test(
-        "ALERT-10 a failed build gives exactly one pop-up per alert style, the Inbox adds none, and it is an Inbox entry",
+        "ALERT-10 a failed build gives exactly one pop-up per choice, the Inbox adds none, and every choice but Off is an Inbox entry",
         arguments: [
-            (Preferences.AlertStyle.window, 1, 0), (.banner, 0, 1), (.inboxOnly, 0, 0),
+            (InboxDelivery.popUp, 1, 0, true), (.banner, 0, 1, true), (.inbox, 0, 0, true), (.off, 0, 0, false),
         ])
-    func oneFailedBuildOnePopUp(style: Preferences.AlertStyle, windows: Int, banners: Int) async throws {
-        // Whatever the old Inbox delivery says, it adds nothing: a saved choice is dropped, and `set` ignores the kind.
+    func oneFailedBuildOnePopUp(choice: InboxDelivery, windows: Int, banners: Int, entry: Bool) async throws {
+        // Whatever an old file says about the failed build's Inbox delivery, only the row counts.
         var rules = try JSONDecoder().decode(
             InboxNotificationRules.self, from: Data(#"{"deliveries":{"buildFailed":"desktopNotification"}}"#.utf8))
-        rules.set(.bigPanel, for: .buildFailed)
+        rules.set(choice, for: .buildFailed)
         let setup = try Setup(rules: rules)
 
-        try await failedBuildEverywhere(style: style, rules: rules, setup: setup)
+        try await failedBuildEverywhere(rules: rules, setup: setup)
 
         #expect(await setup.effects.alertWindows.count == windows)
         #expect(await setup.effects.banners.count == banners)
         #expect(await setup.effects.sounds.count == windows + banners)
         #expect(await setup.effects.inboxPanels.isEmpty)
         #expect(await setup.effects.inboxBanners.isEmpty)
-        // It is still history in the Inbox, quietly.
-        #expect(setup.model.inbox.pending.map(\.kind) == [.buildFailed])
-    }
-
-    @Test("ALERT-10 migration: the build alert style the user had wins, and a failed build's saved Inbox delivery is dropped")
-    func migrationKeepsTheAlertStyle() throws {
-        // The user of 2026-11-03: alertStyle window (the big panel), and buildFailed set to a desktop notification.
-        let suite = TemporaryDefaults()
-        suite.defaults.set("window", forKey: "alertStyle")
-        suite.defaults.set(
-            #"{"deliveries":{"buildFailed":"desktopNotification","coffeeBreak":"bigPanel"}}"#,
-            forKey: PreferencesStore.inboxNotificationsKey)
-
-        let loaded = PreferencesStore(defaults: suite.defaults).load()
-
-        #expect(loaded.alertStyle == .window)
-        #expect(InboxDelivery(loaded.alertStyle) == .bigPanel)
-        #expect(loaded.inboxNotifications.deliveries == ["coffeeBreak": .bigPanel])
-        #expect(loaded.inboxNotifications.delivery(for: .buildFailed) == .inboxOnly)
-
-        // The choices and the styles map one to one, so the one row shows what the build alerts do.
-        for delivery in InboxDelivery.allCases {
-            #expect(InboxDelivery(Preferences.AlertStyle(delivery)) == delivery)
-        }
-        for style in Preferences.AlertStyle.allCases {
-            #expect(Preferences.AlertStyle(InboxDelivery(style)) == style)
-        }
-        // A saved Inbox Only style survives a restart.
-        suite.defaults.set("inboxOnly", forKey: "alertStyle")
-        #expect(PreferencesStore(defaults: suite.defaults).load().alertStyle == .inboxOnly)
+        #expect(setup.model.inbox.pending.map(\.kind) == (entry ? [.buildFailed] : []))
     }
 
     @Test("ALERT-10 nothing else is delivered twice: the digest, a Claude answer and the coffee break each show once")
     func otherKindsShowOnce() async throws {
         var rules = InboxNotificationRules()
-        rules.set(.bigPanel, for: .digestReady)
-        rules.set(.desktopNotification, for: .claudeAnswered)
-        rules.set(.bigPanel, for: .coffeeBreak)
+        rules.set(.popUp, for: .digestReady)
+        rules.set(.banner, for: .claudeAnswered)
+        rules.set(.popUp, for: .coffeeBreak)
         let setup = try Setup(rules: rules)
         let model = setup.model
 

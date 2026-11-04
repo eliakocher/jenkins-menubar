@@ -294,8 +294,7 @@ public struct MenuPaneView: View {
                 router.follow(url, model: model, fallback: openURL)
                 dismiss()
             },
-            setJobNotifications: { model.setNotifications($1, forJob: $0) },
-            setGroupNotifications: { model.setNotifications(for: $0, isOn: $1) })
+            setJobNotifications: { model.setNotifications($1, forJob: $0) })
     }
 }
 

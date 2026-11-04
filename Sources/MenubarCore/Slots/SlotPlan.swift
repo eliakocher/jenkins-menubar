@@ -187,25 +187,35 @@ public struct SlotSummary: Hashable, Sendable, Identifiable {
     public var label: Label
     /// the dates; `nil` for a name that isn't a week (SLOT-01)
     public var dates: SlotDates?
-    public var state: SlotState
+    public var state: SlotState { didSet { headerCache.facts = nil } }
     /// "Code freeze in 3 days"; "No dates" for a slot without
     public var countdown: String
     /// the days until the code freeze, negative once it passed; `nil` without dates
     public var daysToCodeFreeze: Int?
     /// the committed work items in the tool's order (SLOT-12)
-    public var items: [SlotItem]
+    public var items: [SlotItem] { didSet { headerCache.facts = nil } }
     /// the slot's work items without the committed label
     public var uncommittedCount: Int
     /// the work items without the committed label, as Planned (SLOT-06), in the tool's order
-    public var planned: [SlotItem] = []
+    public var planned: [SlotItem] = [] { didSet { headerCache.facts = nil } }
     /// what the slot can take under the chip, in person-days or points; `nil` shows no load (SLOT-08, SLOT-13)
-    public var capacity: Double? = nil
+    public var capacity: Double? = nil { didSet { headerCache.facts = nil } }
     /// how many people the person-days are of; `nil` for points
-    public var capacityPeople: Int? = nil
+    public var capacityPeople: Int? = nil { didSet { headerCache.facts = nil } }
     /// the size problems of the epics, by the epic's reference (SLOT-11)
-    public var epicProblems: [String: SlotProblem] = [:]
+    public var epicProblems: [String: SlotProblem] = [:] { didSet { headerCache.facts = nil } }
     /// the slot's commitments that have items here, with them, the top of the tree (SLOT-14)
     public var commitments: [SlotCommitmentGroup] = []
+    /// the header's facts, once ``cacheHeader()`` made them; any change of what they are made from clears them
+    var headerCache = SlotHeaderFactsCache()
+
+    /// the numbers and help texts of the slot's header (SLOT-15): the ones the plan made, else made now
+    public var header: SlotHeaderFacts { headerCache.facts ?? SlotHeaderFacts(self) }
+
+    /// Makes the header's facts now, so reading ``header`` counts nothing; the plan does it for every slot.
+    public mutating func cacheHeader() {
+        headerCache.facts = SlotHeaderFacts(self)
+    }
 
     public var id: SlotName { name }
 
@@ -427,7 +437,12 @@ public struct SlotPlan: Hashable, Sendable {
                 return shown <= rules.upcomingShown || !summary.items.isEmpty
             }.map(\.element)
         }
-        return SlotPlan(slots: summaries + undated.sorted { $0.name < $1.name }, withoutSlot: withoutSlot)
+        let finished = (summaries + undated.sorted { $0.name < $1.name }).map { summary in
+            var summary = summary
+            summary.cacheHeader()
+            return summary
+        }
+        return SlotPlan(slots: finished, withoutSlot: withoutSlot)
     }
 
     /// Returns the slots with the released ones that have no open work left out, except the latest `count` of the released

@@ -47,7 +47,7 @@ public enum WelcomePage: Int, CaseIterable, Hashable, Sendable {
         case .welcome: "Follow your builds, merge requests and work items from the menu bar."
         case .team: "The Jenkins job and GitLab project your team works on."
         case .accounts: "Sign in to Jenkins and GitLab. Tokens stay in your keychain."
-        case .notifications: "Banners when a stage fails, and when a build finishes if you choose banners."
+        case .notifications: "Your builds pop up when they finish, the ones you watch show as banners. Change each in Settings."
         case .claude: "Explains failed builds and writes your digest, with your own local Claude Code."
         case .menuBarAndLogin: "Checks and alerts run in the background, so the menu bar suits MegaMonitor best."
         case .done: nil
@@ -303,10 +303,10 @@ enum WelcomeClaudeRules {
 enum WelcomeNotificationText {
     static let allowed = "Notifications are allowed"
 
-    /// Returns what doesn't show while notifications are off: "Notifications are off for MegaMonitor: stage
-    /// banners don't show", with the banner style's part too, as `NotificationNotice` says it.
+    /// Returns what doesn't show while notifications are off: "Notifications are off for MegaMonitor: banners don't
+    /// show", as `NotificationNotice` says it.
     ///
-    /// - Parameter preferences: the alert style and the stage banners
+    /// - Parameter preferences: the table of Settings → Notifications
     /// - Returns: the line
     static func off(_ preferences: Preferences) -> String {
         NotificationNotice.of(.off, preferences: preferences)?.text ?? "Notifications are off for MegaMonitor"

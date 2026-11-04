@@ -21,8 +21,8 @@ extension AppModel {
             alert.content.celebration = celebration
             alert.content.funLevel = self.fun.level
             let announcer = AlertAnnouncer(effects: self.dependencies.effects, log: self.log)
-            let preferences = self.settings.preferences
-            Task { await announcer.announce(alert, preferences: preferences) }
+            let rules = self.settings.preferences.inboxNotifications
+            Task { await announcer.announce(alert, rules: rules) }
             return true
         }
         mergeRequestDetails.merge.onMerged = { [weak self] mergeRequest in

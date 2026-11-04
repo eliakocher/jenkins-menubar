@@ -100,10 +100,6 @@ public enum HotCornerAction: Codable, Hashable, Sendable {
     case showMainWindow
     /// the main window's search field (Edit › Find…)
     case search
-    /// Refresh Now: checks Jenkins and reloads what is shown (`AppModel.checkNow()`)
-    case refreshNow
-    /// mutes the alerts for one hour; fired again while they are muted, it ends the mute
-    case muteAlerts
     /// a shortcut of the Shortcuts app, by its name exactly as `shortcuts list` prints it
     case runShortcut(name: String)
     /// an app, by the path of its bundle
@@ -111,10 +107,10 @@ public enum HotCornerAction: Codable, Hashable, Sendable {
 
     /// the actions of MegaMonitor itself, in menu order
     public static let appActions: [HotCornerAction] =
-        [.showMainWindow] + AppRoute.Section.allCases.map(HotCornerAction.openSection) + [.search, .refreshNow, .muteAlerts]
+        [.showMainWindow] + AppRoute.Section.allCases.map(HotCornerAction.openSection) + [.search]
 
     /// The action as one stored text: `none`, `system.<name>`, `section.<name>`, `showMainWindow`, `search`,
-    /// `refreshNow`, `muteAlerts`, `shortcut:<name>`, `app:<path>`.
+    /// `shortcut:<name>`, `app:<path>`.
     public var storedText: String {
         switch self {
         case .none: "none"
@@ -122,14 +118,13 @@ public enum HotCornerAction: Codable, Hashable, Sendable {
         case .openSection(let section): "section.\(section.rawValue)"
         case .showMainWindow: "showMainWindow"
         case .search: "search"
-        case .refreshNow: "refreshNow"
-        case .muteAlerts: "muteAlerts"
         case .runShortcut(let name): "shortcut:\(name)"
         case .openApp(let path): "app:\(path)"
         }
     }
 
-    /// Reads a stored text; one no action has (an action of a later version, garbage) is ``none``.
+    /// Reads a stored text; one no action has (an action of a later version, garbage, or the removed Refresh Now and
+    /// Mute Alerts for 1 Hour: `refreshNow`, `muteAlerts`) is ``none``.
     ///
     /// - Parameter storedText: the text of ``storedText``
     public init(storedText text: String) {
@@ -148,8 +143,6 @@ public enum HotCornerAction: Codable, Hashable, Sendable {
             switch text {
             case "showMainWindow": self = .showMainWindow
             case "search": self = .search
-            case "refreshNow": self = .refreshNow
-            case "muteAlerts": self = .muteAlerts
             default: self = .none
             }
         }
@@ -339,8 +332,6 @@ extension HotCornerAction {
         case .openSection(let section): "Open \(section.logTitle)"
         case .showMainWindow: "Show Main Window"
         case .search: "Search…"
-        case .refreshNow: "Refresh Now"
-        case .muteAlerts: "Mute Alerts for 1 Hour"
         case .runShortcut(let name): "Run Shortcut “\(name.trimmingCharacters(in: .whitespaces))”"
         case .openApp(let path): "Open \(URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent)"
         }

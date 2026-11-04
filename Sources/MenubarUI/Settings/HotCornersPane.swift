@@ -6,8 +6,9 @@ import UniformTypeIdentifiers
 /// Settings → Hot Corners (HOT-01): the switch, a drawing of the screen with what each corner does, and under it the
 /// editor of the selected corner: its delay and one action for the corner alone and one for each modifier held.
 ///
-/// The drawing is the way in: a click on a corner's tile selects it. While the switch is off the drawing is dimmed but
-/// still editable, so the corners can be set up before they go on. It draws only what it is given.
+/// The drawing is the way in: a click on a corner's tile selects it. While the switch is off, everything under it is
+/// hidden (it collapses smoothly) and only the switch and its description stay. The Settings search lands on the
+/// switch (`SettingsField.hotCorners`), the one field of this pane. It draws only what it is given.
 public struct HotCornersSettingsForm: View {
     @Binding private var preferences: Preferences
     private let isLegacyAppRunning: Bool
@@ -15,6 +16,7 @@ public struct HotCornersSettingsForm: View {
     private let onQuitLegacy: () -> Void
     private let onTryGlow: (HotCorner) -> Void
     @ViewState private var selected: HotCorner
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// - Parameters:
     ///   - preferences: the preferences; a change saves at once
@@ -49,34 +51,42 @@ public struct HotCornersSettingsForm: View {
                 }
                 .settingsSwitch()
                 .settingsAnchor(.hotCorners)
-                if isLegacyAppRunning {
+                if isEnabled && isLegacyAppRunning {
                     StatusLine(.problem, "The Hot Corners app is running too, so both fire on the same corner.") {
                         Button("Quit Hot Corners", action: onQuitLegacy)
                     }
                 }
             }
-            Section {
-                HotCornersScreen(
-                    settings: preferences.hotCorners, selected: selected, select: { selected = $0 }
-                )
-                .listRowInsets(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
-            }
-            Section {
-                delayRow
-                ForEach(HotCornerSlot.all, id: \.self) { slot in
-                    actionRow(slot)
+            if isEnabled {
+                Section {
+                    HotCornersScreen(
+                        settings: preferences.hotCorners, selected: selected, select: { selected = $0 }
+                    )
+                    .listRowInsets(EdgeInsets(top: 14, leading: 14, bottom: 14, trailing: 14))
                 }
-            } header: {
-                SettingsSectionHeader("\(selected.title) Corner")
-            } footer: {
-                SettingsFooter(
-                    "Hold ⌘, ⌥, ⌃ or ⇧ as the pointer reaches the corner to run its other action. "
-                        + "Nothing fires while a mouse button is down. Corners between two displays don't count.")
+                Section {
+                    delayRow
+                    ForEach(HotCornerSlot.all, id: \.self) { slot in
+                        actionRow(slot)
+                    }
+                } header: {
+                    SettingsSectionHeader("\(selected.title) Corner")
+                } footer: {
+                    SettingsFooter(
+                        "Hold ⌘, ⌥, ⌃ or ⇧ as the pointer reaches the corner to run its other action. "
+                            + "Nothing fires while a mouse button is down. Corners between two displays don't count.")
+                }
+                glowSection
             }
-            glowSection
         }
         .formStyle(.grouped)
+        // The switch collapses and opens what is under it; with Reduce Motion it just changes.
+        .animation(reduceMotion ? nil : .smooth(duration: 0.3), value: isEnabled)
         .revealsSettingsFields()
+    }
+
+    private var isEnabled: Bool {
+        preferences.hotCorners.enabled
     }
 
     // MARK: Corner glow
@@ -229,8 +239,6 @@ extension HotCornerAction {
         case .openSection(let section): section.title
         case .showMainWindow: "MegaMonitor"
         case .search: "Search…"
-        case .refreshNow: "Refresh Now"
-        case .muteAlerts: "Mute Alerts for 1 Hour"
         case .runShortcut(let name): name.trimmingCharacters(in: .whitespacesAndNewlines)
         case .openApp(let path): HotCornerText.appName(at: path)
         }
@@ -244,8 +252,6 @@ extension HotCornerAction {
         case .openSection(let section): section.systemImage
         case .showMainWindow: "macwindow"
         case .search: "magnifyingglass"
-        case .refreshNow: "arrow.clockwise"
-        case .muteAlerts: "bell.slash"
         case .runShortcut: "square.stack.3d.up.fill"
         case .openApp: "app"
         }

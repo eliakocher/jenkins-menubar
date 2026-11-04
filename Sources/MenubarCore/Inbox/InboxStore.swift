@@ -345,15 +345,34 @@ public final class InboxStore {
         }
     }
 
+    /// Notes that the user saw a digest in the Digest section: that day's entry ("Your digest is ready") is done, so it
+    /// leaves Pending as it does when opened (the user, 2026-11-04: "if i opened the digest before, it should go away from
+    /// the inbox"). An older digest's entry goes the same way when that is the digest shown; today's stays for a newer one.
+    /// Does nothing when the entry is gone or done already.
+    ///
+    /// - Parameter writtenAt: when the digest that shows was written
+    public func digestSeen(writtenAt: Date) {
+        resolveLocal(kind: .digestReady, idPrefix: InboxEvent.digestID(on: writtenAt, calendar: calendar))
+    }
+
     /// Leaves out what was announced, routes the rest, keeps the local entries and the state, and hands the events on.
     private func announce(_ events: [InboxEvent], now: Date) {
-        let (fresh, announcements) = InboxEventDetector.unannounced(events, in: state.announcements, now: now)
+        let (unannounced, announcements) = InboxEventDetector.unannounced(events, in: state.announcements, now: now)
         state.announcements = announcements
+        // One failure, one entry: GitLab's failed pipeline and the failed build of the same merge request are one.
+        let failures = InboxFailureMatching.apply(to: unannounced, entries: state.localEntries)
+        let fresh = failures.events
+        for index in state.localEntries.indices where failures.resolve.contains(state.localEntries[index].event.id) {
+            state.localEntries[index].doneAt = now
+        }
         let mine = myProjects()
-        // Something that goes nowhere but announces itself, like a coffee break set to a panel with the Inbox off, still counts.
+        // Off is nothing: no entry, no pop-up, no banner. A finished build was announced by the build alerts already, so
+        // the Inbox never shows it a second time.
         let routed = fresh.map {
-            RoutedInboxEvent(event: $0, routes: rules.route($0, myProjects: mine), delivery: rules.delivery(for: $0.kind))
-        }.filter { !$0.routes.isEmpty || $0.delivery != .inboxOnly }
+            RoutedInboxEvent(
+                event: $0, routes: rules.route($0, myProjects: mine),
+                delivery: $0.kind.isFinishedBuild ? .inbox : rules.delivery(for: $0.kind))
+        }.filter { rules.delivery(for: $0.event.kind) != .off }
         for item in routed where item.event.source != .todo && item.routes.contains(.inbox) {
             state.localEntries.append(InboxLocalEntry(event: item.event))
         }
@@ -517,7 +536,7 @@ public final class InboxStore {
     /// Marks every pending row done (INBOX-03): GitLab's own "mark all done" for the to-dos. On a failure every row
     /// comes back.
     public func markAllDone() async {
-        // My own to-dos are my list, not notifications: only their checkboxes finish them.
+        // My own to-dos are my list, not notifications: only their own Done finishes them.
         let rows = pending.filter { !$0.isMine }
         guard !rows.isEmpty else {
             return
@@ -803,7 +822,13 @@ public final class InboxStore {
         var snoozed: [InboxEntry] = []
         var done: [InboxEntry] = []
         var nextWake: Date?
+        // GitLab's "pipeline failed" to-dos stay out of the Inbox while that row is Off: hidden here only, never marked done
+        // in GitLab.
+        let hidesPipelineTodos = rules.delivery(for: .pipelineFailed) == .off
         for (id, todo) in todos {
+            if hidesPipelineTodos, todo.action.eventKind == .pipelineFailed {
+                continue
+            }
             switch places[id] {
             case .snoozed(let until) where until > now:
                 snoozed.append(InboxEntry(todo: todo, snoozedUntil: until))

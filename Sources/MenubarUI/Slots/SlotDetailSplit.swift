@@ -142,7 +142,7 @@ struct SlotDetailSplit<ListContent: View, DetailContent: View>: View {
                 .buttonStyle(.plain)
                 // ⌘↩ sends in the Claude composer inside the detail, so the shortcut adds ⌥.
                 .keyboardShortcut(.return, modifiers: [.command, .option])
-                .help("Open in a Tab (⌥⌘↩)")
+                .tip("Open in a Tab (⌥⌘↩)")
                 .accessibilityLabel("Open in a Tab")
             }
         } content: {

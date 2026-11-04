@@ -70,13 +70,13 @@ extension GalleryCatalog {
             GalleryEntry(screen: "readme", state: "rebuild-sheet", size: CGSize(width: RebuildSheet.width, height: 560)) { f in
                 reuse("rebuild-sheet.ready", f).background(Color(nsColor: .windowBackgroundColor))
             },
-            // The Inbox's big panel at 08:59: the coffee break.
-            GalleryEntry(screen: "readme", state: "inbox-panel", size: CGSize(width: 380, height: 330)) { f in
+            // The Inbox's pop-up at 08:59: the coffee break.
+            GalleryEntry(screen: "readme", state: "inbox-panel", size: CGSize(width: 380, height: 297)) { f in
                 reuse("inbox-panel.coffee", f)
             },
-            // The alert of a failed build, one of five pages.
+            // The alert of a failed build.
             GalleryEntry(screen: "readme", state: "alert", size: CGSize(width: 320, height: 459)) { f in
-                reuse("alert.paged-5", f).background(Color(nsColor: .windowBackgroundColor))
+                reuse("alert.failure-mr", f).background(Color(nsColor: .windowBackgroundColor))
             },
         ]
     }

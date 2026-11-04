@@ -319,7 +319,7 @@ struct WelcomeContent: View {
         }
     }
 
-    /// A switch row with its time beside it while it is on: "Daily digest … [09:00] (switch)".
+    /// A switch row with its time beside it while it is on: "Daily digest … [08:00] (switch)".
     private func timedSwitch(_ title: String, _ caption: String, isOn: Binding<Bool>, minutes time: Binding<Int>) -> some View {
         HStack(spacing: 10) {
             SettingsRowLabel(title, caption)

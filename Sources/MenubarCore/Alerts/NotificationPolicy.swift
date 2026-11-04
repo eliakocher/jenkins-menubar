@@ -1,107 +1,50 @@
 import Foundation
 
-/// Which builds may alert: a switch for My Builds, one for Watching, and a setting per job that beats both (ALERT-09).
+/// The settings of single jobs that beat the table of Settings → Notifications (ALERT-09): a job that is always treated
+/// like one of my builds, and a job that never notifies at all.
 ///
-/// It only mutes the glass alert and the banners. The list, the status icon's counts and the pane never look at it.
-/// The global preferences stay where they were: the announcer still skips a stage banner while Stage Alerts is off, so
-/// "Always Notify" never turns on what Settings turned off.
+/// Which builds alert, and how, is the table's four build rows (``InboxNotificationRules/delivery(for:)``); this is only
+/// the exception per job. "Never" means nothing at all: no pop-up, no banner, no sound and no Inbox entry. The list, the
+/// status icon's counts and the pane never look at it.
 ///
 /// A job is keyed like ``BuildID/jobKey``, the project and the job's name, so a setting holds for every build the job
 /// gets from now on, not for one build number. Hiding a build until the next one (HIDE-01) doesn't change an alert
 /// either, since alerts go on while a build is hidden.
 public struct NotificationPolicy: Codable, Hashable, Sendable {
-    /// What a job's setting says; a job without one follows its group.
+    /// What a job's setting says; a job without one follows the table.
     public enum JobSetting: String, Codable, CaseIterable, Sendable {
+        /// treated like one of my builds, whoever's it is
         case always
+        /// nothing at all
         case never
     }
 
-    /// The two groups of followed builds.
-    public enum Group: String, Codable, CaseIterable, Sendable {
-        case mine
-        case watching
-
-        /// Returns the group of a build.
-        ///
-        /// - Parameter build: the build
-        /// - Returns: My Builds for a build of mine, Watching for a watched one
-        public init(_ build: Build) {
-            self = build.kind == .mine ? .mine : .watching
-        }
-    }
-
-    /// whether the builds of my jobs alert
-    public var mine: Bool
-    /// whether the builds of the watched jobs alert
-    public var watching: Bool
     /// the jobs with a setting of their own, by job key
     public var jobs: [String: JobSetting]
 
-    public init(mine: Bool = true, watching: Bool = true, jobs: [String: JobSetting] = [:]) {
-        self.mine = mine
-        self.watching = watching
+    public init(jobs: [String: JobSetting] = [:]) {
         self.jobs = jobs
     }
 
-    // A value stored before a field existed decodes with that field's default, and a setting that isn't one of the
-    // cases is dropped.
+    // A value stored before the single table (Task 7.14) also holds `mine` and `watching`: they are read by
+    // ``NotificationMigration`` and otherwise ignored. A setting that isn't one of the cases is dropped.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        mine = try container.decodeIfPresent(Bool.self, forKey: .mine) ?? true
-        watching = try container.decodeIfPresent(Bool.self, forKey: .watching) ?? true
         let raw = try container.decodeIfPresent([String: String].self, forKey: .jobs) ?? [:]
         jobs = raw.compactMapValues(JobSetting.init(rawValue:))
     }
 
-    /// Returns whether a group's builds alert.
-    ///
-    /// - Parameter group: the group
-    /// - Returns: the group's switch
-    public func isOn(_ group: Group) -> Bool {
-        switch group {
-        case .mine: mine
-        case .watching: watching
-        }
-    }
-
-    /// Returns whether a build's alerts show: the job's setting, or else its group's switch.
+    /// Returns whether a build's alerts may show at all: `false` for a job set to never.
     ///
     /// - Parameter build: the build
-    /// - Returns: `false` when the glass alert and the banners stay quiet for it
     public func shouldNotify(_ build: Build) -> Bool {
-        shouldNotify(job: build.jobKey, in: Group(build))
-    }
-
-    /// Returns whether a job's alerts show: the job's setting, or else its group's switch.
-    ///
-    /// - Parameters:
-    ///   - job: the job key
-    ///   - group: the job's group
-    /// - Returns: `false` when the alerts stay quiet for it
-    public func shouldNotify(job: String, in group: Group) -> Bool {
-        switch jobs[job] {
-        case .always?: true
-        case .never?: false
-        case nil: isOn(group)
-        }
-    }
-
-    /// Sets a group's switch.
-    ///
-    /// - Parameters:
-    ///   - group: the group
-    ///   - isOn: whether its builds alert
-    public mutating func set(_ group: Group, isOn: Bool) {
-        switch group {
-        case .mine: mine = isOn
-        case .watching: watching = isOn
-        }
+        jobs[build.jobKey] != .never
     }
 
     /// Sets a job's setting.
     ///
     /// - Parameters:
-    ///   - setting: the setting; `nil` makes the job follow its group again
+    ///   - setting: the setting; `nil` makes the job follow the table again
     ///   - job: the job key
     public mutating func set(_ setting: JobSetting?, forJob job: String) {
         jobs[job] = setting
@@ -116,6 +59,6 @@ public struct NotificationPolicy: Codable, Hashable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case mine, watching, jobs
+        case jobs
     }
 }

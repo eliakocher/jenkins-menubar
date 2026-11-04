@@ -130,7 +130,7 @@ struct BuildDetailModel: Hashable, Sendable {
             jobURL = data.jobURL
         case .waiting(let watched)?:
             self.init(waiting: watched, jobURL: data.jobURL)
-            notifications = JobNotifications(data.panel.jenkins.notifications, job: watched.job, group: .watching)
+            notifications = JobNotifications(data.panel.jenkins.notifications, job: watched.job)
         case nil:
             return nil
         }

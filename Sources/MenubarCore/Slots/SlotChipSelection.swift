@@ -89,8 +89,34 @@ public struct SlotChipSelection: Hashable, Sendable {
     ///   - team: the team values
     ///   - me: my GitLab username; `nil` when unknown, and then Me matches nothing
     public func matches(_ item: WorkItem, team: TeamValues, me: String?) -> Bool {
-        let fields = Dictionary(grouping: chips, by: \.field)
-        return fields.allSatisfy { _, group in group.contains { $0.matches(item, team: team, me: me) } }
+        let teams = SlotTeams(team.slotTeams)
+        return Self.matches(item, groups: groups, team: team, teams: teams, me: me)
+    }
+
+    /// Returns the work items that show: ``matches(_:team:me:)`` for each, with the team value read once and the chips
+    /// grouped once, not per item.
+    ///
+    /// - Parameters:
+    ///   - items: the work items
+    ///   - team: the team values
+    ///   - me: my GitLab username; `nil` when unknown
+    /// - Returns: the items that show, in their order
+    public func filter(_ items: [WorkItem], team: TeamValues, me: String?) -> [WorkItem] {
+        guard !chips.isEmpty else { return items }
+        let teams = SlotTeams(team.slotTeams)
+        let grouped = groups
+        return items.filter { Self.matches($0, groups: grouped, team: team, teams: teams, me: me) }
+    }
+
+    /// the chips on, grouped by their field
+    private var groups: [[SlotChip]] {
+        Array(Dictionary(grouping: chips, by: \.field).values)
+    }
+
+    private static func matches(
+        _ item: WorkItem, groups: [[SlotChip]], team: TeamValues, teams: SlotTeams?, me: String?
+    ) -> Bool {
+        groups.allSatisfy { group in group.contains { $0.matches(item, team: team, teams: teams, me: me) } }
     }
 
     /// Returns what a slot can take under the selection (SLOT-08, SLOT-13). With member chips (Me, teams, squads), the

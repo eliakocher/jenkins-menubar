@@ -45,10 +45,8 @@ public struct PanelActions {
     /// opens GitLab's new issue page for a New Work Item entry point (NEW-01); `nil` where the surface has none or the
     /// team values can't make a link, so the menus don't offer it
     public var newWorkItem: (@MainActor (NewWorkItemSource) -> Void)?
-    /// sets a job's notifications by its job key: always, never, or `nil` for its group's switch (ALERT-09)
+    /// sets a job's notifications by its job key: always, never, or `nil` for the table of Settings → Notifications (ALERT-09)
     public var setJobNotifications: @MainActor (String, NotificationPolicy.JobSetting?) -> Void
-    /// switches the notifications of My Builds or Watching on or off (ALERT-09)
-    public var setGroupNotifications: @MainActor (NotificationPolicy.Group, Bool) -> Void
 
     public init(
         open: @escaping @MainActor (URL) -> Void, openSettings: @escaping @MainActor (SettingsPane) -> Void,
@@ -65,11 +63,9 @@ public struct PanelActions {
         openSection: @escaping @MainActor (MainWindowSection) -> Void = { _ in },
         newWorkItem: (@MainActor (NewWorkItemSource) -> Void)? = nil,
         followLink: (@MainActor (URL) -> Void)? = nil,
-        setJobNotifications: @escaping @MainActor (String, NotificationPolicy.JobSetting?) -> Void = { _, _ in },
-        setGroupNotifications: @escaping @MainActor (NotificationPolicy.Group, Bool) -> Void = { _, _ in }
+        setJobNotifications: @escaping @MainActor (String, NotificationPolicy.JobSetting?) -> Void = { _, _ in }
     ) {
         self.setJobNotifications = setJobNotifications
-        self.setGroupNotifications = setGroupNotifications
         self.followLink = followLink
         self.open = open
         self.openSettings = openSettings

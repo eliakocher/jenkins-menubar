@@ -28,8 +28,14 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
     case claudeAnswered
     /// the morning digest is written: a local entry that opens the Digest
     case digestReady
-    /// one of my builds failed or went unstable: a local entry, as history of the alert (the alert panel still shows)
+    /// one of my builds failed or went unstable: a local entry, as history of the alert (the pop-up or banner still shows)
     case buildFailed
+    /// one of my builds succeeded: a local entry, when its row in Settings → Notifications isn't Off
+    case buildSucceeded
+    /// a build I only watch failed or went unstable: a local entry
+    case watchedBuildFailed
+    /// a build I only watch succeeded: a local entry
+    case watchedBuildSucceeded
     /// the daily coffee break, at 08:59 by default: a local entry with a line Claude's Haiku wrote
     case coffeeBreak
     /// the app was updated: a local entry that opens "What's New" with the changelog since the last version seen
@@ -38,13 +44,13 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
     /// and never announced
     case myTodo
 
-    /// The routes before the user changes them: every kind is in the Inbox and counts in the badge. There are no
-    /// macOS banners (the user, 2026-11-03: "i don't want to use the native notification center").
+    /// The routes before the user changes them: every kind is in the Inbox, and counts in the Red Dot unless it is a
+    /// successful build.
     public var defaultRoutes: InboxRoutes {
-        [.inbox, .badge]
+        countsInRedDotByDefault ? [.inbox, .badge] : [.inbox]
     }
 
-    /// Whether an entry of this kind can be snoozed anywhere: the Inbox's rows, the big panel, a banner's buttons. The coffee
+    /// Whether an entry of this kind can be snoozed anywhere: the Inbox's rows, the pop-up, a banner's buttons. The coffee
     /// break can't (the user, 2026-11-03: "coffee is mandatory"); it can be marked done or dismissed.
     public var canSnooze: Bool {
         self != .coffeeBreak
@@ -57,7 +63,7 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
         case .reviewRequested: .reviewRequests
         case .assigned: .assigned
         case .claudeAnswered, .digestReady: .claude
-        case .buildFailed, .pipelineFailed: .builds
+        case .buildFailed, .buildSucceeded, .watchedBuildFailed, .watchedBuildSucceeded, .pipelineFailed: .builds
         case .coffeeBreak: .coffee
         case .whatsNew: .whatsNew
         case .myTodo: .myToDos
@@ -84,11 +90,14 @@ public enum InboxEventKind: String, Codable, Hashable, Sendable, CaseIterable {
         case .changesRequested: "Changes Requested on My MR"
         case .reviewed: "My MR Reviewed"
         case .merged: "My MR Merged"
-        case .pipelineFailed: "My MR's Pipeline Failed"
+        case .pipelineFailed: "My MR's GitLab Pipeline Failed"
         case .otherTodo: "Other To-Dos"
         case .claudeAnswered: "Claude's Answers"
         case .digestReady: "Morning Digest"
-        case .buildFailed: "Failed Builds"
+        case .buildFailed: "My Jenkins Build Failed or Unstable"
+        case .buildSucceeded: "My Jenkins Build Succeeded"
+        case .watchedBuildFailed: "Watched Jenkins Build Failed or Unstable"
+        case .watchedBuildSucceeded: "Watched Jenkins Build Succeeded"
         case .coffeeBreak: "Coffee Break"
         case .whatsNew: "What's New"
         case .myTodo: "My To-Dos"
@@ -123,12 +132,19 @@ public struct InboxEvent: Codable, Hashable, Sendable, Identifiable {
     public var headlineText: String?
     /// a short line under the title: the first line of Claude's answer; `nil` for none
     public var excerpt: String?
+    /// for a finished build, its GitLab page: the merge request or the branch it builds, which ``InboxFailureMatching``
+    /// uses to tell that a failed build and GitLab's "pipeline failed" are one failure; `nil` for anything else
+    public var relatedURL: URL?
+    /// for a failed pipeline, the merge request's source branch, which names a branch job's build; `nil` when not known
+    public var sourceBranch: String?
 
     public init(
         id: String, kind: InboxEventKind, source: Source, todoID: String? = nil, title: String, reference: String? = nil,
         targetURL: URL? = nil, projectPath: String? = nil, actor: MergeRequest.Person? = nil, occurredAt: Date,
-        headlineText: String? = nil, excerpt: String? = nil
+        headlineText: String? = nil, excerpt: String? = nil, relatedURL: URL? = nil, sourceBranch: String? = nil
     ) {
+        self.relatedURL = relatedURL
+        self.sourceBranch = sourceBranch
         self.id = id
         self.kind = kind
         self.source = source
@@ -171,7 +187,8 @@ public struct InboxEvent: Codable, Hashable, Sendable, Identifiable {
         case .otherTodo: return "New to-do on \(what)"
         case .claudeAnswered: return "Claude answered"
         case .digestReady: return "Your digest is ready"
-        case .buildFailed: return "\(shortReference ?? "A build") failed"
+        case .buildFailed, .watchedBuildFailed: return "\(shortReference ?? "A build") failed"
+        case .buildSucceeded, .watchedBuildSucceeded: return "\(shortReference ?? "A build") succeeded"
         case .coffeeBreak: return "Time for a break"
         case .whatsNew: return "The app was updated"
         case .myTodo: return "To-do"
@@ -187,8 +204,9 @@ public struct InboxEvent: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// Where an event goes: an entry in the Inbox, a count in the badge (INBOX-06). Bit 1 was the macOS banner, which the
-/// app no longer has; a value saved with it reads as without.
+/// Where an event goes: an entry in the Inbox, a count in the Red Dot (INBOX-06). Bit 1 was the macOS banner, which the
+/// routes no longer carry: how an event announces itself is its ``InboxDelivery``. The Inbox bit follows it: every
+/// choice but Off is an entry.
 public struct InboxRoutes: OptionSet, Codable, Hashable, Sendable {
     public let rawValue: Int
 
@@ -197,9 +215,9 @@ public struct InboxRoutes: OptionSet, Codable, Hashable, Sendable {
     }
 
     /// an entry in the Inbox; GitLab's to-dos are always there, so this matters for the local entries: the changes seen
-    /// in the lists, Claude's answers, the digest
+    /// in the lists, Claude's answers, the digest, the finished builds
     public static let inbox = InboxRoutes(rawValue: 2)
-    /// a count in the Inbox badge
+    /// a count in the Red Dot: the Inbox badge and the menu bar's dot
     public static let badge = InboxRoutes(rawValue: 4)
 }
 
@@ -210,7 +228,7 @@ public struct RoutedInboxEvent: Hashable, Sendable, Identifiable {
     /// how it announces itself beyond the Inbox: the user's choice for its kind (``InboxDelivery``)
     public var delivery: InboxDelivery
 
-    public init(event: InboxEvent, routes: InboxRoutes, delivery: InboxDelivery = .inboxOnly) {
+    public init(event: InboxEvent, routes: InboxRoutes, delivery: InboxDelivery = .inbox) {
         self.event = event
         self.routes = routes
         self.delivery = delivery
@@ -222,8 +240,9 @@ public struct RoutedInboxEvent: Hashable, Sendable, Identifiable {
 /// The routing of the Inbox's events: per kind, and only my projects (INBOX-06). A pure rule,
 /// kept in ``Preferences/inboxNotifications`` for Settings → Notifications to edit.
 public struct InboxNotificationRules: Codable, Hashable, Sendable {
-    /// the routes the user changed, by ``InboxEventKind`` raw value; the others keep their defaults, and a kind the
-    /// app no longer knows is ignored
+    /// the Red Dot choices the user changed, by ``InboxEventKind`` raw value: with ``InboxRoutes/badge`` the kind counts,
+    /// without it doesn't; the others keep their defaults, and a kind the app no longer knows is ignored. The Inbox bit
+    /// of a value saved before the single choice (Task 7.14) is read by ``NotificationMigration`` only.
     public var overrides: [String: InboxRoutes]
     /// whether only the items of my projects (Settings → Projects) count in the badge
     public var onlyMyProjects: Bool
@@ -231,8 +250,8 @@ public struct InboxNotificationRules: Codable, Hashable, Sendable {
     public var coffeeBreak: Bool
     /// when the coffee break comes, in minutes after midnight, local time
     public var coffeeMinutes: Int
-    /// how each kind announces itself, by ``InboxEventKind`` raw value: the ones the user changed from
-    /// ``InboxDelivery/inboxOnly``; a kind or a value the app no longer knows is ignored (Task 7.03)
+    /// what each kind does, by ``InboxEventKind`` raw value: the ones the user changed from the kind's default
+    /// (``InboxEventKind/defaultDelivery``); a kind or a value the app no longer knows is ignored
     public var deliveries: [String: InboxDelivery]
     /// the Inbox's groups in the user's order, by ``InboxGroup`` raw value; empty is the default order
     /// (``InboxGroupOrder``)
@@ -267,30 +286,35 @@ public struct InboxNotificationRules: Codable, Hashable, Sendable {
             onlyMyProjects: (try? container.decodeIfPresent(Bool.self, forKey: .onlyMyProjects)) ?? false,
             coffeeBreak: (try? container.decodeIfPresent(Bool.self, forKey: .coffeeBreak)) ?? true,
             coffeeMinutes: min(max((try? container.decodeIfPresent(Int.self, forKey: .coffeeMinutes)) ?? Self.defaultCoffeeMinutes, 0), 1439),
-            // A delivery this app doesn't know reads as the default, not as a file that can't be read.
+            // A delivery this app doesn't know reads as the default, not as a file that can't be read; one equal to its
+            // kind's default isn't an override.
             deliveries: ((try? container.decodeIfPresent([String: String].self, forKey: .deliveries)) ?? [:])
-                .compactMapValues(InboxDelivery.init(rawValue:)).filter { $0.value != .inboxOnly }
-                // The failed build's pop-up is the build alert style now (Task 7.13): a choice saved here is dropped, so
-                // the alert style, which the user already had, wins and the build never shows twice.
-                .filter { $0.key != InboxEventKind.buildFailed.rawValue },
+                .compactMapValues(InboxDelivery.init(rawValue:))
+                .filter { entry in InboxEventKind(rawValue: entry.key).map { $0.defaultDelivery != entry.value } ?? false },
             groupOrderNames: (try? container.decodeIfPresent([String].self, forKey: .groupOrderNames)) ?? [])
     }
 
-    /// Returns the routes of a kind, as the user set them or the default.
+    /// Returns the routes of a kind: the Inbox when it isn't Off, the Red Dot as the user set it or the default.
     ///
     /// - Parameter kind: the kind
-    /// - Returns: the routes, before quiet hours and the projects filter
+    /// - Returns: the routes, before the projects filter
     public func routes(for kind: InboxEventKind) -> InboxRoutes {
-        overrides[kind.rawValue].map { $0.intersection([.inbox, .badge]) } ?? kind.defaultRoutes
+        var routes: InboxRoutes = delivery(for: kind) == .off ? [] : [.inbox]
+        if overrides[kind.rawValue].map({ $0.contains(.badge) }) ?? kind.countsInRedDotByDefault {
+            routes.insert(.badge)
+        }
+        return routes
     }
 
-    /// Sets the routes of a kind; the default removes the override.
+    /// Sets the Red Dot of a kind; the default removes the override. The Inbox bit is the delivery's, see
+    /// the delivery, so it is ignored here.
     ///
     /// - Parameters:
-    ///   - routes: the routes
+    ///   - routes: the routes; only ``InboxRoutes/badge`` counts
     ///   - kind: the kind
-    public mutating func set(_ routes: InboxRoutes, for kind: InboxEventKind) {
-        overrides[kind.rawValue] = routes == kind.defaultRoutes ? nil : routes
+    public mutating func setRoutes(_ routes: InboxRoutes, for kind: InboxEventKind) {
+        let counts = routes.contains(.badge)
+        overrides[kind.rawValue] = counts == kind.countsInRedDotByDefault ? nil : (counts ? [.badge] : [])
     }
 
     /// Returns where an event goes.

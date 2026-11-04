@@ -46,11 +46,49 @@ struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Fo
     @ViewBuilder var footer: Footer
     /// the right column when wide, under the rest when narrow; nothing by default
     @ViewBuilder var aside: Aside
+    /// a chip on the title's line, right after it; it goes under the title when the line is too narrow for both, and never
+    /// shortens the title. Set it with ``titleAccessory(_:)``.
+    var accessoryAfterTitle: AnyView?
+
+    /// Returns the header with a view, such as a chip, after its title on the same line.
+    ///
+    /// - Parameter accessory: the view; `nil` leaves the title alone
+    func titleAccessory(_ accessory: AnyView?) -> Self {
+        var copy = self
+        copy.accessoryAfterTitle = accessory
+        return copy
+    }
 
     var body: some View {
         DetailHeaderColumns {
             main
             aside
+        }
+    }
+
+    private var titleText: some View {
+        Text(verbatim: title)
+            .font(.title2.weight(.semibold))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+            .help(titleHelp ?? "")
+    }
+
+    /// The title, with its accessory after it on the same baseline when both fit, else under it.
+    @ViewBuilder private var titleLine: some View {
+        if let accessoryAfterTitle {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    titleText
+                    accessoryAfterTitle
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    titleText
+                    accessoryAfterTitle
+                }
+            }
+        } else {
+            titleText
         }
     }
 
@@ -64,11 +102,7 @@ struct DetailHeader<Badges: View, MenuItems: View, Byline: View, Chips: View, Fo
                     DetailMoreMenu { menu }
                 }
             }
-            Text(verbatim: title)
-                .font(.title2.weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-                .help(titleHelp ?? "")
+            titleLine
             byline
             PillFlowLayout(spacing: 6, lineSpacing: 6) {
                 chips

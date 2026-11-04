@@ -13,8 +13,6 @@ struct PreferencesStoreTests {
             .hideSuccessfulAfter: "5",
             .hideFailedAfter: "0",
             .hidesMergedBuilds: "off",
-            .alertStyle: "dialog",
-            .stageAlerts: 3,
             .iconStyle: "emoji",
             .gitLabMaxAgeSeconds: "30",
             .workItemsScope: "everyone",
@@ -55,7 +53,7 @@ struct PreferencesStoreTests {
         let store = PreferencesStore(defaults: suite.defaults)
         let changed = Preferences(
             checkIntervalSeconds: 300, hideSuccessfulAfter: .immediately, hideFailedAfter: .never, hidesMergedBuilds: false,
-            alertStyle: .banner, stageAlerts: false, iconStyle: .color, gitLabMaxAgeSeconds: 120,
+            iconStyle: .color, gitLabMaxAgeSeconds: 120,
             workItems: WorkItemFilters(
                 scope: .authored, type: .epic, state: .all, sort: .dueDate, limit: 100,
                 withLabels: ["status::InProgress", "evil::$(touch pwned)"], withoutLabels: ["a|b"], labelsMatch: .any),
@@ -79,10 +77,10 @@ struct PreferencesStoreTests {
         let fresh = TemporaryDefaults()
         let freshStore = PreferencesStore(defaults: fresh.defaults)
         var preferences = freshStore.load()
-        preferences.alertStyle = .banner
-        #expect(freshStore.save(preferences) == [PreferencesStore.Change(key: .alertStyle, old: "window", new: "banner")])
+        preferences.iconStyle = .color
+        #expect(freshStore.save(preferences) == [PreferencesStore.Change(key: .iconStyle, old: "monochrome", new: "color")])
         #expect(fresh.defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("workItems") }.isEmpty)
-        #expect(fresh.defaults.string(forKey: "alertStyle") == "banner")
+        #expect(fresh.defaults.string(forKey: "iconStyle") == "color")
     }
 
     @Test("SET-01 a preferences value encoded before showInMenuBar and fillInCopiedLink decodes with their defaults")

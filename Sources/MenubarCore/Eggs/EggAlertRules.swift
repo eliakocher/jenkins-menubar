@@ -7,7 +7,7 @@ extension EggRules {
     /// - A finished build's alert gets at most one line, from the first rule that matches, in this order: the build's
     ///   number, the job's history, the build's facts, Jinx, the clock, the calendar. The line is the last line of the
     ///   banner's body too.
-    /// - A stage banner and a preview stay as they are, and so does everything with the eggs off; the memory is kept up
+    /// - A preview stays as it is, and so does everything with the eggs off; the memory is kept up
     ///   either way, so switching them on finds the streaks as they are.
     /// - The hat of a happy alert is the party hat during a green streak; of every alert, the Santa hat all of December.
     ///

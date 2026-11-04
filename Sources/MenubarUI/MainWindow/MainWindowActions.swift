@@ -47,8 +47,7 @@ extension PanelActions {
             },
             newWorkItem: NewWorkItemLauncher.action(model: model) { router.browse($0, fallback: openURL) },
             followLink: { router.follow($0, model: model, fallback: openURL) },
-            setJobNotifications: { model.setNotifications($1, forJob: $0) },
-            setGroupNotifications: { model.setNotifications(for: $0, isOn: $1) })
+            setJobNotifications: { model.setNotifications($1, forJob: $0) })
     }
 }
 

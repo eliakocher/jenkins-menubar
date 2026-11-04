@@ -76,19 +76,27 @@ struct UpdateStoreTests {
         let folder = try TemporaryFolder()
         let checkout = try writeCheckout(in: folder)
         let log = ActivityLog(folder: folder.file("Logs"))
+        let installedPath = folder.file("installed/MegaMonitor.app").path(percentEncoded: false)
         let runner = ScriptedBuild(lines: [
             "Building for production...", "[2 / 8] MenubarCore", "Build complete! (20.12 sec)", "/somewhere/.build/release",
-            "installed /Users/someone/Applications/MegaMonitor.app (release)",
+            "installed \(installedPath) (release)",
         ])
-        let store = UpdateStore(stamp: try stamp(of: checkout), runner: runner, log: log, home: folder.file("home"))
+        let defaults = TemporaryDefaults()
+        let running = try stamp(of: checkout)
+        let store = UpdateStore(stamp: running, runner: runner, log: log, home: folder.file("home"), defaults: defaults.defaults)
         #expect(await store.rebuild() == nil, "nothing to rebuild while the checkout is unchanged")
         try folder.write("// changed", to: "checkout/Sources/MenubarCore/A.swift")
         await store.check()
+        let newHash = try SourceHash.compute(root: checkout)
+        try writeInstalledApp(in: folder, at: "installed/MegaMonitor.app", hash: newHash)
 
         let app = await store.rebuild()
 
-        let installed = URL(filePath: "/Users/someone/Applications/MegaMonitor.app", directoryHint: .isDirectory)
+        // Rebuilder returns a directory URL, whose path ends in a slash: the log line and the handover name the plain
+        // path all the same.
+        let installed = URL(filePath: installedPath, directoryHint: .isDirectory)
         #expect(app == installed)
+        #expect(app?.path(percentEncoded: false).hasSuffix("/") == true)
         #expect(store.state == .installed(installed))
         #expect(!store.offersRebuild)
         await store.check()
@@ -96,8 +104,122 @@ struct UpdateStoreTests {
         let messages = await log.entries().map(\.message)
         #expect(messages.suffix(2) == [
             "Rebuilding the app from \(checkout.path(percentEncoded: false))",
-            "Installed the update: /Users/someone/Applications/MegaMonitor.app",
+            "Installed the update: \(installedPath), 1.0.7 (8), source hash \(newHash.prefix(12))",
         ])
+        let handover = try #require(UpdateHandover.take(from: defaults.defaults, now: Date()))
+        #expect(handover.expectedHash == newHash)
+        #expect(handover.previousHash == running.sourceHash)
+        #expect(handover.installedApp == installedPath)
+    }
+
+    @Test(
+        "APP-05 a rebuild that installed nothing new never relaunches",
+        arguments: [("unchanged", "is still this build"), ("missing", "there is no complete app")])
+    func installedNothingNew(kind: String, reason: String) async throws {
+        let folder = try TemporaryFolder()
+        let checkout = try writeCheckout(in: folder)
+        let installedPath = folder.file("installed/MegaMonitor.app").path(percentEncoded: false)
+        let running = try stamp(of: checkout)
+        if kind == "unchanged" {
+            try writeInstalledApp(in: folder, at: "installed/MegaMonitor.app", hash: running.sourceHash)
+        }
+        let store = UpdateStore(
+            stamp: running, runner: ScriptedBuild(lines: ["installed \(installedPath) (release)"]),
+            log: ActivityLog(folder: folder.file("Logs")), home: folder.file("home"))
+        try folder.write("// changed", to: "checkout/Sources/MenubarCore/A.swift")
+        await store.check()
+
+        #expect(await store.rebuild() == nil)
+        guard case .failed(let message) = store.state else {
+            Issue.record("expected a failure, got \(store.state)")
+            return
+        }
+        #expect(message.contains(reason))
+        #expect(store.offersRebuild)
+    }
+
+    @Test("APP-05 the start after an update logs whether it took, and offers the update again when it didn't")
+    func startAfterUpdate() async throws {
+        let folder = try TemporaryFolder()
+        let checkout = try writeCheckout(in: folder)
+        let old = try stamp(of: checkout)
+        try folder.write("// changed", to: "checkout/Sources/MenubarCore/A.swift")
+        let new = try stamp(of: checkout)
+        let defaults = TemporaryDefaults()
+        let installed = "/Users/someone/Applications/MegaMonitor.app"
+        let info = { (stamp: BuildStamp, version: String) -> [String: Any] in
+            [
+                "CFBundleShortVersionString": version, "CFBundleVersion": "8",
+                AppIdentity.sourceRootKey: stamp.sourceRoot.path(percentEncoded: false), AppIdentity.sourceHashKey: stamp.sourceHash,
+            ]
+        }
+        let handover = UpdateHandover(
+            installedApp: installed, expectedHash: new.sourceHash, previousHash: old.sourceHash,
+            previousVersion: "1.0.6 (7)", installedAt: Date())
+
+        // The new build started: it says so, and nothing is offered.
+        handover.save(to: defaults.defaults)
+        let log = ActivityLog(folder: folder.file("Logs"))
+        let updated = UpdateStore(stamp: new, runner: ScriptedBuild(), log: log, defaults: defaults.defaults)
+        await updated.launched(bundle: URL(filePath: installed, directoryHint: .isDirectory), info: info(new, "1.0.7"))
+        await updated.check()
+        #expect(updated.state == .upToDate)
+        #expect(await log.entries().map(\.message).last == "Updated from 1.0.6 (7) to 1.0.7 (8)")
+
+        // An old copy at another path started instead: the failure names both paths and the rebuild is offered.
+        handover.save(to: defaults.defaults)
+        let oldLog = ActivityLog(folder: folder.file("OldLogs"))
+        let stillOld = UpdateStore(stamp: old, runner: ScriptedBuild(), log: oldLog, defaults: defaults.defaults)
+        await stillOld.launched(bundle: URL(filePath: "/Applications/MegaMonitor.app", directoryHint: .isDirectory), info: info(old, "1.0.6"))
+        guard case .failed(let reason) = stillOld.state else {
+            Issue.record("expected a failure, got \(stillOld.state)")
+            return
+        }
+        #expect(reason.contains("/Applications/MegaMonitor.app") && reason.contains(installed))
+        #expect(stillOld.offersRebuild)
+        await stillOld.check()
+        #expect(stillOld.state == .failed(reason: reason), "the failure stays while the checkout is unchanged")
+        let entries = await oldLog.entries()
+        #expect(entries.first?.message.hasPrefix("Started 1.0.6 (8) from /Applications/MegaMonitor.app") == true)
+        #expect(entries.last?.level == .warning)
+    }
+
+    @Test("APP-05 a check asked for while one runs runs again after it")
+    func checkDuringCheck() async throws {
+        let stamp = BuildStamp(sourceRoot: URL(filePath: "/checkout"), sourceHash: "built")
+        let hashes = HashScript(["built", "pulled"])
+        let store = UpdateStore(
+            stamp: stamp, runner: ScriptedBuild(), log: nil, home: URL(filePath: "/home"), defaults: nil, settle: .zero,
+            now: { Date() }, hasher: { _ in await hashes.next() })
+
+        let first = Task { await store.check() }
+        await hashes.waitForCall(1)
+        await store.check()
+        await hashes.release()
+        await first.value
+
+        #expect(await hashes.calls == 2)
+        #expect(store.state == .updateReady)
+    }
+
+    @Test("APP-05 the checkout's changes start one check once they settle")
+    func settlesBeforeChecking() async throws {
+        let stamp = BuildStamp(sourceRoot: URL(filePath: "/checkout"), sourceHash: "built")
+        let hashes = HashScript(["pulled"], gated: false)
+        let store = UpdateStore(
+            stamp: stamp, runner: ScriptedBuild(), log: nil, home: URL(filePath: "/home"), defaults: nil,
+            settle: .milliseconds(100), now: { Date() }, hasher: { _ in await hashes.next() })
+
+        for _ in 0..<5 {
+            store.checkoutDidChange()
+        }
+        for _ in 0..<100 where store.state != .updateReady {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(store.state == .updateReady)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await hashes.calls == 1)
     }
 
     @Test("APP-05 the rebuild's progress follows SwiftPM's counts")
@@ -149,6 +271,55 @@ struct UpdateStoreTests {
         try folder.write("// a", to: "checkout/Sources/MenubarCore/A.swift")
         try folder.write("png", to: "checkout/icons/menubar.png")
         return folder.file("checkout")
+    }
+
+    /// Writes a bundle like the one `build.sh --install` leaves: Info.plist with version and stamp, and an executable.
+    private func writeInstalledApp(in folder: TemporaryFolder, at path: String, hash: String) throws {
+        let info: [String: Any] = [
+            "CFBundleExecutable": "MegaMonitor", "CFBundleShortVersionString": "1.0.7", "CFBundleVersion": "8",
+            AppIdentity.sourceRootKey: "/checkout", AppIdentity.sourceHashKey: hash,
+        ]
+        let plist = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try folder.write(String(decoding: plist, as: UTF8.self), to: "\(path)/Contents/Info.plist")
+        let executable = try folder.write("#!/bin/sh", to: "\(path)/Contents/MacOS/MegaMonitor")
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path(percentEncoded: false))
+    }
+
+    /// Answers the store's hashes in order, the last one again once they run out; while gated, each answer waits for
+    /// ``release()``.
+    private actor HashScript {
+        private var hashes: [String]
+        private var gated: Bool
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+        private(set) var calls = 0
+
+        init(_ hashes: [String], gated: Bool = true) {
+            self.hashes = hashes
+            self.gated = gated
+        }
+
+        func next() async -> String? {
+            calls += 1
+            if gated {
+                await withCheckedContinuation { waiting.append($0) }
+            }
+            if hashes.count > 1 {
+                return hashes.removeFirst()
+            }
+            return hashes.first
+        }
+
+        func waitForCall(_ count: Int) async {
+            while calls < count {
+                await Task.yield()
+            }
+        }
+
+        func release() {
+            gated = false
+            waiting.forEach { $0.resume() }
+            waiting = []
+        }
     }
 
     private func stamp(of checkout: URL) throws -> BuildStamp {

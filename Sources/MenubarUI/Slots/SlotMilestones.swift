@@ -168,7 +168,7 @@ struct SlotMilestoneRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: Alignment(horizontal: alignment, vertical: .top))
                 .contentShape(Rectangle())
-                .help(SlotMilestones.help(of: step))
+                .tip(SlotMilestones.help(of: step))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(SlotMilestones.help(of: step).replacingOccurrences(of: "\n", with: ". "))
             }
@@ -225,7 +225,7 @@ struct SlotMilestoneRow: View {
                 .background(Color.accentColor, in: Capsule())
                 .offset(x: start, y: -Self.reserve)
         }
-        .help("Today · \(today.spoken.dropFirst("Today, ".count))")
+        .tip("Today · \(today.spoken.dropFirst("Today, ".count))")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(today.spoken)
     }

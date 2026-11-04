@@ -5,22 +5,25 @@ import Testing
 
 @Suite("NotificationNotice")
 struct NotificationNoticeTests {
-    /// The permission, the alert style and the stage banners, and the kind of row Settings → General shows: nil for none.
-    private static let cases: [(NotificationPermission?, Preferences.AlertStyle, Bool, StatusKind?)] = [
-        (.off, .banner, true, .problem),
-        (.notAsked, .window, true, .note),
-        // Banners not in use, allowed, or not known yet: no row.
-        (.off, .window, false, nil),
-        (.allowed, .banner, true, nil),
-        (nil, .banner, true, nil),
+    /// The permission, whether any row is a Banner, and the kind of row Settings → Notifications shows: nil for none.
+    private static let cases: [(NotificationPermission?, Bool, StatusKind?)] = [
+        (.off, true, .problem),
+        (.notAsked, true, .note),
+        // No row is a Banner, allowed, or not known yet: no row.
+        (.off, false, nil),
+        (.allowed, true, nil),
+        (nil, true, nil),
     ]
 
-    @Test("APP-04 Settings shows a denied or never asked permission", arguments: cases.indices)
+    @Test("APP-04 Settings shows a denied or never asked permission while a row is a Banner", arguments: cases.indices)
     func showsThePermission(_ index: Int) {
-        let (permission, style, stageBanners, kind) = Self.cases[index]
+        let (permission, usesBanners, kind) = Self.cases[index]
+        // By default the builds I watch are banners; with none, they are Inbox entries.
         var preferences = Preferences()
-        preferences.alertStyle = style
-        preferences.stageAlerts = stageBanners
+        if !usesBanners {
+            preferences.inboxNotifications.set(.inbox, for: .watchedBuildFailed)
+            preferences.inboxNotifications.set(.inbox, for: .watchedBuildSucceeded)
+        }
 
         let notice = NotificationNotice.of(permission, preferences: preferences)
 

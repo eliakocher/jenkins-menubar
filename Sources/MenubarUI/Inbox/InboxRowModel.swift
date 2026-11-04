@@ -133,7 +133,7 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
     /// Returns the chip of the entry's reference: its sign and number, `!12` for a merge request, `#7` for a work item.
     static func reference(of entry: InboxEntry) -> Reference? {
         // A build is named "!12501 #5": the merge request's chip, the build's number after it on line 2.
-        if entry.kind == .buildFailed, let label = entry.reference {
+        if entry.kind.isFinishedBuild, let label = entry.reference {
             let merge = label.split(separator: " ").first { $0.hasPrefix("!") }
             return merge.map { Reference(kind: .mergeRequest, text: String($0)) }
         }
@@ -151,9 +151,10 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
 
     /// Returns the symbol of an entry and its color: its kind's, and for a failed build its state's.
     static func symbol(of entry: InboxEntry) -> (String, Tint) {
-        if entry.kind == .buildFailed {
+        if entry.kind.isFinishedBuild {
+            let succeeded = entry.kind == .buildSucceeded || entry.kind == .watchedBuildSucceeded
             let unstable = (entry.todo == nil) && entry.headline.contains("unstable")
-            let state: BuildState = unstable ? .unstable : .failed
+            let state: BuildState = succeeded ? .successful : unstable ? .unstable : .failed
             return (state.symbol, .build(state))
         }
         return symbol(of: entry.kind)
@@ -175,7 +176,7 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
         case .digestReady: (MainWindowSection.digest.systemImage, .purple)
         case .coffeeBreak: ("cup.and.saucer.fill", .orange)
         case .whatsNew: ("gift.fill", .blue)
-        case .myTodo: ("circle", .accent)
+        case .myTodo: ("checklist", .accent)
         default: ("circle.fill", .secondary)
         }
     }
@@ -186,7 +187,7 @@ struct InboxRowModel: Hashable, Identifiable, Sendable {
             return nil
         }
         var parts: [String] = []
-        if event.kind == .buildFailed, let number = event.reference?.split(separator: " ").first(where: { $0.hasPrefix("#") }) {
+        if event.kind.isFinishedBuild, let number = event.reference?.split(separator: " ").first(where: { $0.hasPrefix("#") }) {
             parts.append(String(number))
         }
         if !event.title.isEmpty, event.title != event.reference {

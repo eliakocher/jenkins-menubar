@@ -21,6 +21,7 @@ struct SourceHashTests {
         try folder.write("ignored", to: "Sources/.DS_Store")
         try folder.write("ignored", to: "Sources/.hidden/Inside.swift")
         try folder.write("ignored", to: "README.md")
+        try folder.write("ignored", to: "Tests/MenubarCoreTests/ATests.swift")
         try folder.write("lower", to: "Sources/b.swift")
         try folder.write("upper", to: "Sources/B.swift")
         try folder.write("umlaut", to: "Sources/Größe.swift")
@@ -61,6 +62,32 @@ struct SourceHashTests {
         try folder.write("// app", to: "Sources/MenubarMonitor/App.swift")
         try folder.write("png", to: "icons/menubar.png")
         try folder.write("{}", to: "icons/AppIcon.icon/icon.json")
+        // Bundled for What's New, so part of the hash; Package.resolved stays missing, which adds nothing.
+        try folder.write("# Changelog", to: "CHANGELOG.md")
+    }
+
+    @Test(
+        "APP-05 the hash covers exactly what goes into the app",
+        arguments: [
+            ("Sources/MenubarCore/A.swift", true), ("Package.swift", true), ("Package.resolved", true),
+            ("build.sh", true), ("CHANGELOG.md", true), ("icons/menubar.png", true), ("icons/AppIcon.icon/icon.json", true),
+            ("Tests/MenubarCoreTests/ATests.swift", false), ("README.md", false), ("docs/FEATURES.md", false),
+            ("build/app.noindex/MegaMonitor.app/Contents/Info.plist", false), (".build/release/megamonitor", false),
+            (".git/HEAD", false), ("Sources/.DS_Store", false), ("Sources/.hidden/A.swift", false), ("scripts/x.sh", false),
+        ])
+    func hashedPaths(path: String, hashed: Bool) throws {
+        #expect(SourceHash.isHashed(relativePath: path) == hashed)
+    }
+
+    @Test("APP-05 a change to the changelog changes the hash, a change to the tests doesn't")
+    func changelogCounts() throws {
+        let folder = try TemporaryFolder()
+        try writeCheckout(in: folder)
+        let before = try SourceHash.compute(root: folder.url)
+        try folder.write("// test", to: "Tests/MenubarCoreTests/ATests.swift")
+        #expect(try SourceHash.compute(root: folder.url) == before)
+        try folder.write("# Changelog\n- new", to: "CHANGELOG.md")
+        #expect(try SourceHash.compute(root: folder.url) != before)
     }
 
     /// Runs the `source_hash=$(…)` pipeline of `build.sh`, read from the script itself, in the checkout.

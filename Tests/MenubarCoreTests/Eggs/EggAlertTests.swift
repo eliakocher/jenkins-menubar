@@ -101,15 +101,13 @@ struct EggAlertTests {
         #expect(content.headline == alert.content.headline)
     }
 
-    @Test("EGG-11 no line in a stage banner or a preview, and none with the eggs off")
+    @Test("EGG-11 no line in a preview, and none with the eggs off")
     func noLine() throws {
         var memory = EggMemory()
-        var stage = Self.alert("MR-1", 42)
-        stage.kind = .stageFailed
         var preview = Self.alert("MR-1", 42)
         preview.kind = .preview
-        let alerts = EggRules.annotate([stage, preview], memory: &memory, now: Self.date(), calendar: Self.calendar, enabled: true)
-        #expect(alerts.map(\.content.eggLine) == [nil, nil])
+        let alerts = EggRules.annotate([preview], memory: &memory, now: Self.date(), calendar: Self.calendar, enabled: true)
+        #expect(alerts.map(\.content.eggLine) == [nil])
         #expect(memory == EggMemory())
 
         // Off: the alert is untouched, though the memory goes on (the streak is there when they are switched on).

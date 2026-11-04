@@ -5,6 +5,66 @@ versions follow [Semantic Versioning](https://semver.org/). The version lives in
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-11-04
+
+### Changed
+- **Slots scroll much smoother:** the page no longer rebuilds slots, teams and header numbers while you scroll or hover.
+- **Settings → Notifications is one table:** every event has one choice, **Pop-up**, **Banner**, **Inbox** or **Off**,
+  and a **Red Dot** checkbox. A sentence at the top says in plain words what happens when your build fails or succeeds.
+- **A build alerts once, when it has finished.** By default your own Jenkins builds pop up and builds you watch show a
+  banner.
+- **Pop-up, Banner and Inbox always leave an entry in the Inbox;** only Off adds nothing. Successful builds get an entry
+  too, without the red dot, and a later green build clears the job's earlier entries.
+- New names: "Big Panel" is now **Pop-up**, "Desktop Notification" is **Banner**, "Badge" is **Red Dot**, and the
+  rows say whether they come from Jenkins or GitLab.
+- **"My MR's GitLab Pipeline Failed" is off by default.** While it's off, GitLab's pipeline-failed to-dos are hidden
+  in the app; nothing is marked done in GitLab.
+- A job's notifications menu keeps Default, Always (like your own build) and Never (nothing at all, no Inbox entry).
+- Your old notification settings move into the new table once.
+- **Inbox pop-ups show the butler** like the build alert: sad for failures, happy for the rest, with a small badge for
+  the kind of event. The coffee break keeps his coffee butler.
+- **Mega Corners:** when it's switched off in Settings, everything under the switch is hidden.
+- **Several alerts at once become one small summary** instead of pages: the butler (sad, happy, or startled when it's
+  a mix), a title like "3 Builds Failed", a list of what happened (click a row to open it), and **Open Inbox** and
+  **Dismiss All**. Build alerts and Inbox pop-ups share this one window.
+- **The butler in pop-ups is bigger,** and a pop-up is only as tall as its content.
+- **A new butler for a mix of good and bad news** in the summary, shrugging under his question marks, with Halloween,
+  Santa, Carnival and Easter versions in their season.
+- **The Digest counts nothing twice:** "3 things need you" only shows when different kinds of things need you; three
+  reviews just say "3 reviews waiting". Every count chip is clickable: hover to see which items it counts, click to
+  scroll to them.
+- The Digest's "Every morning at …" sits next to its title, and the morning digest is written at **8:00** by default
+  (a time you chose stays).
+- **The Inbox:** every group header has **Mark All Done** on the right ("Mark All 4 Done"), after a confirmation; My
+  To-Dos have none. Once you've looked at the digest, its "Your digest is ready" entry leaves the Inbox by itself.
+- **My To-Dos** show a checklist symbol instead of a round checkbox; finish one with Done, like any other row.
+- **Scrolling the Slots page is much smoother:** a big slot builds its rows as they come into view, not all at once.
+- **Slots has a new tooltip,** a quiet glass bubble: it shows after the pointer rests half a second, vanishes the
+  moment it leaves, and never shows while scrolling or right after.
+- **The coffee break butler is bigger,** and his pop-up has only one button, **On My Way ☕**: no Dismiss, and Esc does
+  nothing.
+
+### Removed
+- Stage banners ("Banner when a stage fails"), the "Which Builds Alert" switches and the bells in the Pipelines
+  headers.
+- The Mega Corners actions "Refresh Now" and "Mute Alerts for 1 Hour", and with them the 1-hour mute. A corner that
+  used one does nothing until you pick another action.
+
+### Fixed
+- **Tooltips in Slots** show the tip of the thing under the pointer, the whole text, after half a second; they vanish
+  at once.
+- **One failure, one entry:** a failed Jenkins build and GitLab's "pipeline failed" for the same merge request are one
+  Inbox entry, and GitLab's pop-up waits two minutes for the Jenkins build, so you get one pop-up per failure.
+- The rain cloud over a failed build's butler stays in the picture.
+- The butlers are never squashed: every picture keeps its proportions.
+- **"Update Ready — Rebuild" shows a few seconds after a `git pull`,** without restarting the app. A pull that only
+  changes the changelog offers the update too, so What's New stays current.
+- **A failed update no longer looks like a ready one:** the button says "Update Failed — Try Again" and shows why.
+- **After an update, the app checks that the new version is the one running,** and says which copy to open when an old
+  one started instead. The restart tries again when macOS doesn't open the new app the first time.
+- In My To-Dos, the "+" of the add row and its text line up with the rows below.
+- **The Settings sidebar can't disappear any more.** Collapsed by ⌃⌘S or by dragging its divider, it had no way back.
+
 ## [1.0.6] - 2026-11-03
 
 ### Added

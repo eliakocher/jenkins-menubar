@@ -124,10 +124,6 @@ final class AppShell {
                 try? await Task.sleep(for: .milliseconds(300))
                 router.focusSearch()
             }
-        case .refreshNow:
-            model.checkNow()
-        case .muteAlerts:
-            model.toggleMuteAlerts()
         case .none, .system, .runShortcut, .openApp:
             break
         }
@@ -189,12 +185,14 @@ final class AppShell {
     }
 
     /// Imports from jenkins-menubar once, then starts the checks, opens the welcome flow when it is needed, and looks
-    /// for an update now and at each wake (APP-05). Calling it again changes nothing.
+    /// for an update now, at each wake, and after each change of the checkout (APP-05). Calling it again changes nothing.
     func launch() {
         guard launching == nil else {
             return
         }
         launching = Task {
+            // Which build started from where, and whether an update installed before took (APP-05).
+            await model.updates.launched(bundle: Bundle.main.bundleURL, info: Bundle.main.infoDictionary)
             // The identity migration's second part first (APP-10): the tokens move before the import and the first
             // check read them.
             await finishIdentityMigration()
@@ -204,6 +202,8 @@ final class AppShell {
             Task { await model.ai.detect() }
             showWelcomeIfNeeded()
             await model.updates.check()
+            // A `git pull` shows "Update Ready — Rebuild" within seconds, without a relaunch.
+            model.updates.startWatching()
         }
         let events = model.dependencies.systemEvents.events()
         let updates = model.updates
@@ -299,6 +299,7 @@ final class AppShell {
     func stop() {
         launching?.cancel()
         wakeWatcher?.cancel()
+        model.updates.stopWatching()
         model.stop()
         model.removeHotkey()
         onStop?()
@@ -358,7 +359,7 @@ final class AppShell {
     /// notes it as seen, Done and Snooze 1 Hour act on the event's Inbox entry. A click that starts the app waits for the
     /// launch, which loads the to-dos.
     ///
-    /// A banner has no room to say why GitLab refused a Done, so the Inbox opens, where its note says it; the big panel
+    /// A banner has no room to say why GitLab refused a Done, so the Inbox opens, where its note says it; the pop-up
     /// says it inline (``performInboxAction(_:for:)``).
     ///
     /// - Parameters:

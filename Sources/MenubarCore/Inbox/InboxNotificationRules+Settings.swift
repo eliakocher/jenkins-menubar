@@ -1,14 +1,19 @@
 import Foundation
 
 extension InboxNotificationRules {
-    /// The kinds Settings → Notifications lists, in the order of the pane: what needs me first, then what happened to
-    /// my merge requests, then the rest.
-    public static let settingsKinds: [InboxEventKind] = [
+    /// The kinds Settings → Notifications lists, in the order of the pane: the finished builds first (mine, then the
+    /// ones I watch), then what needs me, then what happened to my merge requests, then the rest.
+    public static let settingsKinds: [InboxEventKind] = buildKinds + [
         .assigned, .reviewRequested, .mentioned, .approved, .changesRequested, .reviewed, .merged, .pipelineFailed,
-        .buildFailed, .claudeAnswered, .digestReady, .coffeeBreak, .whatsNew, .otherTodo, .myTodo,
+        .claudeAnswered, .digestReady, .coffeeBreak, .whatsNew, .otherTodo, .myTodo,
     ]
 
-    /// Returns whether a kind goes to a route, as the user set it (before quiet hours and the projects filter).
+    /// the four rows of the finished builds, in the order of the pane
+    public static let buildKinds: [InboxEventKind] = [
+        .buildFailed, .buildSucceeded, .watchedBuildFailed, .watchedBuildSucceeded,
+    ]
+
+    /// Returns whether a kind goes to a route, as the user set it (before the projects filter).
     ///
     /// - Parameters:
     ///   - route: the route
@@ -18,36 +23,36 @@ extension InboxNotificationRules {
         routes(for: kind).contains(route)
     }
 
-    /// Turns one route of a kind on or off and keeps the others, as the toggles of Settings → Notifications do.
+    /// Turns the Red Dot of a kind on or off, as the checkbox of Settings → Notifications does. The Inbox bit is the
+    /// kind's delivery, set with `set(_:for:)`.
     ///
     /// - Parameters:
-    ///   - route: the route
+    ///   - route: the route; only ``InboxRoutes/badge`` does anything
     ///   - isOn: whether the kind goes there
     ///   - kind: the kind
     public mutating func set(_ route: InboxRoutes, _ isOn: Bool, for kind: InboxEventKind) {
+        guard route == .badge else {
+            return
+        }
         var routes = routes(for: kind)
         if isOn {
-            routes.insert(route)
+            routes.insert(.badge)
         } else {
-            routes.remove(route)
+            routes.remove(.badge)
         }
-        set(routes, for: kind)
+        setRoutes(routes, for: kind)
     }
 
-    /// One line for the log when the routing changes: what is off, and the projects filter.
+    /// One line for the log when the routing changes: what differs from the defaults.
     public var summary: String {
         var parts: [String] = []
-        let hidden = Self.settingsKinds.filter { !sends($0, to: .inbox) }.map(\.title)
-        if !hidden.isEmpty {
-            parts.append("not in the Inbox: \(hidden.joined(separator: ", "))")
+        let changed = Self.deliveryKinds.filter { delivery(for: $0) != $0.defaultDelivery }
+        if !changed.isEmpty {
+            parts.append("delivery: " + changed.map { "\($0.title) → \(delivery(for: $0).title)" }.joined(separator: ", "))
         }
-        let uncounted = Self.settingsKinds.filter { !sends($0, to: .badge) }.map(\.title)
+        let uncounted = Self.settingsKinds.filter { sends($0, to: .badge) != $0.countsInRedDotByDefault }.map(\.title)
         if !uncounted.isEmpty {
-            parts.append("not in the badge: \(uncounted.joined(separator: ", "))")
-        }
-        let loud = Self.deliveryKinds.filter { delivery(for: $0) != .inboxOnly }
-        if !loud.isEmpty {
-            parts.append("delivery: " + loud.map { "\($0.title) → \(delivery(for: $0).title)" }.joined(separator: ", "))
+            parts.append("red dot changed: \(uncounted.joined(separator: ", "))")
         }
         if !groupOrderNames.isEmpty {
             parts.append("group order: " + groupOrder.map(\.title).joined(separator: ", "))

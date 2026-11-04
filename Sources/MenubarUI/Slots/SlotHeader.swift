@@ -123,18 +123,18 @@ struct SlotHeader: View {
         HStack(spacing: 10) {
             if detail == .full {
                 counters
-                if !slot.members.isEmpty {
-                    Label(slot.members.count == 1 ? "1 member" : "\(slot.members.count) members", systemImage: "person.2")
+                if let members = slot.header.membersText {
+                    Label(members, systemImage: "person.2")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize()
-                        .help("The people with items in this slot")
+                        .tip("The people with items in this slot")
                 }
             }
-            if detail != .minimal, !slot.allItems.isEmpty {
+            if detail != .minimal, slot.header.hasItems {
                 Label {
-                    Text(verbatim: "\(slot.points)")
+                    Text(verbatim: "\(slot.header.points)")
                         .monospacedDigit()
                 } icon: {
                     Image(systemName: "scalemass")
@@ -142,7 +142,7 @@ struct SlotHeader: View {
                 .font(.callout)
                 .foregroundStyle(.primary)
                 .fixedSize()
-                .help(pointsHelp)
+                .tip(pointsHelp)
             }
             if let load = slot.load {
                 HStack(spacing: 6) {
@@ -154,59 +154,41 @@ struct SlotHeader: View {
                         .frame(minWidth: 38, alignment: .trailing)
                         .fixedSize()
                 }
-                .help(pointsHelp)
+                .tip(pointsHelp)
             }
         }
     }
 
-    /// the done items, the flags and the problems as small pills
+    /// the done items, the flags and the problems as small pills, from the numbers the plan made
     @ViewBuilder
     private var counters: some View {
-        if !slot.allItems.isEmpty {
+        ForEach(slot.header.counters, id: \.kind) { counter in
             SlotCounter(
-                symbol: "checkmark.circle", text: "\(slot.allItems.count { $0.isDone })/\(slot.allItems.count)", tint: .secondary,
-                help: "\(slot.progressText), \(Int((slot.progress * 100).rounded())) % by weight"
-                    + (slot.state == .overdue ? "; \(slot.openItems.count) still open" : ""))
-        }
-        if slot.weightMissingCount > 0 {
-            SlotCounter(
-                symbol: SlotProblem.Kind.weightMissing.symbol, text: "\(slot.weightMissingCount)", tint: .orange,
-                help: "\(slot.weightMissingCount) open items without a weight: the points and the load leave them out")
-        }
-        let otherProblems = slot.problemCount - slot.weightMissingCount
-        if otherProblems > 0 {
-            SlotCounter(
-                symbol: "exclamationmark.triangle", text: "\(otherProblems)", tint: .orange,
-                help: otherProblems == 1 ? "1 more planning problem" : "\(otherProblems) more planning problems")
-        }
-        if slot.flagCount > 0 {
-            SlotCounter(
-                symbol: "flag", text: "\(slot.flagCount)", tint: .red,
-                help: slot.flagCount == 1 ? "1 flagged item" : "\(slot.flagCount) flagged items")
-        }
-        if slot.uncommittedCount > 0 {
-            SlotCounter(
-                symbol: "circle.dashed", text: "\(slot.uncommittedCount)", tint: .secondary,
-                help: slot.uncommittedCount == 1
-                    ? "1 item planned for this slot, not committed yet" : "\(slot.uncommittedCount) items planned for this slot, not committed yet")
+                symbol: Self.symbol(of: counter.kind), text: counter.text, tint: Self.tint(of: counter.kind), help: counter.help)
         }
     }
 
+    private static func symbol(of kind: SlotHeaderFacts.CounterKind) -> String {
+        switch kind {
+        case .done: "checkmark.circle"
+        case .weightMissing: SlotProblem.Kind.weightMissing.symbol
+        case .problems: "exclamationmark.triangle"
+        case .flagged: "flag"
+        case .planned: "circle.dashed"
+        }
+    }
+
+    private static func tint(of kind: SlotHeaderFacts.CounterKind) -> Color {
+        switch kind {
+        case .done, .planned: .secondary
+        case .weightMissing, .problems: .orange
+        case .flagged: .red
+        }
+    }
+
+    /// the points' and the load's tooltip, made with the plan
     private var pointsHelp: String {
-        var parts = ["The weight of all \(slot.allItems.count) items, done and planned ones too; \(slot.committedPoints) of it committed."]
-        if let capacity = slot.capacity {
-            let amount = capacity.formatted(.number.precision(.fractionLength(0...1)))
-            if let people = slot.capacityPeople {
-                parts.append(
-                    "Capacity \(amount) person-days: \(people == 1 ? "1 person" : "\(people) people") with items here, their work days from the code freeze to the release, weekdays only, no time off.")
-            } else {
-                parts.append("Capacity \(amount) points, the squad capacity.")
-            }
-        }
-        if slot.unweightedCount > 0 {
-            parts.append("\(slot.unweightedCount) have no weight and count 0.")
-        }
-        return parts.joined(separator: " ")
+        slot.header.pointsHelp
     }
 }
 
@@ -254,7 +236,7 @@ struct SlotCounter: View {
         .padding(.vertical, 3)
         .background(tint.opacity(0.12), in: Capsule())
         .fixedSize()
-        .help(help)
+        .tip(help)
     }
 
     private struct CounterLabelStyle: LabelStyle {

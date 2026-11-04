@@ -62,9 +62,9 @@ team's data. They are in dark mode, and the app follows the system's appearance.
 
 *GitLab's to-dos in groups, with the app's own entries and your own to-dos beside them.*
 
-<img src="docs/screenshots/inbox-panel.png" alt="The Inbox's big panel with the butler sipping a coffee and the line: Warm cups, cold pipelines, that's the plan, and the buttons Done, Snooze 1 Hour and Dismiss" width="380">
+<img src="docs/screenshots/inbox-panel.png" alt="The Inbox's pop-up with the butler sipping a coffee and the line: Warm cups, cold pipelines, that's the plan, and one button, On My Way" width="380">
 
-*Each kind of event can announce itself with a big panel, a desktop notification or only the Inbox. This one is the weekday coffee break.*
+*Each event can announce itself with a pop-up, a banner, an entry in the Inbox, or not at all. This one is the weekday coffee break.*
 
 ![The Digest: a summary of what needs you today, with the merge requests, reviews, builds and work items behind it](docs/screenshots/digest.png)
 
@@ -78,7 +78,7 @@ team's data. They are in dark mode, and the app follows the system's appearance.
 
 <img src="docs/screenshots/alert.png" alt="The alert of a failed build, with the butler, the build's numbers and the buttons Show Build, Rebuild, Show MR and Dismiss" width="320">
 
-*The alert when a build you follow fails, one of several pages.*
+*The alert when a build you follow fails.*
 
 ## Install
 
@@ -120,8 +120,9 @@ Nothing is rebuilt without that click.
   which rows the pane has, in what order and with how long a list, with a live preview.
 - **Global hotkey**: **Settings → General** can set a shortcut that opens the main window from any app (and hides it
   again). Off by default.
-- **Alerts**: a big alert window or a banner (your choice) when a build you follow finishes, and optionally a banner
-  when a stage fails while the build goes on. **Rebuild** starts a finished build again with the same parameters, in
+- **Alerts**: when a build you follow finishes, a pop-up window or a banner (your choice per row of **Settings →
+  Notifications**: your own builds pop up by default, the ones you watch show as banners), never stage by stage while it
+  runs. **Rebuild** starts a finished build again with the same parameters, in
   one click; **Open Console** and **Hide Until the Next Build** are in the alert's menu and on the banner.
 - **Main window** (⌘0; ⌘1 and on pick the sidebar's sections, in order):
   - **Pipelines**: your builds and the ones you watch, with stages, failed tests and links. A failed build shows its
@@ -130,8 +131,10 @@ Nothing is rebuilt without that click.
   - **Inbox**: GitLab's To-Do List in the app, grouped (mentions, review requests, assigned, builds, other), with Done,
     Restore, Snooze and filters; done and snoozed here is done and snoozed in GitLab. It also holds entries of the app's
     own that never reach GitLab (a Claude answer, the digest, a failed build, a coffee break) and **My To-Dos**, your own
-    list on this Mac. **Settings → Notifications** sets per kind whether it shows a big panel, a desktop notification or
-    only the Inbox, and whether it counts for the badge.
+    list on this Mac. **Settings → Notifications** is one table with a row per event (a Jenkins build of yours that failed or
+    succeeded, a Jenkins build you watch, a review request, a mention, GitLab's pipeline failed, …): **Pop-up**, **Banner**, **Inbox** or **Off**, and
+    whether it counts for the red dot. Every choice but Off also leaves an entry in the Inbox. A build alerts once, when it
+    has finished, never stage by stage; a failed build and GitLab's "pipeline failed" for the same merge request are one entry.
   - **Merge Requests**: yours, review requested and reviewed, each with a status badge in GitLab's colors and its
     description. The details show the approvals and their rules, the unresolved threads, the code changes, and the GitLab pipeline
     with its jobs. A **Merge** card lists what blocks the merge, with the way to fix each, and merges the way GitLab's
@@ -154,7 +157,7 @@ Nothing is rebuilt without that click.
   - **Digest** (only with Claude on, see below): a summary of what needs you today, a section of its own.
 - **Watch a Build…** (⌘L) takes a Jenkins build link (of a merge request or of a branch like `develop`), a GitLab merge
   request link or `!123`, and follows all its builds, the next ones too. A merge request's detail has **Watch Builds**
-  for the same. Watched builds alert and hide like yours.
+  for the same. Watched builds hide like yours and have their own rows in **Settings → Notifications**.
 - **Several projects**: **Settings → Projects** adds more Jenkins jobs (same Jenkins and GitLab, same tokens). One check
   covers all of them, the counts are summed, and with more than one project the rows, alerts and the log name theirs.
 - **Claude** (on by default with Sonnet when Claude Code is installed; the welcome flow asks, **Settings → Claude** changes it): with **Use Claude** on,

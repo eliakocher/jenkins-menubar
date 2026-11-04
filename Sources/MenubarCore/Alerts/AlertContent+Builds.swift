@@ -42,36 +42,6 @@ extension AlertContent {
         )
     }
 
-    /// Returns the content of the banner for a running build with a new set of failed stages (ALERT-05).
-    ///
-    /// The banner offers Open build, Open Console and Hide, and sounds like a failure.
-    ///
-    /// - Parameters:
-    ///   - build: the running build
-    ///   - failedStages: all of its failed stages known now, in order
-    ///   - buildURL: the build in Jenkins
-    /// - Returns: the content
-    public static func stageFailed(_ build: Build, failedStages: [String], buildURL: URL) -> AlertContent {
-        let title = displayTitle(of: build)
-        let stages = failedStages.joined(separator: ", ")
-        let ownership = Ownership(build.kind)
-        let author = watchedAuthor(of: build)
-        return AlertContent(
-            result: .failure,
-            icon: .sad,
-            headline: watchingPrefix(ownership) + "💥 \(build.label) #\(build.number): stage failed",
-            title: title,
-            facts: ["Failed stages: \(stages)"],
-            bannerBody: ([stages] + [title, author.map { "by \($0)" }].compactMap { $0 }).joined(separator: "\n"),
-            sound: .basso,
-            defaultAction: .openBuild,
-            links: Links(build: buildURL, console: buildURL.appending(path: "console")),
-            hide: build.id,
-            ownership: ownership,
-            watchedAuthor: author
-        )
-    }
-
     /// Returns the links of a build's alert.
     ///
     /// - Parameters:
@@ -191,11 +161,8 @@ extension BuildAlert {
     }
 
     /// how the Activity log marks the alert's result (ALERT-08): `ok:SUCCESS`, `warning:UNSTABLE`, `failed:FAILURE`,
-    /// `neutral:ABORTED` or `neutral:<other>`; `failed:FAILED` for a stage banner
+    /// `neutral:ABORTED` or `neutral:<other>`
     public var outcome: ActivityEntry.Outcome {
-        if kind == .stageFailed {
-            return .failed("FAILED")
-        }
         let result = build.result?.rawValue ?? ""
         switch content.result {
         case .success: return .ok(result)

@@ -11,12 +11,10 @@ import SwiftUI
 /// lighter grey for the facts keep it readable over a light window (the user, 2026-10-30). 320 pt wide; the height
 /// fits the content.
 ///
-/// When the window holds several alerts, a ``AlertPager`` adds "1 of 3" with ‹ › above the butler and Dismiss All next to
-/// Dismiss; the page keeps its own buttons and its own butler.
+/// The page takes its own height; with two or more alerts the window shows an ``AlertSummaryView`` instead.
 public struct BuildAlertView: View {
     let alert: BuildAlert
     let notificationsOff: Bool
-    let pager: AlertPager?
     let rebuildWithChanges: (() -> Void)?
     let perform: (AlertContent.Action) -> Void
     /// freezes the celebration at one frame, for the gallery's shots; `nil` plays it
@@ -35,17 +33,15 @@ public struct BuildAlertView: View {
     /// - Parameters:
     ///   - alert: the alert
     ///   - notificationsOff: whether it shows as a window because its banner couldn't (ALERT-03)
-    ///   - pager: the paging of a window with several alerts; `nil` for one
     ///   - rebuildWithChanges: opens the sheet of "Rebuild with Changes…" for the build; with it, Rebuild is a split
     ///     button; `nil` keeps the plain button (PIPE-09)
     ///   - perform: runs a button's action; the panel opens its link and dismisses the page
     public init(
-        alert: BuildAlert, notificationsOff: Bool, pager: AlertPager? = nil, rebuildWithChanges: (() -> Void)? = nil,
+        alert: BuildAlert, notificationsOff: Bool, rebuildWithChanges: (() -> Void)? = nil,
         perform: @escaping (AlertContent.Action) -> Void
     ) {
         self.alert = alert
         self.notificationsOff = notificationsOff
-        self.pager = pager
         self.rebuildWithChanges = rebuildWithChanges
         self.perform = perform
     }
@@ -53,10 +49,6 @@ public struct BuildAlertView: View {
     public var body: some View {
         let content = alert.content
         VStack(spacing: 0) {
-            if let pager {
-                AlertPagerBar(pager: pager)
-                    .padding(.bottom, 4)
-            }
             butler(content)
             if let ownership = content.ownership {
                 // Whose build it is, before anything else: "Watching · by Sam Lee" or "Your build".
@@ -108,17 +100,7 @@ public struct BuildAlertView: View {
             }
             VStack(spacing: 8) {
                 ForEach(content.buttons, id: \.self) { action in
-                    if action == .dismiss, let pager {
-                        // Dismiss takes this page, Dismiss All the whole window.
-                        HStack(spacing: 8) {
-                            button(action, content: content)
-                            Button("Dismiss All", action: pager.dismissAll)
-                                .controlSize(.large)
-                                .buttonSizing(.flexible)
-                                .frame(maxWidth: .infinity)
-                                .background { plainFill }
-                        }
-                    } else if action == .rebuild, let rebuildWithChanges {
+                    if action == .rebuild, let rebuildWithChanges {
                         RebuildSplitButton(
                             identically: { perform(.rebuild) }, withChanges: rebuildWithChanges
                         )
@@ -167,32 +149,20 @@ public struct BuildAlertView: View {
         }
     }
 
-    /// The butler, with the hat of the season and the weather of a failed build behind him. The plain art fills the 96 pt
-    /// box; the seasonal art is taller than square, shown at the plain butler's scale (see
-    /// ``AppImages/alertSize(of:box:)``): his face reads as big as ever and the hat rises above the box.
+    /// The butler, with the hat of the season and the weather of a failed build behind him, in the stage that is as tall as
+    /// his own art (``ButlerStage``). The plain art fills the 128 pt box; the seasonal art is taller than square, shown
+    /// at the plain butler's scale (see ``AppImages/alertSize(of:box:)``): his face reads as big as ever and the hat rises
+    /// above the box, inside the stage.
     private func butler(_ content: AlertContent) -> some View {
-        let art = AppImages.alert(content.icon, hat: content.hat)
-        let size = AppImages.alertSize(of: art, box: 96)
-        return Image(nsImage: art)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: size.width, height: size.height)
-            .overlay {
-                // The witch's and New Year's hats are drawn in code only when their art is missing (the fallback).
-                if let hat = content.hat, AppImages.drawsFallbackHat(content.icon, hat: hat) {
-                    SeasonalHatOverlay(hat: hat)
-                }
+        ButlerStage(
+            art: AppImages.alert(content.icon, hat: content.hat), icon: content.icon, hat: content.hat, level: content.funLevel,
+            hasSky: content.weather != nil
+        ) {
+            // A cloud and rain behind a failed build's butler (Normal and Party).
+            if let weather = content.weather {
+                SadWeatherSky(weather: weather, seed: alert.build.number, frozenAt: frozenWeatherAt)
             }
-            // The butler bounces on a green build and shakes on a red one, once (Normal and Party).
-            .funButlerMotion(isHappy: content.icon == .happy, level: content.funLevel)
-            .background(alignment: .top) {
-                // A cloud and rain behind a failed build's butler (Normal and Party).
-                if let weather = content.weather {
-                    SadWeatherSky(weather: weather, seed: alert.build.number, frozenAt: frozenWeatherAt)
-                        .frame(width: 300, height: size.height + 44 + SadWeatherSky.headroom)
-                        .offset(y: -SadWeatherSky.headroom)
-                }
-            }
+        }
     }
 
     private func button(_ action: AlertContent.Action, content: AlertContent) -> some View {
@@ -236,7 +206,7 @@ public struct BuildAlertView: View {
         return Text("\(tinted) \(Text(verbatim: text))")
     }
 
-    private static func state(of result: AlertContent.ResultKind) -> BuildState {
+    static func state(of result: AlertContent.ResultKind) -> BuildState {
         switch result {
         case .success: .successful
         case .unstable: .unstable
@@ -304,53 +274,4 @@ struct AlertGreyStyle: ShapeStyle {
 
 extension ShapeStyle where Self == AlertGreyStyle {
     static var alertGrey: AlertGreyStyle { AlertGreyStyle() }
-}
-
-/// The paging of an alert window that holds several alerts (ALERT-03): where the shown page is and what ‹, › and Dismiss
-/// All do.
-public struct AlertPager {
-    /// "1 of 3"; the newest alert is the first
-    public var position: String
-    public var hasPrevious: Bool
-    public var hasNext: Bool
-    public var previous: () -> Void
-    public var next: () -> Void
-    public var dismissAll: () -> Void
-
-    public init(
-        position: String, hasPrevious: Bool, hasNext: Bool, previous: @escaping () -> Void, next: @escaping () -> Void,
-        dismissAll: @escaping () -> Void
-    ) {
-        self.position = position
-        self.hasPrevious = hasPrevious
-        self.hasNext = hasNext
-        self.previous = previous
-        self.next = next
-        self.dismissAll = dismissAll
-    }
-}
-
-/// "‹ 1 of 3 ›" above the butler.
-struct AlertPagerBar: View {
-    let pager: AlertPager
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Button(action: pager.previous) {
-                Image(systemName: "chevron.left")
-            }
-            .disabled(!pager.hasPrevious)
-            .help("Newer Alert")
-            Text(verbatim: pager.position)
-                .font(.callout.monospacedDigit())
-                .foregroundStyle(.alertGrey)
-            Button(action: pager.next) {
-                Image(systemName: "chevron.right")
-            }
-            .disabled(!pager.hasNext)
-            .help("Older Alert")
-        }
-        .buttonStyle(.borderless)
-        .accessibilityElement(children: .contain)
-    }
 }

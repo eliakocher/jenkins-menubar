@@ -101,10 +101,10 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .resetShortcuts: "Reset all shortcuts"
         case .hotCorners: "Mega Corners"
         case .linkRouting: "Open GitLab and Jenkins links in MegaMonitor"
-        case .buildAlerts: "Build alerts and previews"
-        case .mutedJobs: "Which builds alert"
+        case .buildAlerts: "When a build finishes"
+        case .mutedJobs: "Jobs with their own notifications"
         case .slotWarning: "Warn before a code freeze"
-        case .inboxNotifications: "What lands in the Inbox"
+        case .inboxNotifications: "What each event does"
         case .coffeeBreak: "Coffee break"
         case .inboxGroupOrder: "Order of the Inbox groups"
         case .appearance: "Appearance"
@@ -156,10 +156,10 @@ public enum SettingsField: String, CaseIterable, Hashable, Sendable {
         case .resetShortcuts: ["reset", "default", "defaults", "restore", "keyboard", "shortcuts", "keys", "rebind"]
         case .hotCorners: ["mega corner", "hot corner", "corners", "screen corner", "pointer", "mouse", "mission control", "desktop", "lock screen", "screen saver", "modifier", "delay"]
         case .linkRouting: ["links", "browser", "route", "gitlab", "jenkins", "hold option"]
-        case .buildAlerts: ["alert", "banner", "window", "notification", "sound", "stage", "preview"]
-        case .mutedJobs: ["mute", "muted", "quiet", "my builds", "watched builds", "job", "notify"]
+        case .buildAlerts: ["alert", "banner", "pop-up", "popup", "window", "notification", "sound", "preview", "summary", "finished", "build"]
+        case .mutedJobs: ["mute", "muted", "quiet", "always", "never", "my builds", "watched builds", "job", "notify"]
         case .slotWarning: ["slot", "code freeze", "warning", "committed", "merge request"]
-        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "when a build finishes", "alert window", "finished build", "to-do", "todo", "unread", "only my projects", "notification", "delivery", "big panel", "panel", "desktop notification", "banner", "popup"]
+        case .inboxNotifications: ["inbox", "badge", "dot", "menu bar", "mention", "assigned", "review", "approved", "merged", "digest", "claude", "answer", "failed build", "jenkins", "gitlab", "pipeline", "when a build finishes", "alert window", "finished build", "to-do", "todo", "unread", "only my projects", "notification", "delivery", "pop-up", "popup", "banner", "red dot", "off", "sound", "big panel", "desktop notification"]
         case .coffeeBreak: ["coffee", "break", "haiku", "daily", "08:59", "joke", "fun", "time", "reminder", "inbox"]
         case .inboxGroupOrder: ["inbox", "order", "groups", "reorder", "drag", "move", "my to-dos", "coffee", "claude", "mentions", "builds", "reset"]
         case .appearance: ["dark mode", "light mode", "dark", "light", "automatic", "system", "theme", "night", "colors", "colours"]

@@ -12,29 +12,37 @@ extension AppModel {
         }
     }
 
-    /// Delivers events as the rules chose: a ``InboxDelivery/bigPanel`` shows in the app's panel, a
-    /// ``InboxDelivery/desktopNotification`` posts a macOS banner, ``InboxDelivery/inboxOnly`` does nothing more. A banner
-    /// that macOS doesn't allow stays an entry of the Inbox.
+    /// Delivers events as the table of Settings → Notifications chose: a ``InboxDelivery/popUp`` shows in the app's
+    /// window, a ``InboxDelivery/banner`` posts a macOS banner, ``InboxDelivery/inbox`` does nothing more (the entry is
+    /// the Inbox's own). A banner that macOS doesn't allow stays an entry of the Inbox.
     ///
     /// - Parameter routed: the events of one load
     func deliver(_ routed: [RoutedInboxEvent]) async {
-        let effects = dependencies.effects
         for item in routed {
-            // Muted for the hour, nothing pops up; the event stays in the Inbox (HOT-09).
-            if item.delivery != .inboxOnly, alertMute.isMuted {
-                await log.log(.info, .app, "Inbox: alerts are muted, so \(item.event.kind.title) stays in the Inbox")
+            // GitLab's failed pipeline waits for the failed build of the same merge request: if it comes, the build's
+            // pop-up is the one the user sees (``HeldPipelineAlerts``).
+            if item.event.kind == .pipelineFailed, item.delivery == .popUp || item.delivery == .banner {
+                heldPipelineAlerts.hold(item.event, clock: dependencies.clock) { [weak self] event in
+                    await self?.showDelivered(RoutedInboxEvent(event: event, routes: item.routes, delivery: item.delivery))
+                }
                 continue
             }
-            switch item.delivery {
-            case .bigPanel:
-                await effects.showInboxPanel(item.event)
-            case .desktopNotification:
-                if await !effects.postInboxBanner(item.event) {
-                    await log.log(.info, .app, "Inbox: macOS doesn't show banners, so \(item.event.kind.title) stays in the Inbox")
-                }
-            case .inboxOnly:
-                break
+            await showDelivered(item)
+        }
+    }
+
+    /// Shows one event as its choice says.
+    private func showDelivered(_ item: RoutedInboxEvent) async {
+        let effects = dependencies.effects
+        switch item.delivery {
+        case .popUp:
+            await effects.showInboxPanel(item.event)
+        case .banner:
+            if await !effects.postInboxBanner(item.event) {
+                await log.log(.info, .app, "Inbox: macOS doesn't show banners, so \(item.event.kind.title) stays in the Inbox")
             }
+        case .inbox, .off:
+            break
         }
     }
 }

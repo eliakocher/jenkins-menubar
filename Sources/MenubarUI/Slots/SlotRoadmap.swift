@@ -101,7 +101,7 @@ struct SlotRoadmap: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .help(help(slot))
+                    .tip(help(slot))
                     .accessibilityLabel(help(slot))
                 }
             }
@@ -166,7 +166,7 @@ struct SlotRoadmap: View {
         }
         .buttonStyle(.plain)
         .offset(x: bar.start, y: -7)
-        .help(help(slot))
+        .tip(help(slot))
         .accessibilityLabel(help(slot))
     }
 
@@ -194,7 +194,7 @@ struct SlotRoadmap: View {
                 .background(Color.accentColor, in: Capsule())
                 .offset(x: pillStart)
         }
-        .help(help)
+        .tip(help)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(help)
     }

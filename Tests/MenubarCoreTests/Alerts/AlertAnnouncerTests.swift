@@ -24,16 +24,27 @@ struct AlertAnnouncerTests {
         }
     }
 
-    private static func preferences(_ style: Preferences.AlertStyle = .window, stageAlerts: Bool = true) -> Preferences {
-        Preferences(alertStyle: style, stageAlerts: stageAlerts)
+    /// The table with these choices for my failed and succeeded builds and the watched ones.
+    private static func rules(
+        failed: InboxDelivery = .popUp, succeeded: InboxDelivery = .popUp, watchedFailed: InboxDelivery = .banner,
+        watchedSucceeded: InboxDelivery = .banner
+    ) -> InboxNotificationRules {
+        var rules = InboxNotificationRules()
+        rules.set(failed, for: .buildFailed)
+        rules.set(succeeded, for: .buildSucceeded)
+        rules.set(watchedFailed, for: .watchedBuildFailed)
+        rules.set(watchedSucceeded, for: .watchedBuildSucceeded)
+        return rules
     }
 
     /// The alert for `MR-1 #7`, as the policy builds it.
-    private static func finished(_ result: BuildResult, mergeRequest: Bool = true) throws -> BuildAlert {
+    private static func finished(
+        _ result: BuildResult, mergeRequest: Bool = true, kind: JobKind = .mine
+    ) throws -> BuildAlert {
         let build = Build(
             job: "MR-1", number: 7, title: "Fix the login",
             gitLabURL: mergeRequest ? URL(string: "https://gitlab.example.com/group/project/-/merge_requests/1") : nil,
-            kind: .mine, phase: .finished(result: result, duration: 1800), startedAt: Date(timeIntervalSince1970: 1_800_000_000),
+            kind: kind, phase: .finished(result: result, duration: 1800), startedAt: Date(timeIntervalSince1970: 1_800_000_000),
             testCounts: TestCounts(failed: result == .failure ? 2 : 0, total: 40))
         let content = try #require(
             AlertContent.finished(build, failedStages: [], links: AlertContent.links(for: build, jobURL: jobURL)))
@@ -42,42 +53,80 @@ struct AlertAnnouncerTests {
 
     // MARK: ALERT-03
 
+    // The arguments: the choice of the build's row, whether banners are allowed, whose build it is, and what showed: a
+    // window, a banner, the sound.
     @Test(
-        "ALERT-03 the style decides window or banner, and a banner falls back to the window when notifications are off",
+        "ALERT-03 the build's row decides window, banner or nothing; a banner of mine falls back to the window when notifications are off",
         arguments: [
-            (Preferences.AlertStyle.window, true, false), (.banner, true, true), (.banner, false, false),
+            (InboxDelivery.popUp, true, JobKind.mine, true, false, true),
+            (.popUp, true, .watched, true, false, true),
+            (.banner, true, .mine, false, true, true),
+            (.banner, true, .watched, false, true, true),
+            (.banner, false, .mine, true, false, true),
+            // A watched build's banner stays quiet when macOS doesn't show banners: no surprise window for a stranger's build.
+            (.banner, false, .watched, false, false, true),
+            (.inbox, true, .mine, false, false, false),
+            (.off, true, .mine, false, false, false),
         ])
-    // ALERT-10 has its own test below for Inbox Only.
-    func style(style: Preferences.AlertStyle, notificationsAllowed: Bool, banner: Bool) async throws {
-        let setup = try Setup(notificationsAllowed: notificationsAllowed)
-        let alert = try Self.finished(.success)
+    func row(choice: InboxDelivery, allowed: Bool, kind: JobKind, window: Bool, banner: Bool, sound: Bool) async throws {
+        let setup = try Setup(notificationsAllowed: allowed)
+        let alert = try Self.finished(.failure, kind: kind)
+        let rules = Self.rules(failed: choice, watchedFailed: choice)
 
-        await setup.announcer.announce([alert], preferences: Self.preferences(style))
+        await setup.announcer.announce([alert], rules: rules)
 
+        #expect(await setup.effects.alertWindows == (window ? [alert] : []))
         #expect(await setup.effects.banners == (banner ? [alert] : []))
-        #expect(await setup.effects.alertWindows == (banner ? [] : [alert]))
+        #expect(await setup.effects.sounds == (sound ? [.basso] : []))
     }
 
-    @Test("ALERT-10 Inbox Only shows nothing and plays nothing, but the build is logged")
-    func inboxOnlyIsSilent() async throws {
+    @Test("ALERT-10 Inbox shows nothing and plays nothing, Off too, but the build is logged")
+    func inboxAndOffAreSilent() async throws {
+        for (choice, word) in [(InboxDelivery.inbox, "(inbox only)"), (.off, "(no alert)")] {
+            let setup = try Setup()
+
+            await setup.announcer.announce([try Self.finished(.failure)], rules: Self.rules(failed: choice))
+
+            #expect(await setup.effects.calls.isEmpty)
+            let messages = await setup.log.entries().map(\.message)
+            #expect(messages.contains { $0.contains(word) })
+        }
+    }
+
+    @Test("ALERT-03 an aborted build and another result alert nothing, not even a sound", arguments: [BuildResult.aborted, .notBuilt])
+    func noRowNoAlert(_ result: BuildResult) async throws {
         let setup = try Setup()
 
-        await setup.announcer.announce([try Self.finished(.failure)], preferences: Self.preferences(.inboxOnly))
+        await setup.announcer.announce([try Self.finished(result)], rules: Self.rules())
 
         #expect(await setup.effects.calls.isEmpty)
-        let messages = await setup.log.entries().map(\.message)
-        #expect(messages.contains { $0.contains("(inbox only)") })
+        #expect(await setup.log.entries().map(\.message).contains { $0.contains("(no alert)") })
+    }
+
+    @Test("ALERT-09 a job set to Always follows my rows, and one set to Never alerts nothing")
+    func jobSettings() async throws {
+        let rules = Self.rules(watchedFailed: .off)
+        let watched = try Self.finished(.failure, kind: .watched)
+
+        let always = try Setup()
+        await always.announcer.announce(
+            [watched], rules: rules, policy: NotificationPolicy(jobs: [watched.build.jobKey: .always]))
+        #expect(await always.effects.alertWindows == [watched])
+
+        let never = try Setup()
+        await never.announcer.announce(
+            [try Self.finished(.failure)], rules: rules, policy: NotificationPolicy(jobs: ["MR-1": .never]))
+        #expect(await never.effects.calls.isEmpty)
     }
 
     // MARK: ALERT-09
 
-    @Test("ALERT-09 logging a muted finished build writes its lines and shows nothing; a muted stage banner leaves none")
+    @Test("ALERT-09 logging a muted finished build writes its lines and shows nothing")
     func mutedFinishedIsLogged() async throws {
         let setup = try Setup()
         let alert = try Self.finished(.failure)
-        let stage = BuildAlert(kind: .stageFailed, build: alert.build, content: alert.content)
 
-        await setup.announcer.logMuted([alert, stage])
+        await setup.announcer.logMuted([alert])
 
         let messages = await setup.log.entries().map(\.message)
         #expect(messages.count == 2)
@@ -89,16 +138,16 @@ struct AlertAnnouncerTests {
 
     // MARK: ALERT-07
 
-    @Test("ALERT-07 a preview shows in the chosen style, and nothing shows without the team's Jenkins job")
+    @Test("ALERT-07 a preview shows as my build's row says, and nothing shows without the team's Jenkins job")
     func preview() async throws {
         let setup = try Setup()
-        #expect(await setup.announcer.preview(.success, team: Self.team, preferences: Self.preferences(.window)))
+        #expect(await setup.announcer.preview(.success, team: Self.team, rules: Self.rules()))
         let shown = try #require(await setup.effects.alertWindows.first)
         #expect(shown.kind == .preview)
         #expect(await setup.effects.banners.isEmpty)
 
         let empty = try Setup()
-        #expect(await !empty.announcer.preview(.success, team: TeamValues(), preferences: Preferences()))
+        #expect(await !empty.announcer.preview(.success, team: TeamValues(), rules: InboxNotificationRules()))
         #expect(await empty.effects.calls.isEmpty)
     }
 
@@ -108,7 +157,7 @@ struct AlertAnnouncerTests {
     func logsAlerts() async throws {
         let setup = try Setup()
         for result in [BuildResult.success, .failure, .unstable, .aborted, .notBuilt] {
-            await setup.announcer.announce(try Self.finished(result), preferences: Preferences())
+            await setup.announcer.announce(try Self.finished(result), rules: InboxNotificationRules())
         }
 
         // Each result is logged by the build's own line and by the alert's.

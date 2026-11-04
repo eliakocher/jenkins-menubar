@@ -76,7 +76,7 @@ fi
 # The easter eggs' art (EGG-02 to EGG-04) is optional: a missing file leaves the plain butler.
 for egg in menubar-party menubar-santa menubar-bow-1 menubar-bow-2 happy-party happy-santa sad-santa coffee \
 	peek-side peek-bottom peek-top caught happy-halloween sad-halloween happy-carnival sad-carnival happy-easter sad-easter menubar-wink \
-	peek-side-party peek-side-santa peek-side-witch inbox-zero; do
+	peek-side-party peek-side-santa peek-side-witch inbox-zero mixed mixed-halloween mixed-santa mixed-carnival mixed-easter; do
 	if [[ -f icons/$egg.png ]]; then
 		cp "icons/$egg.png" "$app/Contents/Resources/"
 	fi
@@ -98,10 +98,11 @@ if ! compile_icon && ! (unset DEVELOPER_DIR && compile_icon); then
 fi
 
 # The hash of everything the app is built from, so the app can tell when the checkout has changed since: the SHA-256
-# of the `shasum -a 256` listing of Package.swift, build.sh, Sources/ and icons/, without hidden files, sorted by
-# path in byte order. SourceHash in MenubarCore computes the same.
-source_hash=$(find Package.swift build.sh Sources icons -type f ! -path '*/.*' -print0 | LC_ALL=C sort -z |
-	xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-64)
+# of the `shasum -a 256` listing of what goes into the app (Package.swift, Package.resolved, build.sh, CHANGELOG.md,
+# Sources/ and icons/), without hidden files, sorted by path in byte order; a missing one adds nothing. SourceHash in
+# MenubarCore computes the same. Tests and README.md stay out, so a pull of only those offers no update.
+source_hash=$({ find Package.swift Package.resolved build.sh CHANGELOG.md Sources icons -type f ! -path '*/.*' -print0 \
+	2>/dev/null || :; } | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -c1-64)
 
 cat >"$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -116,8 +117,8 @@ cat >"$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleExecutable</key><string>MegaMonitor</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleShortVersionString</key><string>1.0.6</string>
-	<key>CFBundleVersion</key><string>7</string>
+	<key>CFBundleShortVersionString</key><string>1.0.7</string>
+	<key>CFBundleVersion</key><string>8</string>
 	<key>LSMinimumSystemVersion</key><string>26.0</string>
 	<key>LSUIElement</key><true/>
 	<key>CFBundleURLTypes</key>

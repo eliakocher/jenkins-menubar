@@ -1,13 +1,15 @@
 import Foundation
 
-/// Hands the alerts to the ``Effects`` as the preferences say, and logs them.
+/// Hands the alerts to the ``Effects`` as the table of Settings → Notifications says, and logs them.
 ///
-/// - A finished build plays its sound, then shows the alert window or a banner, never both (ALERT-03). When the style
-///   is banner but notifications aren't allowed, the alert window shows instead. With the style Inbox Only nothing plays
-///   and nothing shows (ALERT-10). This is the only pop-up of a finished build: the Inbox's delivery leaves failed
-///   builds out.
-/// - A stage banner is always a banner, with the Basso sound (ALERT-05).
-/// - A preview shows like a finished build, and is logged as a preview, not as an alert (ALERT-07).
+/// - A finished build follows the row of its kind (``InboxNotificationRules/output(for:jobSetting:muted:)``): Pop-up plays
+///   the sound and shows the alert window, Banner plays the sound and posts macOS's banner, Inbox and Off show nothing
+///   (ALERT-03, ALERT-10). It is never both. When a banner of one of my builds can't show because notifications aren't
+///   allowed, the alert window shows instead; a watched build's banner stays quiet then.
+/// - Aborted builds and other results alert nothing.
+/// - A preview shows like a finished build of mine, and is logged as a preview, not as an alert (ALERT-07).
+///
+/// The Inbox entry of a finished build isn't made here: ``AppModel`` adds it from the same rule.
 public struct AlertAnnouncer: Sendable {
     private let effects: any Effects
     private let log: ActivityLog
@@ -21,10 +23,13 @@ public struct AlertAnnouncer: Sendable {
     ///
     /// - Parameters:
     ///   - alerts: the alerts, from ``AlertPolicy``
-    ///   - preferences: the alert style and stage alerts
-    public func announce(_ alerts: [BuildAlert], preferences: Preferences) async {
+    ///   - rules: the table of Settings → Notifications
+    ///   - policy: the jobs with a setting of their own
+    public func announce(
+        _ alerts: [BuildAlert], rules: InboxNotificationRules, policy: NotificationPolicy = NotificationPolicy()
+    ) async {
         for alert in alerts {
-            await announce(alert, preferences: preferences)
+            await announce(alert, rules: rules, policy: policy)
         }
     }
 
@@ -32,36 +37,28 @@ public struct AlertAnnouncer: Sendable {
     ///
     /// - Parameters:
     ///   - alert: the alert
-    ///   - preferences: the alert style and stage alerts
-    public func announce(_ alert: BuildAlert, preferences: Preferences) async {
-        switch alert.kind {
-        case .finished, .preview:
-            let shownAs = await show(alert, preferences: preferences)
-            guard alert.kind == .finished else {
-                return
-            }
-            let build = alert.build
-            await log.log(.info, .jenkins, "\(build.id.label) finished", detail: build.title, outcome: alert.outcome)
-            await log.log(
-                .info, .alerts, "\(alert.content.headline) (\(shownAs))", detail: alert.content.bannerBodyWithoutEggLine,
-                outcome: alert.outcome)
-        case .stageFailed:
-            guard preferences.stageAlerts else {
-                return
-            }
-            await effects.playSound(alert.content.sound)
-            let posted = await effects.postBanner(alert)
-            let stages = alert.build.failedStages?.joined(separator: ", ") ?? ""
-            await log.log(
-                .info, .alerts, "Banner: \(alert.build.id.label) stage failed: \(stages)\(posted ? "" : " (notifications are off)")",
-                detail: alert.build.title, outcome: alert.outcome)
+    ///   - rules: the table of Settings → Notifications
+    ///   - policy: the jobs with a setting of their own
+    public func announce(
+        _ alert: BuildAlert, rules: InboxNotificationRules, policy: NotificationPolicy = NotificationPolicy()
+    ) async {
+        let setting = alert.kind == .preview ? nil : policy.jobs[alert.build.jobKey]
+        let output = rules.output(for: alert, jobSetting: setting)
+        let shownAs = await show(alert, output, asMine: Self.followsMyRows(alert, setting))
+        guard alert.kind == .finished else {
+            return
         }
+        let build = alert.build
+        await log.log(.info, .jenkins, "\(build.id.label) finished", detail: build.title, outcome: alert.outcome)
+        await log.log(
+            .info, .alerts, "\(alert.content.headline) (\(shownAs))", detail: alert.content.bannerBodyWithoutEggLine,
+            outcome: alert.outcome)
     }
 
-    /// Logs the finished builds of muted jobs, without showing anything (ALERT-09): mute silences the glass alert and the
-    /// banners only, so Activity still says the build finished. A stage banner of a muted job leaves no line, as before.
+    /// Logs the finished builds of jobs set to Never, without showing anything (ALERT-09): they leave no Inbox entry
+    /// either, but Activity still says the build finished.
     ///
-    /// - Parameter alerts: the alerts of the muted jobs
+    /// - Parameter alerts: the alerts of the jobs set to Never
     public func logMuted(_ alerts: [BuildAlert]) async {
         for alert in alerts where alert.kind == .finished {
             let build = alert.build
@@ -72,46 +69,50 @@ public struct AlertAnnouncer: Sendable {
         }
     }
 
-    /// Shows a sample alert, as the current style and sound settings choose (ALERT-07).
+    /// Shows a sample alert, as my build's rows and the sounds choose (ALERT-07).
     ///
     /// - Parameters:
     ///   - sample: the success or the failure sample
     ///   - team: the team values, for the links
-    ///   - preferences: the alert style
+    ///   - rules: the table of Settings → Notifications
     /// - Returns: `false` when there was nothing to show, because the team's Jenkins job URL isn't set
     @discardableResult
-    public func preview(_ sample: BuildAlert.PreviewSample, team: TeamValues, preferences: Preferences) async -> Bool {
+    public func preview(_ sample: BuildAlert.PreviewSample, team: TeamValues, rules: InboxNotificationRules) async -> Bool {
         guard let alert = BuildAlert.preview(sample, team: team) else {
             return false
         }
         await log.log(.info, .alerts, "Preview of the \(sample.rawValue) alert")
-        await announce(alert, preferences: preferences)
+        await announce(alert, rules: rules)
         return true
+    }
+
+    /// whether a build's alert follows my build's rows, so its banner falls back to the window
+    private static func followsMyRows(_ alert: BuildAlert, _ setting: NotificationPolicy.JobSetting?) -> Bool {
+        setting == .always || !alert.content.isWatched
     }
 
     /// Plays the sound, then shows the window or the banner.
     ///
-    /// - Returns: how it was shown, as the log says it: `alert`, `banner`, `alert, notifications are off`, or `inbox only`
-    private func show(_ alert: BuildAlert, preferences: Preferences) async -> String {
-        if preferences.alertStyle == .inboxOnly {
-            return "inbox only"
+    /// - Returns: how it was shown, as the log says it: `alert`, `banner`, `alert, notifications are off`,
+    ///   `banner, notifications are off`, `inbox only` or `no alert`
+    private func show(_ alert: BuildAlert, _ output: NotificationOutput, asMine: Bool) async -> String {
+        if output.sound {
+            await effects.playSound(alert.content.sound)
         }
-        await effects.playSound(alert.content.sound)
-        let shownAs: String
-        switch preferences.alertStyle {
-        case .inboxOnly:
-            shownAs = "inbox only"
-        case .window:
+        if output.popUp {
             await effects.showAlertWindow(alert)
-            shownAs = "alert"
-        case .banner:
-            if await effects.postBanner(alert) {
-                shownAs = "banner"
-            } else {
-                await effects.showAlertWindow(alert)
-                shownAs = "alert, notifications are off"
-            }
+            return "alert"
         }
-        return shownAs
+        if output.banner {
+            if await effects.postBanner(alert) {
+                return "banner"
+            }
+            guard asMine else {
+                return "banner, notifications are off"
+            }
+            await effects.showAlertWindow(alert)
+            return "alert, notifications are off"
+        }
+        return output.inboxEntry ? "inbox only" : "no alert"
     }
 }

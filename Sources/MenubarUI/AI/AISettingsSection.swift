@@ -199,7 +199,7 @@ struct AISettingsSection: View {
             set: { date in
                 let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
                 var settings = ai.settings
-                settings.digestMinutes = (parts.hour ?? 9) * 60 + (parts.minute ?? 0)
+                settings.digestMinutes = (parts.hour ?? 8) * 60 + (parts.minute ?? 0)
                 ai.update(settings)
             })
     }

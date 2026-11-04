@@ -8,7 +8,7 @@ extension GalleryCatalog {
         let imported = HotCornerSettings(
             enabled: true,
             topLeft: HotCornerSetup(plain: .system(.applicationWindows), option: .openSection(.pipelines)),
-            topRight: HotCornerSetup(plain: .system(.missionControl), shift: .refreshNow),
+            topRight: HotCornerSetup(plain: .system(.missionControl), shift: .search),
             bottomLeft: HotCornerSetup(plain: .system(.desktop)),
             bottomRight: HotCornerSetup(
                 delay: 0.5, plain: .runShortcut(name: "Caffeinate Claude"), command: .system(.lockScreen)))

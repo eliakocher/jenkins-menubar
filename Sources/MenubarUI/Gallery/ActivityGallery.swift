@@ -255,7 +255,7 @@ extension ActivityFixtures {
             entry(today(10, 41, 7), .warning, .jenkins, Self.timeoutMessage, outcome: .failed("TIMEOUT"), request: "r-timeout"),
             entry(today(10, 39, 12), .info, .jenkins, "!16 #3 finished", detail: "Add a retry to the export job",
                   outcome: .failed("FAILURE")),
-            entry(today(9, 12, 3), .info, .settings, "alertStyle: window → banner"),
+            entry(today(9, 12, 3), .info, .settings, "iconStyle: monochrome → color"),
             entry(day(1, 18, 2, 11), .info, .alerts, "✅ !14 #2 SUCCESS (alert)", detail: "Show the merge status in the tooltip · 21 min",
                   outcome: .ok("SUCCESS")),
             entry(day(1, 17, 40, 2), .debug, .gitlab, "POST WorkItems in 0.43s", outcome: .ok("200"), request: "r-old-1"),

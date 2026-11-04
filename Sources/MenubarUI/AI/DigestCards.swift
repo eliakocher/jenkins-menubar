@@ -23,13 +23,16 @@ struct DigestActions {
 
 // MARK: - The summary on top
 
-/// The digest's first card: the day, Claude's sentence about it, the summary as colored pills ("3 things need you",
-/// "1 MR ready to merge", "Code freeze in 3 days"), and what changed since the last digest.
+/// The digest's first card: the day, Claude's sentence about it, the summary as colored pills ("3 reviews waiting",
+/// "1 red build", "Code freeze in 3 days"), and what changed since the last digest. A pill that counts items names them
+/// in its tooltip and, clicked, shows them.
 struct DigestSummaryCard: View {
     let report: DigestReport
     let answeredAt: Date
     /// "Opus 5.5"
     let modelName: String
+    /// shows what a pill counts: scrolls to it and marks it for a moment
+    var show: (DigestReport.SummaryPart) -> Void = { _ in }
     /// what the search found; `nil` without a search
     var searchNote: String?
     var searchFound = true
@@ -56,12 +59,10 @@ struct DigestSummaryCard: View {
                 }
                 PillFlowLayout(spacing: 8, lineSpacing: 8) {
                     ForEach(report.summary) { part in
-                        DigestSummaryPill(part: part)
+                        DigestSummaryPill(part: part, help: report.help(of: part), show: { show(part) })
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(report.summaryLine)
                 DigestSinceLine(changes: report.changes)
                 if let searchNote {
                     Label(searchNote, systemImage: searchFound ? "text.magnifyingglass" : "magnifyingglass")
@@ -96,12 +97,19 @@ struct DigestHeroSurface<Content: View>: View {
     }
 }
 
-/// One part of the summary: its symbol and words in its color, on a soft capsule of it.
+/// One part of the summary: its symbol and words in its color, on a soft capsule of it. A part that counts items is
+/// clickable: its tooltip names them, the click shows them.
 struct DigestSummaryPill: View {
     let part: DigestReport.SummaryPart
+    /// the tooltip: the items it counts, and what the click does; empty for a part that counts nothing
+    var help = ""
+    var show: () -> Void = {}
+
+    @ViewState private var isHovered = false
 
     var body: some View {
         let tint = part.color.swiftUI
+        let clickable = part.isClickable
         HStack(spacing: 6) {
             Image(systemName: part.symbol)
             Text(verbatim: part.text.prefix(1).uppercased() + part.text.dropFirst())
@@ -110,8 +118,17 @@ struct DigestSummaryPill: View {
         .foregroundStyle(tint)
         .padding(.horizontal, 11)
         .padding(.vertical, 5)
-        .background(tint.opacity(0.13), in: Capsule())
-        .overlay { Capsule().strokeBorder(tint.opacity(0.3), lineWidth: 0.5) }
+        .background(tint.opacity(clickable && isHovered ? 0.22 : 0.13), in: Capsule())
+        .overlay { Capsule().strokeBorder(tint.opacity(clickable && isHovered ? 0.55 : 0.3), lineWidth: 0.5) }
+        .contentShape(Capsule())
+        .onHover { isHovered = $0 }
+        .onTapGesture {
+            if clickable { show() }
+        }
+        .help(help)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(clickable ? .isButton : [])
+        .accessibilityAction { if clickable { show() } }
     }
 }
 
@@ -175,6 +192,8 @@ struct DigestSectionCard: View {
     let actions: DigestActions
     /// the jobs whose rebuild is on its way, by ``BuildID/jobKey``
     var rebuilding: Set<String> = []
+    /// the references of the rows a summary chip just showed, which are marked for a moment
+    var highlighted: Set<String> = []
 
     private var isNow: Bool { kind == .needsYou }
 
@@ -188,7 +207,9 @@ struct DigestSectionCard: View {
                     }
                     DigestRowView(
                         row: row, prominent: isNow, actions: actions,
-                        isRebuilding: row.item.rebuild.map { rebuilding.contains($0.jobKey) } ?? false)
+                        isRebuilding: row.item.rebuild.map { rebuilding.contains($0.jobKey) } ?? false,
+                        isHighlighted: highlighted.contains(row.id))
+                        .id(DigestContent.rowID(row.id))
                 }
                 if more > 0 {
                     if !rows.isEmpty {
@@ -259,6 +280,8 @@ struct DigestRowView: View {
     var prominent = false
     let actions: DigestActions
     var isRebuilding = false
+    /// whether a summary chip just showed this row: a veil and a ring in the accent color
+    var isHighlighted = false
 
     @ViewState private var isHovered = false
 
@@ -315,6 +338,12 @@ struct DigestRowView: View {
         .background(
             Color.primary.opacity(isHovered && isClickable ? 0.05 : 0), in: RoundedRectangle(cornerRadius: 8, style: .continuous)
         )
+        .background {
+            let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+            shape
+                .fill(Color.accentColor.opacity(isHighlighted ? 0.14 : 0))
+                .overlay { shape.strokeBorder(Color.accentColor.opacity(isHighlighted ? 0.7 : 0), lineWidth: 1.5) }
+        }
         .padding(.horizontal, -6)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }

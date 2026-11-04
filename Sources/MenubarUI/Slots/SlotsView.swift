@@ -4,7 +4,8 @@ import SwiftUI
 /// The Slots section (SLOT-02, SLOT-03, SLOT-09): a roadmap of the release slots with today, then each slot with the
 /// countdown to its next date, its dates as steps, and its work items in columns with their merge requests, builds and
 /// flags. It uses the whole width, as far as the Content Width setting allows. A click on an item shows its detail,
-/// Work Items' own, beside the list. It reads the plan from the app, refreshed every minute.
+/// Work Items' own, beside the list. It reads the plan the app keeps (made again only when its data or the day changes, never
+/// while scrolling); the minute's tick only moves what depends on the time.
 public struct SlotsView: View {
     @Environment(AppModel.self) private var model
     @Environment(WindowRouter.self) private var router
@@ -63,9 +64,9 @@ public struct SlotsView: View {
     private var backgroundLoadKey: BackgroundLoadKey {
         BackgroundLoadKey(
             isSettled: model.workItems.lists != nil && !model.workItems.isLoading && !model.slotItems.isLoading
-                && model.slotItems.items.count > 0,
+                && model.slotGroupItems.count > 0,
             chips: storedChip, expansion: storedExpansion, searches: !searchText.isEmpty,
-            itemCount: model.slotItems.items.count)
+            itemCount: model.slotGroupItems.count)
     }
 
     /// The work items of the slots whose cards are open, in the page's order: the current slot's first.
@@ -95,7 +96,7 @@ public struct SlotsView: View {
                     plan: model.slotPlan(chips: selected, now: context.date), team: model.pipelines.project.team,
                     hasLoaded: model.workItems.lists != nil, needsToken: model.workItems.problem == .noToken(.gitLab),
                     query: searchText, labelsProblem: model.slotLabels.problem ?? model.slotItems.problem,
-                    groupItems: model.slotItems.items.count, isLoadingGroup: model.slotItems.isLoading,
+                    groupItems: model.slotGroupItems.count, isLoadingGroup: model.slotItems.isLoading,
                     commitmentsProblem: model.slotItems.commitmentsProblem),
                 chips: chips, selectedChips: Binding(get: { selected }, set: { storedChip = $0.id }),
                 suggestedTeams: model.slotSuggestedTeams,
@@ -112,7 +113,7 @@ public struct SlotsView: View {
 
     /// The work item with the reference: one of the slot group's, else one of my own.
     private func workItem(_ id: WorkItem.ID) -> WorkItem? {
-        model.slotItems.items.first { $0.id == id } ?? model.workItems.lists?.all.first { $0.id == id }
+        model.slotGroupItems.first { $0.id == id } ?? model.workItems.lists?.all.first { $0.id == id }
     }
 
     /// Opens a work item under "Opened" in the sidebar, full window, and shows it there. Not Work Items: that lists only
@@ -156,6 +157,10 @@ struct SlotsContent<Detail: View>: View {
     /// which header or row has the keys, and whether a key put it there (then the focus shows)
     @FocusState private var focus: SlotFocus?
     @ViewState private var keyboardUsed = false
+    /// how the rows of every card lay out, from the width the cards measure
+    @ViewState private var rowLayout = SlotRowLayout.regular
+    /// the row a key is going to, until it exists and takes the focus
+    @ViewState private var pendingFocus = SlotPendingFocus()
     private let detail: (WorkItem.ID) -> Detail
 
     init(
@@ -229,7 +234,8 @@ struct SlotsContent<Detail: View>: View {
                             slot: slot, today: today, project: model.project, statusPrefix: model.statusPrefix,
                             typePrefix: model.typePrefix, selection: selection,
                             select: { selection = $0 }, actions: actions, keys: keys(scroller),
-                            isExpanded: isExpanded(slot), setExpanded: { setExpanded(slot, $0) }
+                            isExpanded: isExpanded(slot), setExpanded: { setExpanded(slot, $0) },
+                            layout: rowLayout, setLayout: { rowLayout = $0 }
                         )
                         .id(slot.name)
                     }
@@ -269,8 +275,16 @@ struct SlotsContent<Detail: View>: View {
             },
             go: { id in
                 selection = id
+                // The row may not exist yet, when it is below the visible ones: it takes the focus when it appears.
+                pendingFocus.id = id
                 focus = .item(id)
                 scroller.scrollTo(id)
+            },
+            focusOnAppear: { id in
+                if pendingFocus.id == id {
+                    pendingFocus.id = nil
+                    focus = .item(id)
+                }
             })
     }
 
@@ -399,6 +413,9 @@ struct SlotCard: View {
     var isExpanded = true
     /// opens or closes the card
     var setExpanded: (Bool) -> Void = { _ in }
+    /// how the rows lay out, and the setter for the card's own measure of its width
+    var layout = SlotRowLayout.regular
+    var setLayout: (SlotRowLayout) -> Void = { _ in }
 
     /// the keys, with this card's own part: ← on a row closes it, ↓ on its header goes to its first row
     private var cardKeys: SlotKeys {
@@ -414,6 +431,13 @@ struct SlotCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SlotHeader(slot: slot, isExpanded: isExpanded, setExpanded: setExpanded, keys: cardKeys)
+                // The header takes the card's width whatever its rows need, so the width is the card's own. The columns
+                // need room for the title and the facts; below it the facts fold under the title.
+                .onGeometryChange(for: SlotRowLayout.self) {
+                    $0.size.width >= SlotColumns.regularCardWidth ? .regular : .compact
+                } action: {
+                    setLayout($0)
+                }
             if isExpanded {
                 content
                     .padding(.horizontal, 14)
@@ -453,40 +477,39 @@ struct SlotCard: View {
             if !slot.items.isEmpty || !slot.planned.isEmpty {
                 Divider()
                 // The columns when the card is wide enough for them, else the facts under each title.
-                ViewThatFits(in: .horizontal) {
-                    table(.regular)
-                    table(.compact)
-                }
+                table(layout)
                 // The rows have their own padding; the card's is trimmed so their highlight reaches near its edge.
                 .padding(.horizontal, -6)
             }
         }
     }
 
+    /// The card's lines, made as they scroll into view: a slot can have hundreds of items, and building all of their rows
+    /// at once made scrolling the page stutter.
     private func table(_ layout: SlotRowLayout) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // The commitments first, the tree's top, each with its items here by epic; then the rest.
-            ForEach(slot.commitments) { commitment in
-                SlotCommitmentSection(commitment: commitment, actions: actions)
-                ForEach(commitment.groups) { group in
-                    SlotEpicSection(
-                        group: group, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
-                        selection: selection, select: select, actions: actions, keys: cardKeys
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(SlotTableLine.lines(of: slot)) { line in
+                switch line {
+                case .commitment(let group, _):
+                    SlotCommitmentSection(commitment: group, actions: actions)
+                case .epic(let group, _, let indented):
+                    SlotEpicHeader(group: group, actions: actions)
+                        .padding(.leading, indented ? SlotTableLine.indent : 0)
+                case .item(let item, _, let indented):
+                    SlotItemRow(
+                        item: item, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
+                        isSelected: selection == item.id, select: { select(item.id) }, actions: actions, keys: cardKeys
                     )
-                    .padding(.leading, 14)
+                    // the gap between the lines of an epic, which the lines have no stack spacing for
+                    .padding(.top, 2)
+                    .padding(.leading, indented ? SlotTableLine.indent : 0)
+                case .withoutCommitment:
+                    Text("Not in a commitment")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 14)
                 }
-            }
-            if !slot.commitments.isEmpty, !slot.otherGroups.isEmpty {
-                Text("Not in a commitment")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 14)
-            }
-            ForEach(slot.otherGroups) { group in
-                SlotEpicSection(
-                    group: group, project: project, statusPrefix: statusPrefix, typePrefix: typePrefix, layout: layout,
-                    selection: selection, select: select, actions: actions, keys: cardKeys)
             }
         }
     }
@@ -554,4 +577,10 @@ struct SlotsSkeleton: View {
         .padding(14)
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
     }
+}
+
+/// The row a key goes to, until the row exists: a plain box, so setting it doesn't draw the page again.
+@MainActor
+final class SlotPendingFocus {
+    var id: WorkItem.ID?
 }

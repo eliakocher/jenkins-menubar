@@ -110,6 +110,9 @@ struct SlotsListModel: Hashable, Sendable {
             }
             return commitment.groups.isEmpty ? nil : commitment
         }
-        return matching.items.isEmpty && matching.planned.isEmpty ? nil : matching
+        guard !matching.items.isEmpty || !matching.planned.isEmpty else { return nil }
+        // The header's numbers are the matches' own.
+        matching.cacheHeader()
+        return matching
     }
 }

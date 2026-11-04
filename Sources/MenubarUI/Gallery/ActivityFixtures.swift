@@ -72,7 +72,7 @@ struct ActivityFixtures {
             entry(today(10, 40, 1), .debug, .gitlab, "Checked GitLab: 2 requests, 0.82s together", outcome: .ok("OK")),
             entry(today(10, 40, 1).addingTimeInterval(-0.4), .debug, .gitlab, "POST WorkItems in 0.43s", outcome: .ok("200"), request: "r-workitems"),
             entry(today(10, 40, 0), .debug, .gitlab, "POST MergeRequests in 0.39s", outcome: .ok("200"), request: "r-graphql"),
-            entry(today(10, 39, 58), .info, .settings, "alertStyle: window → banner"),
+            entry(today(10, 39, 58), .info, .settings, "iconStyle: monochrome → color"),
             entry(today(10, 39, 12), .info, .alerts, "❌ !16 #3 FAILURE (alert)", detail: "Add a retry to the export job · 12 min",
                   outcome: .failed("FAILURE")),
             entry(today(10, 39, 12).addingTimeInterval(-0.1), .info, .jenkins, "!16 #3 finished", detail: "Add a retry to the export job",
@@ -135,7 +135,7 @@ struct ActivityFixtures {
         Line(level: .info, source: .alerts, message: "❌ !16 #2 FAILURE (banner)", detail: "Add a retry to the export job · 14 min",
              outcome: .failed("FAILURE")),
         Line(level: .info, source: .app, message: "Showed the hidden builds again"),
-        Line(level: .info, source: .settings, message: "stageAlerts: off → on"),
+        Line(level: .info, source: .settings, message: "slotAlerts: off → on"),
         Line(level: .info, source: .jenkins, message: "!12 #6 started: Fix the login redirect after a timeout", outcome: .running("RUNNING")),
     ]
 

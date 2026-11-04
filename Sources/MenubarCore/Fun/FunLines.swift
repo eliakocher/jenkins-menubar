@@ -276,7 +276,7 @@ public enum FunLines {
         "Watch a Build… follows a build of a colleague, with an alert when it ends.",
         "Rebuild with Changes… lets you edit the parameters before a build starts again.",
         "Hide Until the Next Build clears a finished build from the list for now.",
-        "Settings → Notifications sets where each Inbox event goes: Big Panel, Desktop or Inbox Only.",
+        "Settings → Notifications has one row per event: Pop-up, Banner, Inbox or Off.",
         "The Menu Bar settings reorder the pane's rows and decide which ones have a flyout.",
         "A failed build's page can ask Claude why it failed, when Claude is on.",
         "Right-click an alert's background to open its console or hide its build.",

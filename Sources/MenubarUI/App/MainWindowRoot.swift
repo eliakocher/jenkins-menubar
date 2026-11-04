@@ -79,6 +79,13 @@ public struct MainWindowRoot: View {
                 model.ai.markDigestSeen()
             }
         }
+        // The same sight clears the digest's entry in the Inbox (the user, 2026-11-04: "if i opened the digest before, it
+        // should go away from the inbox"): the entry of the day the shown digest was written.
+        .onChange(of: shownDigestDate, initial: true) { _, written in
+            if let written {
+                model.inbox.digestSeen(writtenAt: written)
+            }
+        }
         .onChange(of: searchIsSpellcheck) { _, isSpellcheck in
             // The demo counts once each time the search turns to "spellcheck", not per keystroke.
             spellcheckDemo = isSpellcheck ? model.pipelines.countSpellcheckDemo() : nil
@@ -192,6 +199,14 @@ public struct MainWindowRoot: View {
     /// whether the window shows the Digest section, with something the sidebar's dot was for
     private var isShowingUnreadDigest: Bool {
         router.section == .digest && router.opened == nil && isOnScreen && model.ai.hasUnreadDigest
+    }
+
+    /// when the digest was written that the window shows now, in the Digest section; `nil` anywhere else or without a digest
+    private var shownDigestDate: Date? {
+        guard router.section == .digest, router.opened == nil, isOnScreen, case .answered(let answer) = digestState else {
+            return nil
+        }
+        return answer.answeredAt
     }
 
     /// where the digest stands

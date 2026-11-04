@@ -96,7 +96,7 @@ public struct PanelData: Sendable {
             var row = BuildRowModel(
                 build: build, now: now, jobURL: project?.jobURL ?? jobURL, rebuild: rebuilds[build.jobKey],
                 project: project?.name)
-            row.notifications = JobNotifications(notifications, job: build.jobKey, group: .init(build))
+            row.notifications = JobNotifications(notifications, job: build.jobKey)
             return row
         }
 

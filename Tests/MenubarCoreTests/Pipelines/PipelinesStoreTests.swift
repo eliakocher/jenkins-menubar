@@ -543,7 +543,7 @@ struct PipelinesStoreTests {
 
     // MARK: WATCH-04
 
-    @Test("WATCH-04 watched build alerts like mine")
+    @Test("WATCH-04 a watched build alerts as its row says: a banner by default")
     func watchedBuildAlerts() async throws {
         let harness = try Harness(userState: Harness.watched("MR-2"))
         harness.answerJobs([])
@@ -555,7 +555,8 @@ struct PipelinesStoreTests {
         harness.answerStages("MR-2", 3, failed: ["tests"])
         try await harness.check()
 
-        let alert = try #require(await harness.effects.alertWindows.first)
+        let alert = try #require(await harness.effects.banners.first)
+        #expect(await harness.effects.alertWindows.isEmpty)
         #expect(alert.build.id == BuildID(job: "MR-2", number: 3))
         #expect(alert.build.result == .failure)
         #expect(alert.build.failedStages == ["tests"])
@@ -576,7 +577,7 @@ struct PipelinesStoreTests {
         harness.time.wait(60)
         harness.answer("MR-2", number: 4, result: "SUCCESS", startedAgo: 90)
         try await harness.check()
-        #expect(await harness.effects.alertWindows.map(\.build.id) == [BuildID(job: "MR-2", number: 4)])
+        #expect(await harness.effects.banners.map(\.build.id) == [BuildID(job: "MR-2", number: 4)])
     }
 
     @Test("WATCH-04 a job that is mine and watched shows once")
@@ -713,8 +714,9 @@ struct PipelinesStoreTests {
             harness.answer(job, number: 7, result: nil, startedAgo: 600)
         }
         let store = harness.store
-        // Watching is off; MR-1 is mine but never, MR-3 is watched but always.
-        store.notifications = NotificationPolicy(watching: false, jobs: ["MR-1": .never, "MR-3": .always])
+        // A watched build that failed is Off; MR-1 is mine but never, MR-3 is watched but always.
+        store.preferences.inboxNotifications.set(.off, for: .watchedBuildFailed)
+        store.notifications = NotificationPolicy(jobs: ["MR-1": .never, "MR-3": .always])
         try await harness.check()
         store.hide(try #require(store.myBuilds.first { $0.job == "MR-4" }))
 
@@ -757,48 +759,19 @@ struct PipelinesStoreTests {
         #expect(await harness.effects.sounds.count == 1)
     }
 
-    @Test("ALERT-09 a muted job gets no stage banner either, and a job that isn't muted does")
-    func mutedJobsGetNoStageBanner() async throws {
+    @Test("ALERT-05 a stage that fails in a running build alerts nothing; the row still shows it")
+    func stageFailureAlertsNothingWhileRunning() async throws {
         let harness = try Harness()
-        harness.answerJobs(["MR-1", "MR-4"])
-        for job in ["MR-1", "MR-4"] {
-            harness.answer(job, number: 7, result: nil, startedAgo: 600)
-        }
-        harness.store.notifications = NotificationPolicy(jobs: ["MR-1": .never])
+        harness.answerJobs(["MR-1"])
+        harness.answer("MR-1", number: 7, result: nil, startedAgo: 600)
         try await harness.check()
 
         harness.time.wait(60)
-        for job in ["MR-1", "MR-4"] {
-            harness.answerStages(job, 7, failed: ["tests"])
-        }
+        harness.answerStages("MR-1", 7, failed: ["tests"])
         try await harness.check()
 
-        #expect(await harness.effects.banners.map(\.build.job) == ["MR-4"])
-    }
-
-    @Test("HOT-09 while the alerts are muted, no build shows a glass alert or a banner; Activity and the Inbox still get them")
-    func mutedForTheHour() async throws {
-        let harness = try Harness()
-        harness.answerJobs(["MR-1", "MR-4"])
-        for job in ["MR-1", "MR-4"] {
-            harness.answer(job, number: 7, result: nil, startedAgo: 600)
-        }
-        harness.store.alertsMuted = { true }
-        var finished: [BuildAlert] = []
-        harness.store.onFinishedBuilds = { finished += $0 }
-        try await harness.check()
-
-        harness.time.wait(60)
-        for job in ["MR-1", "MR-4"] {
-            harness.answer(job, number: 7, result: "FAILURE", startedAgo: 660)
-        }
-        try await harness.check()
-
-        #expect(await harness.effects.alertWindows.isEmpty)
-        #expect(await harness.effects.banners.isEmpty)
-        #expect(await harness.effects.sounds.isEmpty)
-        #expect(await harness.messages().filter { $0.hasSuffix("(muted)") }.count == 2)
-        #expect(finished.map(\.build.job).sorted() == ["MR-1", "MR-4"])
+        #expect(await harness.effects.calls.isEmpty)
+        #expect(harness.store.myBuilds.first?.failedStages == ["tests"])
     }
 
     @Test("OD-05 offline shows as the problem, over the check's own")

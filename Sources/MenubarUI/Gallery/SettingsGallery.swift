@@ -242,11 +242,18 @@ extension GalleryCatalog {
         var changed = Preferences()
         changed.showInMenuBar = false
         changed.iconStyle = .color
-        changed.alertStyle = .banner
-        changed.stageAlerts = false
         changed.fillInCopiedLink = true
         var banner = Preferences()
-        banner.alertStyle = .banner
+        banner.inboxNotifications.set(.banner, for: .buildFailed)
+        var quiet = Preferences()
+        quiet.inboxNotifications.set(.inbox, for: .buildFailed)
+        quiet.inboxNotifications.set(.off, for: .buildSucceeded)
+        quiet.inboxNotifications.set(.off, for: .watchedBuildFailed)
+        quiet.inboxNotifications.set(.off, for: .watchedBuildSucceeded)
+        quiet.inboxNotifications.set(.off, for: .mentioned)
+        quiet.inboxNotifications.set(.banner, for: .reviewRequested)
+        quiet.inboxNotifications.set(.popUp, for: .coffeeBreak)
+        quiet.inboxNotifications.set(.badge, false, for: .claudeAnswered)
         return [
             GalleryEntry(screen: "settings-general", state: "typical", size: paneSize(380)) { _ in
                 SettingsPaneGalleryView(height: 380) { GeneralGalleryView() }
@@ -287,14 +294,17 @@ extension GalleryCatalog {
             GalleryEntry(screen: "settings-notifications", state: "muted-jobs", size: paneSize(560)) { _ in
                 SettingsPaneGalleryView(height: 560) {
                     NotificationsGalleryView(policy: NotificationPolicy(
-                        mine: true, watching: false, jobs: ["MR-1412": .never, "develop": .always, "release%2F2026.51": .never]))
+                        jobs: ["MR-1412": .never, "develop": .always, "release%2F2026.51": .never]))
                 }
             },
-            GalleryEntry(screen: "settings-notifications", state: "off", size: paneSize(400)) { _ in
-                SettingsPaneGalleryView(height: 400) { NotificationsGalleryView(preferences: banner, permission: .off) }
+            GalleryEntry(screen: "settings-notifications", state: "quiet", size: paneSize(1000)) { _ in
+                SettingsPaneGalleryView(height: 1000) { NotificationsGalleryView(preferences: quiet) }
             },
-            GalleryEntry(screen: "settings-notifications", state: "not-set-up", size: paneSize(400)) { _ in
-                SettingsPaneGalleryView(height: 400) { NotificationsGalleryView(permission: .notAsked) }
+            GalleryEntry(screen: "settings-notifications", state: "off", size: paneSize(1000)) { _ in
+                SettingsPaneGalleryView(height: 1000) { NotificationsGalleryView(preferences: banner, permission: .off) }
+            },
+            GalleryEntry(screen: "settings-notifications", state: "not-set-up", size: paneSize(1000)) { _ in
+                SettingsPaneGalleryView(height: 1000) { NotificationsGalleryView(permission: .notAsked) }
             },
             GalleryEntry(screen: "settings-notifications", state: "no-team-values", size: paneSize(360)) { _ in
                 SettingsPaneGalleryView(height: 360) { NotificationsGalleryView(canPreview: false) }

@@ -129,12 +129,21 @@ struct DigestContent: View {
     var actions = DigestActions.none
 
     @ViewState private var copied = false
+    /// the references of the rows a summary chip just showed
+    @ViewState private var highlighted: Set<String> = []
+    @ViewState private var marking: Task<Void, Never>?
+
+    /// the scroll id of the Needs You Now card
+    static let needsYouID = "digest.needsYou"
+
+    /// the scroll id of a row, by its reference
+    static func rowID(_ ref: String) -> String { "digest.row.\(ref)" }
 
     var body: some View {
         DetailPage(id: "digest") { proxy in
             header
             if isOffered {
-                content
+                content(proxy)
                     // A new question or answer scrolls into view.
                     .onChange(of: turnStatuses) {
                         withAnimation(.snappy) { proxy.scrollTo(ConversationThread.endID, anchor: .bottom) }
@@ -160,11 +169,6 @@ struct DigestContent: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } chips: {
-            if let morningMinutes, isOffered {
-                DetailChip(
-                    symbol: "alarm", text: "Every morning at \(DigestPage.timeOfDay(minutes: morningMinutes))",
-                    help: "Change the morning digest in Settings", action: openSettings)
-            }
         } footer: {
             if isOffered {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -195,11 +199,24 @@ struct DigestContent: View {
                 .padding(.top, 4)
             }
         }
+        // The morning digest's time sits on the title's line (the user, 2026-11-04), not on a line of its own.
+        .titleAccessory(scheduleChip)
+    }
+
+    /// "Every morning at 08:00", which opens the digest's settings; `nil` while the morning digest is off.
+    private var scheduleChip: AnyView? {
+        guard let morningMinutes, isOffered else {
+            return nil
+        }
+        return AnyView(
+            DetailChip(
+                symbol: "alarm", text: "Every morning at \(DigestPage.timeOfDay(minutes: morningMinutes))",
+                help: "Change the morning digest in Settings", action: openSettings))
     }
 
     // MARK: The content
 
-    @ViewBuilder private var content: some View {
+    @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
         switch state {
         case .idle:
             DetailCard("Digest", symbol: "sparkles", width: .fullWidth) {
@@ -209,7 +226,7 @@ struct DigestContent: View {
             loading
         case .answered(let answer):
             if let report = answer.digest {
-                cards(report, answer: answer)
+                cards(report, answer: answer, proxy: proxy)
             } else {
                 textCard
             }
@@ -220,15 +237,18 @@ struct DigestContent: View {
 
     /// The digest as cards: the summary, Needs You Now across the page, the other sections in columns, then Claude's
     /// card for follow-ups.
-    @ViewBuilder private func cards(_ report: DigestReport, answer: AIAnswer) -> some View {
+    @ViewBuilder private func cards(_ report: DigestReport, answer: AIAnswer, proxy: ScrollViewProxy) -> some View {
         let found = report.matching(searchText)
         let isSearching = !searchText.trimmingCharacters(in: .whitespaces).isEmpty
         DigestSummaryCard(
             report: report, answeredAt: answer.answeredAt, modelName: answer.modelName,
+            show: { show($0, proxy: proxy) },
             searchNote: DigestPage.searchNote(query: searchText, matches: found.matches), searchFound: found.matches > 0)
         let sections = found.report.sections
         if let now = sections.first(where: { $0.kind == .needsYou }) {
-            DigestSectionCard(kind: .needsYou, rows: now.rows, actions: actions, rebuilding: rebuilding)
+            DigestSectionCard(
+                kind: .needsYou, rows: now.rows, actions: actions, rebuilding: rebuilding, highlighted: highlighted)
+                .id(Self.needsYouID)
         }
         let cleared = isSearching ? [] : report.changes.cleared
         let others = sections.filter { $0.kind != .needsYou }
@@ -237,7 +257,7 @@ struct DigestContent: View {
                 ForEach(others) { section in
                     DigestSectionCard(
                         kind: section.kind, rows: section.rows, cleared: section.kind == .fyi ? cleared : [],
-                        more: section.more, actions: actions, rebuilding: rebuilding)
+                        more: section.more, actions: actions, rebuilding: rebuilding, highlighted: highlighted)
                 }
                 if !cleared.isEmpty, !others.contains(where: { $0.kind == .fyi }) {
                     DigestSectionCard(kind: .fyi, rows: [], cleared: cleared, actions: actions)
@@ -248,6 +268,23 @@ struct DigestContent: View {
             AIAnswerRows(state: state, subject: .digest, send: send, dismiss: dismiss) { _ in
                 EmptyView()
             }
+        }
+    }
+
+    /// Shows what a summary chip counts: the total scrolls to the Needs You Now card, a kind to its first item, and the
+    /// rows it counts are marked for a moment, as a card is when a link asks for it.
+    private func show(_ part: DigestReport.SummaryPart, proxy: ScrollViewProxy) {
+        guard part.isClickable else {
+            return
+        }
+        marking?.cancel()
+        let target: String = part.opensNeedsYou || part.refs.isEmpty ? Self.needsYouID : Self.rowID(part.refs[0])
+        withAnimation(.snappy) { proxy.scrollTo(target, anchor: part.opensNeedsYou ? .top : .center) }
+        withAnimation(.easeOut(duration: 0.3)) { highlighted = Set(part.refs) }
+        marking = Task {
+            try? await Task.sleep(for: .milliseconds(2200))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeIn(duration: 0.7)) { highlighted = [] }
         }
     }
 

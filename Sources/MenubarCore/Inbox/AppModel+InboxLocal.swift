@@ -71,7 +71,7 @@ extension AILanding {
 
 extension AppModel {
     /// Hands the Inbox the things of this app: a Claude answer that landed while its card wasn't on screen (the digest
-    /// included), and a finished build that failed or went unstable (Task 7.03).
+    /// included), and a finished build (Task 7.03).
     func connectInboxLocal() {
         ai.onAnswerLanded = { [weak self] landing in
             self?.addToInbox(landing)
@@ -102,24 +102,32 @@ extension AppModel {
                 title: place.title, reference: place.reference, excerpt: landing.inboxExcerpt, url: place.url, at: landing.at))
     }
 
-    /// Adds the failed and unstable builds of a check to the Inbox, and clears the failed entries of a job whose build
-    /// is green now. A muted job's alerts never get here.
+    /// Adds the finished builds of a check to the Inbox as the table of Settings → Notifications says: every choice but
+    /// Off is an entry, a pop-up and a banner included. A green build first clears the earlier entries of its job, the
+    /// failed ones and the green ones, so a job doesn't pile up red-then-green pairs. A job set to Never never gets here,
+    /// and an aborted build or another result has no row.
     func addToInbox(finished alerts: [BuildAlert]) {
         for alert in alerts where alert.kind == .finished {
             let build = alert.build
-            switch alert.content.result {
-            case .failure, .unstable:
-                inbox.addLocal(
-                    .buildFailed(
-                        jobKey: build.id.jobKey, number: build.id.number, label: build.id.label,
-                        isUnstable: alert.content.result == .unstable, title: build.title, url: alert.content.links.build,
-                        at: build.finishedAt ?? dependencies.now(), isWatched: alert.content.isWatched,
-                        author: alert.content.watchedAuthor))
-            case .success:
-                inbox.resolveLocal(kind: .buildFailed, idPrefix: InboxEvent.buildIDPrefix(jobKey: build.id.jobKey))
-            case .aborted, .other:
-                break
+            if alert.content.result == .success {
+                for kind in InboxNotificationRules.buildKinds {
+                    inbox.resolveLocal(kind: kind, idPrefix: InboxEvent.buildIDPrefix(jobKey: build.id.jobKey))
+                }
             }
+            let setting = projects.notifications.jobs[build.jobKey]
+            guard let kind = InboxNotificationRules.buildKind(for: alert, jobSetting: setting),
+                inbox.rules.output(for: kind).inboxEntry
+            else {
+                continue
+            }
+            let event = InboxEvent.finishedBuild(
+                kind: kind, jobKey: build.id.jobKey, number: build.id.number, label: build.id.label,
+                isUnstable: alert.content.result == .unstable, title: build.title, url: alert.content.links.build,
+                at: build.finishedAt ?? dependencies.now(), isWatched: alert.content.isWatched,
+                author: alert.content.watchedAuthor, gitLabURL: build.gitLabURL)
+            // GitLab's pop-up of the same failure, still waiting, isn't shown: this build's is (`HeldPipelineAlerts`).
+            heldPipelineAlerts.drop(matching: event)
+            inbox.addLocal(event)
         }
     }
 

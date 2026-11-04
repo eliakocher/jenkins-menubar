@@ -87,6 +87,9 @@ public final class SettingsStore {
     public private(set) var accounts: [TokenAccount: AccountStatus] = [:]
     /// the login item's status (APP-02)
     public private(set) var openAtLogin: LoginItemStatus
+    /// where the app runs from, which explains a login item macOS can't find; read with the status, never while a view is
+    /// drawn (it asks the file system)
+    public private(set) var loginItemPlace: LoginItemPlace
     /// why open at login could not be changed; nil once it could
     public private(set) var openAtLoginError: String?
 
@@ -134,6 +137,7 @@ public final class SettingsStore {
         projects = team.projects()
         storedPreferences = preferences.load()
         openAtLogin = launchAtLogin.status
+        loginItemPlace = launchAtLogin.place
         if let pane = preferences.userDefaults.string(forKey: Self.selectedPaneKey).flatMap(SettingsPane.init(name:)) {
             selectedPane = pane
         }
@@ -152,7 +156,7 @@ public final class SettingsStore {
         primaryTeam = project.team
         storedTeamDraft = project.team
         projects = teamStore.projects()
-        openAtLogin = launchAtLogin.status
+        refreshOpenAtLogin()
     }
 
     /// Waits until the changes made so far are saved, logged and have taken effect, the team values once typing
@@ -865,14 +869,18 @@ public final class SettingsStore {
         }
     }
 
-    /// where the app runs from, which explains a login item macOS can't find
-    public var loginItemPlace: LoginItemPlace {
-        launchAtLogin.place
-    }
-
-    /// Reads the login item's status again; System Settings can change it at any time.
+    /// Reads the login item's status and the app's place again; System Settings can change them at any time. The views
+    /// call it when Settings opens and when the app becomes active, never from a body: the status asks macOS, and a body
+    /// runs on every change. Nothing is written when nothing changed, so no view is drawn again for it.
     public func refreshOpenAtLogin() {
-        openAtLogin = launchAtLogin.status
+        let status = launchAtLogin.status
+        if status != openAtLogin {
+            openAtLogin = status
+        }
+        let place = launchAtLogin.place
+        if place != loginItemPlace {
+            loginItemPlace = place
+        }
     }
 
     /// Opens System Settings → General → Login Items, where the user approves the login item.

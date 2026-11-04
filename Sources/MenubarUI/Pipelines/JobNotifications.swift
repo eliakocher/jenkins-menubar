@@ -1,51 +1,28 @@
 import MenubarCore
 import SwiftUI
 
-/// What a build row and the detail know of a job's notifications (ALERT-09): its own setting, and whether its group
-/// alerts, which the "Default" entry names.
+/// What a build row and the detail know of a job's notifications (ALERT-09): its own setting, if it has one.
 struct JobNotifications: Hashable, Sendable {
     /// the job key, which the setting is stored under
     var job = ""
-    /// the job's setting; `nil` follows the group
+    /// the job's setting; `nil` follows the table of Settings → Notifications
     var setting: NotificationPolicy.JobSetting?
-    /// whether the job's group alerts
-    var groupIsOn = true
 
     init() {}
 
-    init(_ policy: NotificationPolicy, job: String, group: NotificationPolicy.Group) {
+    init(_ policy: NotificationPolicy, job: String) {
         self.job = job
         setting = policy.jobs[job]
-        groupIsOn = policy.isOn(group)
     }
 
-    /// whether the job's alerts stay quiet, by its setting or its group
+    /// whether the job's alerts stay quiet: it is set to Never
     var isMuted: Bool {
-        setting == .never || (setting == nil && !groupIsOn)
+        setting == .never
     }
 
-    /// the entry that follows the group: "Default (On)" or "Default (Off)"
+    /// the entry that follows the table
     var defaultTitle: String {
-        "Default (\(groupIsOn ? "On" : "Off"))"
-    }
-}
-
-/// The bell at the end of a section header: on, or crossed out, with the tooltip that says what a click does.
-struct NotificationsBell: View {
-    let isOn: Bool
-    /// "Watched Builds" or "My Builds"
-    let subject: String
-    let toggle: @MainActor () -> Void
-
-    var body: some View {
-        Button(action: toggle) {
-            Image(systemName: isOn ? "bell" : "bell.slash")
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.borderless)
-        .help("Notifications \(isOn ? "On" : "Off") for \(subject)")
-        .accessibilityLabel("Notifications for \(subject)")
-        .accessibilityValue(isOn ? "On" : "Off")
+        "Default"
     }
 }
 
@@ -87,7 +64,7 @@ struct JobNotificationsMenu: View {
     }
 }
 
-/// The small crossed-out bell on a row whose job is muted, by its setting or its group.
+/// The small crossed-out bell on a row whose job is set to Never.
 struct MutedMark: View {
     var body: some View {
         Image(systemName: "bell.slash")

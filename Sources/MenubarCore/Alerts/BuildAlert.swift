@@ -1,7 +1,6 @@
 import Foundation
 
-/// An alert about one build: a build that finished (ALERT-01), a running build whose stages failed (ALERT-05), or a
-/// preview from Settings (ALERT-07).
+/// An alert about one build: a build that finished (ALERT-01), or a preview from Settings (ALERT-07).
 ///
 /// ``AlertPolicy`` decides on them and ``AlertAnnouncer`` hands them to the ``Effects``. The alert window shows one per
 /// window, found by its ``id``.
@@ -22,10 +21,8 @@ public struct BuildAlert: Codable, Hashable, Identifiable, Sendable {
 
     /// What the alert announces, which decides how it is shown and logged.
     public enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
-        /// a followed build finished: the alert window or a banner, as set (ALERT-03)
+        /// a followed build finished: a pop-up or a banner, as its row in Settings → Notifications says (ALERT-03)
         case finished
-        /// a running build has a new set of failed stages: always a banner (ALERT-05)
-        case stageFailed
         /// a sample alert from Settings, shown like a finished one but not logged as an alert (ALERT-07)
         case preview
     }
@@ -38,29 +35,29 @@ public struct BuildAlert: Codable, Hashable, Identifiable, Sendable {
 public struct AlertContent: Codable, Hashable, Sendable {
     public var result: ResultKind
     public var icon: Icon
-    /// like `✅ !1 #7 SUCCESS`, or `💥 !1 #7: stage failed` for a stage banner; banners show it as it is
+    /// like `✅ !1 #7 SUCCESS`; banners show it as it is
     public var headline: String
     /// the headline's label, number and result, which the alert window shows after the result's SF Symbol instead of
-    /// the emoji (ALERT-02); `nil` for a stage banner, which never shows as a window
+    /// the emoji (ALERT-02)
     public var headlineParts: HeadlineParts?
     /// the build's title; `nil` when it only repeats the job name
     public var title: String?
     /// one line each, like `Duration: 0h30m` and `3 failed tests`
     public var facts: [String]
-    /// a banner's body: the title and the facts for a finished build, the failed stages and the title for a stage banner
+    /// a banner's body: the title and the facts
     public var bannerBody: String
     public var sound: Sound
     /// Open MR for a SUCCESS with an MR link, otherwise Open Build (ALERT-03)
     public var defaultAction: Action
     public var links: Links
-    /// the build that Rebuild starts again: a FAILURE, UNSTABLE or ABORTED build; `nil` for other results, a stage
-    /// banner and a preview, which offer no Rebuild (PIPE-09)
+    /// the build that Rebuild starts again: a FAILURE, UNSTABLE or ABORTED build; `nil` for other results and a
+    /// preview, which offers no Rebuild (PIPE-09)
     public var rebuild: BuildID?
     /// the build that Hide Until the Next Build hides (HIDE-01); `nil` for a preview, which offers no live actions
     /// (ALERT-07). An alert that has it is live: it also offers Open Console.
     public var hide: BuildID?
     /// the one easter egg line under the facts, and the last line of a banner's body (EGG-11); `nil` for none, and
-    /// always for a stage banner and a preview
+    /// always for a preview
     public var eggLine: String?
     /// the hat the alert's butler wears (EGG-03, EGG-04); `nil` for none
     public var hat: ButlerHat?
